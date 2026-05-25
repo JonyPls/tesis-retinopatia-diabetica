@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Centro Oftalmológico del Norte – Design System
+   Paleta: Verde Cerceta (Teal) + Azul Petróleo
+   Todos los colores en HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;          /* #F8FAFC */
+    --foreground: 200 30% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 200 30% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 30% 14%;
+
+    /* Verde cerceta (teal) */
+    --primary: 178 78% 32%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 178 70% 45%;
+
+    /* Azul petróleo */
+    --secondary: 200 60% 18%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 30% 95%;
+    --muted-foreground: 210 12% 42%;
+
+    --accent: 178 60% 94%;
+    --accent-foreground: 178 78% 22%;
+
+    --destructive: 0 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 35 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --success: 142 65% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --info: 205 80% 45%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 210 25% 90%;
+    --input: 210 25% 90%;
+    --ring: 178 78% 32%;
+
+    --radius: 0.625rem;
+
+    /* Niveles de retinopatía */
+    --rd-0: 142 65% 38%;
+    --rd-1: 75 70% 42%;
+    --rd-2: 45 95% 48%;
+    --rd-3: 22 90% 52%;
+    --rd-4: 0 75% 50%;
+
+    /* Sidebar – Azul petróleo oscuro */
+    --sidebar-background: 200 55% 12%;
+    --sidebar-foreground: 200 20% 82%;
+    --sidebar-primary: 178 70% 45%;
+    --sidebar-primary-foreground: 200 60% 10%;
+    --sidebar-accent: 200 50% 18%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 50% 20%;
+    --sidebar-ring: 178 70% 45%;
+
+    /* Gradientes & sombras clínicas */
+    --gradient-primary: linear-gradient(135deg, hsl(178 78% 32%), hsl(178 70% 45%));
+    --gradient-petrol: linear-gradient(160deg, hsl(200 60% 18%), hsl(200 55% 12%));
+    --gradient-subtle: linear-gradient(180deg, hsl(210 40% 99%), hsl(210 30% 95%));
+
+    --shadow-card: 0 1px 2px 0 hsl(200 30% 14% / 0.04), 0 1px 3px 0 hsl(200 30% 14% / 0.06);
+    --shadow-elevated: 0 4px 12px -2px hsl(200 40% 20% / 0.08), 0 2px 6px -1px hsl(200 40% 20% / 0.05);
+    --shadow-focus: 0 0 0 3px hsl(178 78% 32% / 0.15);
+
+    --transition-base: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 200 30% 8%;
+    --foreground: 210 30% 95%;
+    --card: 200 30% 11%;
+    --card-foreground: 210 30% 95%;
+    --popover: 200 30% 11%;
+    --popover-foreground: 210 30% 95%;
+    --primary: 178 70% 45%;
+    --primary-foreground: 200 60% 10%;
+    --secondary: 200 40% 18%;
+    --secondary-foreground: 210 30% 95%;
+    --muted: 200 25% 16%;
+    --muted-foreground: 210 15% 65%;
+    --accent: 200 40% 20%;
+    --accent-foreground: 210 30% 95%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 200 25% 20%;
+    --input: 200 25% 20%;
+    --ring: 178 70% 45%;
+    --sidebar-background: 200 55% 8%;
+    --sidebar-foreground: 200 20% 82%;
+    --sidebar-primary: 178 70% 45%;
+    --sidebar-primary-foreground: 200 60% 10%;
+    --sidebar-accent: 200 50% 14%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 50% 16%;
+    --sidebar-ring: 178 70% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .clinical-card {
+    @apply bg-card rounded-lg border border-border;
+    box-shadow: var(--shadow-card);
+  }
+}

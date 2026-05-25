@@ -1,0 +1,26 @@
+# ======================
+# BACKEND
+# ======================
+
+backend/venv/
+backend/__pycache__/
+*.pyc
+backend/.env
+.env
+backend/db/
+
+# ======================
+# FRONTEND
+# ======================
+
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# ======================
+# Editor / OS
+# ======================
+
+.vscode/
+.DS_Store
+Thumbs.db
