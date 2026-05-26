@@ -40,6 +40,9 @@ export default function Login() {
 
       if (response.ok) {
         localStorage.setItem("token", data.token);
+        if (data.user) {
+          localStorage.setItem("user", JSON.stringify(data.user));
+        }
         // Redirige al Dashboard en caso de éxito
         navigate("/dashboard");
       } else {

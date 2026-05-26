@@ -8,6 +8,10 @@ backend/__pycache__/
 backend/.env
 .env
 backend/db/
+backend/dl_model/*.ckpt
+backend/dl_model/*.pth
+backend/uploads/retinas/*
+!backend/uploads/retinas/.gitkeep
 
 # ======================
 # FRONTEND

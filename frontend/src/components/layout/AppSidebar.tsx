@@ -42,6 +42,26 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Obtener información del usuario
+  const userStr = localStorage.getItem("user");
+  const user = userStr ? JSON.parse(userStr) : null;
+
+  let displayName = "Usuario";
+  let initials = "US";
+
+  if (user) {
+    const firstName = user.nombres ? user.nombres.split(" ")[0] : "";
+    const firstLastName = user.apellidos ? user.apellidos.split(" ")[0] : "";
+
+    displayName = `${firstName} ${firstLastName}`.trim() || "Usuario";
+
+    const initialFirst = firstName ? firstName.charAt(0).toUpperCase() : "";
+    const initialLast = firstLastName
+      ? firstLastName.charAt(0).toUpperCase()
+      : "";
+    initials = `${initialFirst}${initialLast}` || "US";
+  }
+
   const handleLogout = () => {
     // 1. Eliminar el token JWT
     localStorage.removeItem("token");
@@ -67,7 +87,12 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border bg-sidebar">
         {/* Usamos 'cn' para quitar el padding y centrar cuando está colapsado */}
-        <div className={cn("flex items-center py-3 transition-all", collapsed ? "justify-center px-0" : "gap-3 px-2")}>
+        <div
+          className={cn(
+            "flex items-center py-3 transition-all",
+            collapsed ? "justify-center px-0" : "gap-3 px-2",
+          )}
+        >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md overflow-hidden bg-transparent">
             <img
               src={logoClinica}
@@ -146,11 +171,11 @@ export function AppSidebar() {
         {!collapsed ? (
           <div className="flex items-center gap-3 rounded-md bg-sidebar-accent/60 p-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-primary-glow text-xs font-semibold">
-              FG
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-sidebar-accent-foreground truncate">
-                Dr. Felipe Granados
+                {displayName}
               </div>
               <div className="text-[10px] text-sidebar-foreground/60 flex items-center gap-1">
                 <Activity className="h-2.5 w-2.5" /> En línea
@@ -165,10 +190,10 @@ export function AppSidebar() {
           <div className="flex flex-col items-center gap-4 py-2">
             {/* Avatar Centrado */}
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary-glow text-xs font-semibold">
-              FG
+              {initials}
             </div>
             {/* Botón de Cerrar Sesión Colapsado */}
-            <button 
+            <button
               onClick={handleLogout}
               className="p-2 text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
               title="Cerrar Sesión"

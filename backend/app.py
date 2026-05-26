@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 from database import obtener_conexion_bd
 from routes.auth_routes import auth_bp
 from routes.patient_routes import patient_bp
+from routes.document_routes import document_bp
+from routes.diagnosis_routes import diagnosis_bp
+from routes.files_routes import files_bp
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -19,6 +22,9 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 # Registrar Blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(patient_bp)
+app.register_blueprint(document_bp)
+app.register_blueprint(diagnosis_bp)
+app.register_blueprint(files_bp) 
 
 # --- RUTAS BASE ---
 
@@ -26,15 +32,7 @@ app.register_blueprint(patient_bp)
 def home():
     return jsonify({"status": "success", "message": "API del Centro Oftalmológico en línea."}), 200
 
-@app.route('/api/test-db', methods=['GET'])
-def test_db():
-    """Endpoint de depuración para verificar la conexión a MySQL."""
-    conn = obtener_conexion_bd()
-    if conn:
-        conn.close()
-        return jsonify({"status": "success", "message": "¡Conexión a MySQL exitosa y lista para transacciones!"}), 200
-    else:
-        return jsonify({"status": "error", "message": "Fallo al conectar con la base de datos. Revisa tus credenciales en el archivo .env"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

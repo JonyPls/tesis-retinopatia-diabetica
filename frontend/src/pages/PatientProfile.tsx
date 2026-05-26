@@ -55,13 +55,10 @@ const calculateAge = (birthDateStr: string) => {
   return age;
 };
 
-const getInitials = (name: string) => {
-  if (!name) return "";
-  const words = name.trim().split(" ");
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
+const getInitials = (nombres?: string, apellidos?: string) => {
+  if (!nombres || !apellidos) return "";
+
+  return (nombres.trim()[0] + apellidos.trim()[0]).toUpperCase();
 };
 
 const mapResultToLevel = (result: string) => {
@@ -234,7 +231,7 @@ export default function PatientProfile() {
           <CardHeader className="pb-4">
             <div className="flex items-start gap-4">
               <div className="h-14 w-14 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-lg shadow-elevated">
-                {getInitials(fullName)}
+                {getInitials(patient.nombres, patient.apellidos)}
               </div>
               <div className="flex-1 min-w-0">
                 <CardTitle className="text-base leading-tight">
