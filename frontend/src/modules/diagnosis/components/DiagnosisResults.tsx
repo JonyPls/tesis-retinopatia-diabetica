@@ -1,4 +1,10 @@
-import { Eye, Sparkles, AlertTriangle, Activity } from "lucide-react";
+import {
+  Eye,
+  Sparkles,
+  AlertTriangle,
+  Activity,
+  ListChecks,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
@@ -183,8 +189,7 @@ function PredictiveCard({ result }: { result: DiagnosisResult }) {
           </div>
           {!isHighConfidence && (
             <p className="text-[11px] text-amber-600 leading-relaxed">
-              Confianza menor al 70% — se recomienda revisión manual por el
-              especialista.
+              Confianza menor al 70% — se recomienda revisión detallada.
             </p>
           )}
           {isHighConfidence && (
@@ -208,10 +213,13 @@ function PredictiveCard({ result }: { result: DiagnosisResult }) {
           </div>
         )}
 
-        {/* Modelo utilizado */}
-        <div className="rounded-md border border-border bg-muted/40 px-3 py-2.5 text-xs">
-          <div className="text-muted-foreground">Modelo</div>
-          <div className="font-mono font-medium mt-0.5">ResNet50</div>
+        <Separator className="my-2" />
+
+        <ProbabilityBars detail={result.probabilidades_detalle} />
+
+        {/* Modelo sutil */}
+        <div className="text-right text-[10px] text-muted-foreground/60 pt-2 border-t border-border mt-2">
+          Análisis generado por IA (Modelo: ResNet50)
         </div>
       </CardContent>
     </Card>
@@ -275,8 +283,24 @@ export function DiagnosisResults({
 
             <Separator />
 
-            {/* Barras de probabilidades */}
-            <ProbabilityBars detail={current.probabilidades_detalle} />
+            <div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-3 flex items-center gap-1.5">
+                <ListChecks className="h-4 w-4 text-primary" />
+                Características asociadas al nivel detectado
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                {RD_LEVELS[current.diagnostico_codigo as RDLevel]?.features.map(
+                  (feat, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                      <span className="text-muted-foreground tracking-wide">
+                        {feat}
+                      </span>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
 

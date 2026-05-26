@@ -4,7 +4,7 @@ from PIL import Image
 import io
 from werkzeug.datastructures import FileStorage
 from dl_model.inference import predecir_imagen_bytes
-from models.diagnosis_model import crear_diagnostico
+from models.diagnosis_model import crear_diagnostico, validar_diagnostico
 
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads', 'retinas')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -40,5 +40,22 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
         return resultado_ia
 
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    
+
+def confirmar_validacion_diagnostico(diagnostico_id: int, diagnostico_final: int, comentario_medico: str = None) -> dict:
+    """
+    Servicio que maneja la lógica de negocio al validar un diagnóstico.
+    """
+    try:
+        # Llamamos al modelo para hacer el UPDATE en la BD
+        nuevo_estado = validar_diagnostico(diagnostico_id, diagnostico_final, comentario_medico)
+        
+        return {
+            "success": True,
+            "estado_validacion": nuevo_estado,
+            "mensaje": "Diagnóstico validado y guardado exitosamente."
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}

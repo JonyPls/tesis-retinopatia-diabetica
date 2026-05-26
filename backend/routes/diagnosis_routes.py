@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, request, jsonify
-from services.diagnosis_service import procesar_diagnostico
+from services.diagnosis_service import procesar_diagnostico, confirmar_validacion_diagnostico
 from utils.security import token_required
 
 diagnosis_bp = Blueprint('diagnosis', __name__)
@@ -36,3 +36,24 @@ def diagnosticar_retina():
         return jsonify(resultado), 200
     else:
         return jsonify(resultado), 400
+
+
+@diagnosis_bp.route('/api/diagnosticar/<int:diagnostico_id>/validar', methods=['PUT'])
+@token_required
+def confirmar_validacion(diagnostico_id):
+    datos = request.get_json()
+    
+    if not datos or 'diagnostico_final' not in datos:
+        return jsonify({"success": False, "error": "Falta el diagnostico_final"}), 400
+        
+    # Llamamos al SERVICIO, respetando la arquitectura de 3 capas
+    resultado = confirmar_validacion_diagnostico(
+        diagnostico_id=diagnostico_id,
+        diagnostico_final=datos['diagnostico_final'],
+        comentario_medico=datos.get('comentario_medico')
+    )
+    
+    if resultado.get("success"):
+        return jsonify(resultado), 200
+    else:
+        return jsonify(resultado), 500
