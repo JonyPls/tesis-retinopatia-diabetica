@@ -27,10 +27,7 @@ export function ImageUploader({
           Imágenes de Fondo de Ojo
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Cargue al menos una imagen retinal. Para facilitar la identificación,
-          incluya el DNI del paciente y la lateralidad en el nombre del archivo
-          (ej: <span className="font-mono">45782931_OD.jpg</span>). Puede cargar
-          ambos ojos para un diagnóstico bilateral.
+          Suba las imágenes de fondo de ojo. Puede cargar ambos ojos en el mismo diagnóstico.
         </p>
       </CardHeader>
 
@@ -87,8 +84,7 @@ export function ImageUploader({
           <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground leading-relaxed">
             Las imágenes serán preprocesadas automáticamente antes del análisis
-            (filtro de mejora de contraste, recorte y normalización). No es
-            necesario realizar ajustes previos.
+            (filtro de mejora de contraste, recorte y normalización). <b>No es recomendable subir una imagen procesada.</b> 
           </p>
         </div>
       </CardContent>
