@@ -41,5 +41,6 @@ export interface DiagnosisHook {
   comments: Record<EyeKey, string>;
   setComment: (eye: EyeKey, text: string) => void;
   validateDiagnosis: (eye: EyeKey) => Promise<void>;
+  validateAll: () => Promise<void>;
   isValidating: boolean;
 }

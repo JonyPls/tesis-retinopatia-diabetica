@@ -6,6 +6,17 @@ import { DiagnosisStepper } from "@/modules/diagnosis/components/DiagnosisSteppe
 import { PatientSelector } from "@/modules/diagnosis/components/PatientSelector";
 import { ImageUploader } from "@/modules/diagnosis/components/ImageUploader";
 import { DiagnosisResults } from "@/modules/diagnosis/components/DiagnosisResults";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 export default function Diagnosis() {
   const diagnosisHook = useDiagnosis();
@@ -23,6 +34,7 @@ export default function Diagnosis() {
     comments,
     setComment,
     validateDiagnosis,
+    validateAll,
     isValidating,
   } = diagnosisHook;
 
@@ -108,14 +120,36 @@ export default function Diagnosis() {
         )}
 
         {step === 3 && (
-          <Button
-            onClick={() => validateDiagnosis(activeEye)}
-            disabled={isValidating}
-            className="bg-gradient-primary hover:opacity-90"
-          >
-            {isValidating ? "Guardando..." : "Guardar Diagnóstico"}{" "}
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                disabled={isValidating}
+                className="bg-gradient-primary hover:opacity-90"
+              >
+                {isValidating ? "Guardando..." : "Guardar Diagnóstico"}{" "}
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </AlertDialogTrigger>
+
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirmar guardado</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se guardarán las validaciones para los ojos procesados y
+                  volverás al dashboard. ¿Deseas continuar?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => validateAll()}
+                  disabled={isValidating}
+                >
+                  {isValidating ? "Guardando..." : "Guardar y regresar"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
     </AppLayout>

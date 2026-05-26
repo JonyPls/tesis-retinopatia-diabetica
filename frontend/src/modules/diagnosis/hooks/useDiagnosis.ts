@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { convertToPreviewUrl } from "@/lib/imageUtils";
 import {
@@ -50,6 +51,8 @@ export function useDiagnosis(): DiagnosisHook {
     OI: "",
   });
   const [isValidating, setIsValidating] = useState(false);
+
+  const navigate = useNavigate();
 
   // Cargar recientes al montar
   useEffect(() => {
@@ -133,12 +136,13 @@ export function useDiagnosis(): DiagnosisHook {
         );
 
         // 2. CONSTRUIMOS LA URL COMPLETA DEL GRAD-CAM AQUÍ
-        const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+        const BACKEND_URL =
+          import.meta.env.VITE_API_URL || "http://localhost:5000";
         if (result.gradcam_url) {
           // Reemplazamos el nombre del archivo por la URL web completa
           result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}`;
         }
-        
+
         newResults[eye] = result;
       } catch (err: any) {
         hasError = true;
@@ -211,6 +215,57 @@ export function useDiagnosis(): DiagnosisHook {
     }
   };
 
+  /** Valida todos los diagnósticos disponibles (OD/OI) y redirige al dashboard si todo OK */
+  const validateAll = async () => {
+    const availableEyes = (Object.keys(results) as EyeKey[]).filter(
+      (e) => !!results[e],
+    );
+    if (availableEyes.length === 0) return;
+    setIsValidating(true);
+    let hasError = false;
+
+    for (const eye of availableEyes) {
+      const current = results[eye];
+      if (!current) continue;
+      const diagnosticoId = current.diagnostico_id;
+      try {
+        const resp = await validarDiagnostico(
+          diagnosticoId,
+          finalSelection[eye],
+          comments[eye],
+        );
+        if (!resp.success) {
+          hasError = true;
+          toast({
+            title: "Error",
+            description: resp.error || `Error al validar ${eye}`,
+            variant: "destructive",
+          });
+        }
+      } catch (err: any) {
+        hasError = true;
+        toast({
+          title: "Error",
+          description: err?.message || `Error al validar ${eye}`,
+          variant: "destructive",
+        });
+      }
+    }
+
+    setIsValidating(false);
+
+    if (!hasError) {
+      toast({
+        title: "Validaciones guardadas",
+        description: "Todos los diagnósticos fueron validados correctamente.",
+      });
+      // Navegar al dashboard
+      try {
+        navigate("/dashboard");
+      } catch {}
+    }
+  };
+
   // ── Navegación ────────────────────────────────────────────────────
   const canNext =
     (step === 1 && selectedPatient !== null) ||
@@ -248,6 +303,7 @@ export function useDiagnosis(): DiagnosisHook {
     comments,
     setComment,
     validateDiagnosis,
+    validateAll,
     isValidating,
     query,
     searchResults,
