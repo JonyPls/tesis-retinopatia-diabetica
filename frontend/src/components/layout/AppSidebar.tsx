@@ -8,7 +8,6 @@ import {
   FileText,
   Settings,
   LogOut,
-  Eye,
   Activity,
 } from "lucide-react";
 import {
@@ -24,6 +23,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAuthStore } from "@/store/authStore";
 
 const mainItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, end: true },
@@ -32,9 +32,11 @@ const mainItems = [
   { title: "Informes", url: "/informes", icon: FileText },
 ];
 
-const secondaryItems = [
+const adminItems = [
   { title: "Configuración", url: "/configuracion", icon: Settings },
 ];
+
+const ADMIN_ROLES = ["Admin", "Gerente General"];
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -42,34 +44,19 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Obtener información del usuario
-  const userStr = localStorage.getItem("user");
-  const user = userStr ? JSON.parse(userStr) : null;
+  // Leer del store en lugar de localStorage directamente
+  const { user, logout, hasRole } = useAuthStore();
+  const showAdminItems = hasRole(ADMIN_ROLES);
 
-  let displayName = "Usuario";
-  let initials = "US";
-
-  if (user) {
-    const firstName = user.nombres ? user.nombres.split(" ")[0] : "";
-    const firstLastName = user.apellidos ? user.apellidos.split(" ")[0] : "";
-
-    displayName = `${firstName} ${firstLastName}`.trim() || "Usuario";
-
-    const initialFirst = firstName ? firstName.charAt(0).toUpperCase() : "";
-    const initialLast = firstLastName
-      ? firstLastName.charAt(0).toUpperCase()
-      : "";
-    initials = `${initialFirst}${initialLast}` || "US";
-  }
+  // Nombre e iniciales
+  const firstName = user?.nombres?.split(" ")[0] ?? "";
+  const firstLastName = user?.apellidos?.split(" ")[0] ?? "";
+  const displayName = `${firstName} ${firstLastName}`.trim() || "Usuario";
+  const initials =
+    `${firstName.charAt(0)}${firstLastName.charAt(0)}`.toUpperCase() || "US";
 
   const handleLogout = () => {
-    // 1. Eliminar el token JWT
-    localStorage.removeItem("token");
-
-    // Si guardaste el usuario en el Login, también es buena práctica eliminarlo
-    localStorage.removeItem("user");
-
-    // 2. Redirigir a la ruta pública (Login)
+    logout(); // limpia el store y localStorage en un solo paso
     navigate("/");
   };
 
@@ -86,7 +73,6 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border bg-sidebar">
-        {/* Usamos 'cn' para quitar el padding y centrar cuando está colapsado */}
         <div
           className={cn(
             "flex items-center py-3 transition-all",
@@ -100,7 +86,6 @@ export function AppSidebar() {
               className="h-full w-full object-contain"
             />
           </div>
-
           {!collapsed && (
             <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-sidebar-accent-foreground whitespace-nowrap">
@@ -115,6 +100,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="bg-sidebar">
+        {/* Items principales — todos los roles */}
         <SidebarGroup>
           {!collapsed && (
             <SidebarGroupLabel className="text-sidebar-foreground/50 text-[11px] uppercase tracking-wider">
@@ -141,30 +127,33 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          {!collapsed && (
-            <SidebarGroupLabel className="text-sidebar-foreground/50 text-[11px] uppercase tracking-wider">
-              Sistema
-            </SidebarGroupLabel>
-          )}
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {secondaryItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild className="hover:bg-transparent">
-                    <NavLink
-                      to={item.url}
-                      className={navCls(isActive(item.url))}
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Items de administración — solo Admin y Gerente General */}
+        {showAdminItems && (
+          <SidebarGroup>
+            {!collapsed && (
+              <SidebarGroupLabel className="text-sidebar-foreground/50 text-[11px] uppercase tracking-wider">
+                Sistema
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild className="hover:bg-transparent">
+                      <NavLink
+                        to={item.url}
+                        className={navCls(isActive(item.url))}
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border bg-sidebar p-3">
@@ -188,11 +177,9 @@ export function AppSidebar() {
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4 py-2">
-            {/* Avatar Centrado */}
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary-glow text-xs font-semibold">
               {initials}
             </div>
-            {/* Botón de Cerrar Sesión Colapsado */}
             <button
               onClick={handleLogout}
               className="p-2 text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"

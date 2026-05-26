@@ -274,7 +274,7 @@ export default function Patients() {
             <DialogHeader>
               <DialogTitle>Registrar Nuevo Paciente</DialogTitle>
               <DialogDescription>
-                Complete los datos demográficos. Todos los campos son
+                Complete los datos del paciente. Todos los campos son
                 obligatorios.
               </DialogDescription>
             </DialogHeader>
@@ -305,7 +305,7 @@ export default function Patients() {
                       <SelectContent>
                         <SelectItem value="DNI">DNI</SelectItem>
                         <SelectItem value="CE">CE</SelectItem>
-                        <SelectItem value="PASAPORTE">Pasaporte</SelectItem>
+                        <SelectItem value="PASAPORTE">PAS</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -382,7 +382,7 @@ export default function Patients() {
                     type="tel"
                     value={formData.telefono}
                     onChange={handlePhoneChange}
-                    placeholder="9XX XXX XXX"
+                    placeholder="999 999 999"
                     required
                   />
                 </div>
@@ -405,7 +405,7 @@ export default function Patients() {
                     </span>
                     <span className="text-xs text-muted-foreground font-normal">
                       Confirmo que el paciente ha firmado el formulario de
-                      consentimiento y se encuentra archivado en historia
+                      consentimiento y se encuentra archivado en su historia
                       clínica.
                     </span>
                   </Label>

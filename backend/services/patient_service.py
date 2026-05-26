@@ -4,7 +4,8 @@ from models.patient_model import (
     insertar_paciente,
     obtener_paciente_por_id,
     obtener_diagnosticos_paciente,
-    buscar_paciente
+    buscar_paciente,
+    obtener_pacientes_recientes
 )
 
 def obtener_todos_pacientes():
@@ -71,5 +72,13 @@ def buscar_pacientes_dinamico(query_text):
             "status": "success",
             "data": resultados
         }, 200
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+def obtener_recientes():
+    try:
+        pacientes = obtener_pacientes_recientes()
+        return {"status": "success", "data": pacientes}, 200
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500

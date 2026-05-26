@@ -138,3 +138,28 @@ def buscar_paciente(query_text):
         return cursor.fetchall()
     finally:
         c.close()
+
+def obtener_pacientes_recientes(limit=6):
+    c = obtener_conexion_bd()
+    if not c:
+        raise Exception("Error de conexión a la BD")
+    try:
+        cursor = c.cursor()
+        sql = """
+            SELECT DISTINCT
+                p.id,
+                td.codigo AS tipo_doc_abrev,
+                p.nro_documento,
+                p.nombres,
+                p.apellidos
+            FROM pacientes p
+            JOIN tipos_documento td ON p.tipo_doc = td.id
+            JOIN diagnosticos d ON p.id = d.paciente_id
+            WHERE p.estado = 'ACTIVO'
+            ORDER BY d.fecha_registro DESC
+            LIMIT %s
+        """
+        cursor.execute(sql, (limit,))
+        return cursor.fetchall()
+    finally:
+        c.close()

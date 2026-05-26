@@ -4,7 +4,8 @@ from services.patient_service import (
     registrar_nuevo_paciente, 
     obtener_detalle_paciente, 
     obtener_historial_diagnosticos,
-    buscar_pacientes_dinamico
+    buscar_pacientes_dinamico,
+    obtener_recientes
 )
 from utils.security import token_required
 
@@ -44,3 +45,9 @@ def buscar_pacientes():
         
     resultado, status_code = buscar_pacientes_dinamico(query)
     return jsonify(resultado), status_code
+
+@patient_bp.route('/api/pacientes/recientes', methods=['GET'])
+@token_required
+def get_pacientes_recientes():
+    response_dict, status_code = obtener_recientes()
+    return jsonify(response_dict), status_code

@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff } from "lucide-react";
 import logoClinica from "@/assets/logo.png";
+import { useAuthStore } from "@/store/authStore";
+import { login as loginService } from "@/services/authService";
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -20,7 +22,9 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
   const navigate = useNavigate();
+  const { login } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,33 +32,13 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        localStorage.setItem("token", data.token);
-        if (data.user) {
-          localStorage.setItem("user", JSON.stringify(data.user));
-        }
-        // Redirige al Dashboard en caso de éxito
-        navigate("/dashboard");
-      } else {
-        // Muestra el mensaje de error del backend o uno genérico
-        setError(
-          data.message || "Error al iniciar sesión. Verifica tus credenciales.",
-        );
-      }
-    } catch (err) {
-      setError(
-        "Error de conexión con el servidor. ¿El backend está en ejecución?",
-      );
+      const data = await loginService(username, password);
+      // Guarda token y usuario en el store (y en localStorage automáticamente)
+      login(data.token, data.user);
+      navigate("/dashboard");
+    } catch (err: any) {
+      const msg = err.response?.data?.message;
+      setError(msg || "Error al iniciar sesión. Verifica tus credenciales.");
     } finally {
       setIsLoading(false);
     }
