@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { DiagnosisResult } from "@/services/diagnosisService";
 import { EyeKey, EyeState } from "../types";
 import { ImagePanel } from "./ImagePanel";
-import fundusGradcam from "@/assets/fundus-gradcam.jpg";
 
 interface DiagnosisResultsProps {
   results: Partial<Record<EyeKey, DiagnosisResult>>;
@@ -204,10 +203,9 @@ function PredictiveCard({ result }: { result: DiagnosisResult }) {
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 flex gap-2.5">
             <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
             <div className="text-xs">
-              <div className="font-semibold text-destructive">Caso crítico</div>
+              <div className="font-semibold text-destructive">CASO CRÍTICO</div>
               <div className="text-muted-foreground mt-0.5 leading-relaxed">
-                Se recomienda derivación urgente a especialista en
-                vitreorretina.
+                Se recomienda derivación urgente a especialista en vitreorretina.
               </div>
             </div>
           </div>
@@ -233,7 +231,21 @@ export function DiagnosisResults({
   eyes,
   activeEye,
   setActiveEye,
-}: DiagnosisResultsProps) {
+  // validation props (optional fallback)
+  finalSelection,
+  setFinalSelection,
+  comments,
+  setComment,
+  validateDiagnosis,
+  isValidating,
+}: DiagnosisResultsProps & {
+  finalSelection?: Record<EyeKey, number>;
+  setFinalSelection?: (eye: EyeKey, value: number) => void;
+  comments?: Record<EyeKey, string>;
+  setComment?: (eye: EyeKey, text: string) => void;
+  validateDiagnosis?: (eye: EyeKey) => Promise<void>;
+  isValidating?: boolean;
+}) {
   const available = eyesWithResults(results);
   const current = results[activeEye];
 
@@ -276,7 +288,7 @@ export function DiagnosisResults({
               <ImagePanel
                 title="Mapa de Calor (Grad-CAM)"
                 subtitle="Regiones de mayor atención de la IA"
-                src={fundusGradcam}
+                src={current.gradcam_url}
                 overlay
               />
             </div>
@@ -303,9 +315,88 @@ export function DiagnosisResults({
             </div>
           </CardContent>
         </Card>
-
         {/* ── Panel derecho: clasificación ── */}
         <PredictiveCard result={current} />
+      </div>
+
+      {/* Panel de Validación: ocupa todo el ancho */}
+      <div>
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-primary" /> Panel de
+              Validación de Diagnóstico
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              El sistema es una herramienta de apoyo al diagnóstico de retinopatía diabética.
+              <b> Confirme o corrija </b>el resultado predictivo según su criterio.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Cards para cada clase */}
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-6">
+              {([0, 1, 2, 3, 4] as number[]).map((level) => {
+                const checked = finalSelection
+                  ? finalSelection[activeEye] === level
+                  : false;
+                return (
+                  <label
+                    key={level}
+                    className={`block cursor-pointer rounded-md border p-3 transition-shadow shadow-sm hover:shadow-md ${
+                      checked
+                        ? "ring-2 ring-offset-1 ring-primary bg-muted/10 border-primary shadow-lg"
+                        : "bg-card"
+                    }`}
+                    style={{ borderLeft: `4px solid hsl(var(--rd-${level}))` }}
+                  >
+                    <input
+                      type="radio"
+                      name={`final-${activeEye}`}
+                      checked={checked}
+                      onChange={() =>
+                        setFinalSelection && setFinalSelection(activeEye, level)
+                      }
+                      className="hidden"
+                    />
+                    <div className="flex flex-col">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">
+                          {level}: {RD_LEVELS[level as RDLevel].label}
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        {RD_LEVELS[level as RDLevel].description}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="text-xs text-muted-foreground opacity-60 mt-1">
+              Valor por defecto: Predicción IA
+            </div>
+
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between">
+                <div className="text-sm font-medium mt-2">
+                  Comentario Médico{" "}
+                  <span className="text-xs opacity-60 ml-2">(opcional)</span>
+                </div>
+              </div>
+              <textarea
+                value={comments ? comments[activeEye] : ""}
+                onChange={(e) =>
+                  setComment && setComment(activeEye, e.target.value)
+                }
+                className="w-full mt-2 rounded-md border border-input bg-background p-3 min-h-[140px] text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition"
+                placeholder="Observaciones del especialista..."
+              />
+            </div>
+
+            {/* Nota: el guardado lo realiza el botón principal 'Guardar Diagnóstico' */}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

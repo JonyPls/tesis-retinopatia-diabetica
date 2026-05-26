@@ -15,9 +15,14 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         
         resultado_ia = predecir_imagen_bytes(image_bytes)
 
+        cam_image_array = resultado_ia.pop("cam_image_array")
+
         # Siempre guardar como .jpg sin importar el formato original
         nombre_unico = f"P{paciente_id}_{ojo_evaluado}_{uuid.uuid4().hex[:6]}.jpg"
+        nombre_gradcam = nombre_unico.replace('.jpg', '_gradcam.jpg')
+
         ruta_guardado = os.path.join(UPLOAD_FOLDER, nombre_unico)
+        ruta_gradcam = os.path.join(UPLOAD_FOLDER, nombre_gradcam)
 
         datos_bd = {
             "paciente_id": paciente_id,
@@ -36,7 +41,11 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             imagen = imagen.convert('RGB')  # .tif puede venir en modo RGBA o L
         imagen.save(ruta_guardado, 'JPEG', quality=90)
 
+        # Guardar físicamente la imagen del Grad-CAM
+        Image.fromarray(cam_image_array).save(ruta_gradcam, 'JPEG', quality=90)
+
         resultado_ia["diagnostico_id"] = nuevo_id
+        resultado_ia["gradcam_url"] = nombre_gradcam
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
         return resultado_ia
 
@@ -45,9 +54,6 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
     
 
 def confirmar_validacion_diagnostico(diagnostico_id: int, diagnostico_final: int, comentario_medico: str = None) -> dict:
-    """
-    Servicio que maneja la lógica de negocio al validar un diagnóstico.
-    """
     try:
         # Llamamos al modelo para hacer el UPDATE en la BD
         nuevo_estado = validar_diagnostico(diagnostico_id, diagnostico_final, comentario_medico)

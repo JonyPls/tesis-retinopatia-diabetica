@@ -6,7 +6,11 @@ import {
   obtenerPacientesRecientes,
   PatientSearchResult,
 } from "@/services/patientService";
-import { crearDiagnostico, DiagnosisResult } from "@/services/diagnosisService";
+import {
+  crearDiagnostico,
+  DiagnosisResult,
+  validarDiagnostico,
+} from "@/services/diagnosisService";
 import { EyeKey, EyeState, DiagnosisHook } from "../types";
 
 const EMPTY_EYE: EyeState = { file: null, preview: null };
@@ -37,6 +41,15 @@ export function useDiagnosis(): DiagnosisHook {
     Partial<Record<EyeKey, DiagnosisResult>>
   >({});
   const [activeEye, setActiveEye] = useState<EyeKey>("OD");
+  // Validación
+  const [finalSelection, setFinalSelectionState] = useState<
+    Record<EyeKey, number>
+  >({ OD: 0, OI: 0 });
+  const [comments, setComments] = useState<Record<EyeKey, string>>({
+    OD: "",
+    OI: "",
+  });
+  const [isValidating, setIsValidating] = useState(false);
 
   // Cargar recientes al montar
   useEffect(() => {
@@ -118,6 +131,14 @@ export function useDiagnosis(): DiagnosisHook {
           ojoDominante,
           eyes[eye].file!,
         );
+
+        // 2. CONSTRUIMOS LA URL COMPLETA DEL GRAD-CAM AQUÍ
+        const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+        if (result.gradcam_url) {
+          // Reemplazamos el nombre del archivo por la URL web completa
+          result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}`;
+        }
+        
         newResults[eye] = result;
       } catch (err: any) {
         hasError = true;
@@ -134,11 +155,59 @@ export function useDiagnosis(): DiagnosisHook {
     if (!hasError && Object.keys(newResults).length > 0) {
       setResults(newResults);
       setActiveEye(eyesToProcess[0]);
+      // Inicializar selecciones finales con lo que predijo la IA
+      const init: Record<EyeKey, number> = { OD: 0, OI: 0 };
+      (Object.keys(newResults) as EyeKey[]).forEach((e) => {
+        init[e] = newResults[e]!.diagnostico_codigo;
+      });
+      setFinalSelectionState((prev) => ({ ...prev, ...init }));
+      setComments({ OD: "", OI: "" });
       toast({
         title: "Diagnóstico guardado",
         description: "Los resultados han sido guardados correctamente.",
       });
       setStep(3);
+    }
+  };
+
+  // ── Validación ────────────────────────────────────────────────────
+  const setFinalSelection = (eye: EyeKey, value: number) => {
+    setFinalSelectionState((prev) => ({ ...prev, [eye]: value }));
+  };
+
+  const setComment = (eye: EyeKey, text: string) => {
+    setComments((prev) => ({ ...prev, [eye]: text }));
+  };
+
+  const validateDiagnosis = async (eye: EyeKey) => {
+    const current = results[eye];
+    if (!current) return;
+    const diagnosticoId = current.diagnostico_id;
+    setIsValidating(true);
+    try {
+      const resp = await validarDiagnostico(
+        diagnosticoId,
+        finalSelection[eye],
+        comments[eye],
+      );
+      if (resp.success) {
+        toast({ title: "Validación guardada", description: resp.mensaje });
+        // Opcional: marcar en resultados que fue validado (no tenemos campo específico)
+      } else {
+        toast({
+          title: "Error",
+          description: resp.error || "Error al validar.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.message || "Error al validar.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -173,6 +242,13 @@ export function useDiagnosis(): DiagnosisHook {
     resetAll,
     canNext,
     isSaving,
+    // Validación
+    finalSelection,
+    setFinalSelection,
+    comments,
+    setComment,
+    validateDiagnosis,
+    isValidating,
     query,
     searchResults,
     recentPatients,

@@ -35,4 +35,11 @@ export interface DiagnosisHook {
   results: Partial<Record<EyeKey, DiagnosisResult>>;
   activeEye: EyeKey;
   setActiveEye: (eye: EyeKey) => void;
+  // Validación
+  finalSelection: Record<EyeKey, number>;
+  setFinalSelection: (eye: EyeKey, value: number) => void;
+  comments: Record<EyeKey, string>;
+  setComment: (eye: EyeKey, text: string) => void;
+  validateDiagnosis: (eye: EyeKey) => Promise<void>;
+  isValidating: boolean;
 }

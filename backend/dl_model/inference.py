@@ -5,7 +5,9 @@ import torch
 from PIL import Image
 import torchvision.transforms as transforms
 
-# Importamos tu clase universal desde el mismo directorio
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+
 from .model_architecture import RetinopatiaModel
 
 # ── 1. Configuración Global ──
@@ -95,9 +97,6 @@ def aplicar_pipeline_core(img_rgb):
 
 # ── 3. Función Principal de Inferencia (API Endpoint Wrapper) ──
 def predecir_imagen_bytes(image_bytes: bytes) -> dict:
-    """
-    Recibe la imagen cruda en bytes (desde Flask), la procesa y devuelve un JSON.
-    """
     # 1. Convertir bytes de HTTP a Matriz OpenCV
     nparr = np.frombuffer(image_bytes, np.uint8)
     img_raw = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -126,7 +125,22 @@ def predecir_imagen_bytes(image_bytes: bytes) -> dict:
         pred_idx = int(np.argmax(probs))
         confianza = float(probs[pred_idx])
 
-    # 5. Formatear respuesta para el Frontend (React)
+    # 5. GENERACIÓN DEL GRAD-CAM
+    # Apuntamos a la última capa convolucional de la ResNet50
+    target_layers = [modelo.model.layer4[-1]]
+    
+    # Construimos el objeto GradCAM
+    cam = GradCAM(model=modelo, target_layers=target_layers)
+    
+    # Generamos la máscara en escala de grises (targets=None usa la clase ganadora predicha)
+    grayscale_cam = cam(input_tensor=img_tensor, targets=None)[0, :]
+    
+    # Para superponer el color, la imagen procesada original debe estar en formato float [0, 1]
+    rgb_img_float = img_procesada.astype(np.float32) / 255.0
+    cam_image_array = show_cam_on_image(rgb_img_float, grayscale_cam, use_rgb=True)
+    # =================================================================
+
+    # 6. Formatear respuesta para el Frontend (React)
     # Convertimos los float32 a float nativo de Python para que JSON lo pueda serializar
     return {
         "success": True,
@@ -139,5 +153,6 @@ def predecir_imagen_bytes(image_bytes: bytes) -> dict:
             "G2_Moderada": round(float(probs[2]) * 100, 2),
             "G3_Severa": round(float(probs[3]) * 100, 2),
             "G4_Proliferativa": round(float(probs[4]) * 100, 2)
-        }
+        },
+        "cam_image_array": cam_image_array  # <-- Agregamos esto para que el servicio lo guarde
     }

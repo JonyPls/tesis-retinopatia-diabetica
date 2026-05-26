@@ -9,7 +9,22 @@ import { DiagnosisResults } from "@/modules/diagnosis/components/DiagnosisResult
 
 export default function Diagnosis() {
   const diagnosisHook = useDiagnosis();
-  const { step, goBack, goNext, canNext, isSaving, resetAll } = diagnosisHook;
+  const {
+    step,
+    goBack,
+    goNext,
+    canNext,
+    isSaving,
+    resetAll,
+    // validation
+    activeEye,
+    finalSelection,
+    setFinalSelection,
+    comments,
+    setComment,
+    validateDiagnosis,
+    isValidating,
+  } = diagnosisHook;
 
   return (
     <AppLayout
@@ -44,6 +59,12 @@ export default function Diagnosis() {
           eyes={diagnosisHook.eyes}
           activeEye={diagnosisHook.activeEye}
           setActiveEye={diagnosisHook.setActiveEye}
+          finalSelection={diagnosisHook.finalSelection}
+          setFinalSelection={diagnosisHook.setFinalSelection}
+          comments={diagnosisHook.comments}
+          setComment={diagnosisHook.setComment}
+          validateDiagnosis={diagnosisHook.validateDiagnosis}
+          isValidating={diagnosisHook.isValidating}
         />
       )}
 
@@ -88,10 +109,12 @@ export default function Diagnosis() {
 
         {step === 3 && (
           <Button
-            onClick={resetAll}
+            onClick={() => validateDiagnosis(activeEye)}
+            disabled={isValidating}
             className="bg-gradient-primary hover:opacity-90"
           >
-            Nuevo Diagnóstico <ArrowRight className="h-4 w-4 ml-2" />
+            {isValidating ? "Guardando..." : "Guardar Diagnóstico"}{" "}
+            <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         )}
       </div>
