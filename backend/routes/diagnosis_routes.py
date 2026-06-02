@@ -8,7 +8,7 @@ diagnosis_bp = Blueprint('diagnosis', __name__)
 @diagnosis_bp.route('/api/diagnosticar', methods=['POST'])
 @token_required
 def diagnosticar_retina():
-    # 1. Verificar archivo
+    # 1. Verifica el archivo
     if 'imagen' not in request.files:
         return jsonify({"success": False, "error": "Falta la imagen"}), 400
     
@@ -16,7 +16,7 @@ def diagnosticar_retina():
     if archivo.filename == '':
         return jsonify({"success": False, "error": "Archivo vacío"}), 400
 
-    # 2. Capturar metadatos médicos del formulario
+    # 2. Capturar los datos del formulario
     paciente_id  = request.form.get('paciente_id')
     ojo_evaluado = request.form.get('ojo_evaluado')
 
@@ -46,7 +46,7 @@ def confirmar_validacion(diagnostico_id):
     if not datos or 'diagnostico_final' not in datos:
         return jsonify({"success": False, "error": "Falta el diagnostico_final"}), 400
         
-    # Llamamos al SERVICIO, respetando la arquitectura de 3 capas
+    # Llamada al servicio
     resultado = confirmar_validacion_diagnostico(
         diagnostico_id=diagnostico_id,
         diagnostico_final=datos['diagnostico_final'],

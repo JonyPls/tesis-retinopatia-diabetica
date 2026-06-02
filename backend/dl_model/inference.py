@@ -23,7 +23,7 @@ GRADOS = {
     4: "Proliferativa"
 }
 
-# Variable global para almacenar el modelo en memoria (Patrón Singleton)
+# Variable global para almacenar el modelo en memoria
 _modelo_cargado = None
 
 def get_modelo():
@@ -33,13 +33,13 @@ def get_modelo():
         if not os.path.exists(MODEL_PATH):
             raise FileNotFoundError(f"No se encontró el archivo de pesos en: {MODEL_PATH}")
         
-        # PyTorch Lightning lee el .ckpt y usa tu versión universal automáticamente
+        # PyTorch Lightning lee el .ckpt
         _modelo_cargado = RetinopatiaModel.load_from_checkpoint(MODEL_PATH)
         _modelo_cargado.eval()
         _modelo_cargado.to(DEVICE)
     return _modelo_cargado
 
-# ── 2. Funciones de Preprocesamiento (Paridad 1:1 con Colab) ──
+# Funciones de Preprocesamiento
 def ben_graham_luminancia(img_rgb, clip=2.0):
     radio = max(img_rgb.shape[0], img_rgb.shape[1])
     sigma_dinamico = min(50.0, max(1.0, radio / 10.0))
@@ -95,18 +95,17 @@ def aplicar_pipeline_core(img_rgb):
     img_final[gray_f < 5] = 0
     return img_final
 
-# ── 3. Función Principal de Inferencia (API Endpoint Wrapper) ──
+# Función Principal de Inferencia
 def predecir_imagen_bytes(image_bytes: bytes) -> dict:
-    # 1. Convertir bytes de HTTP a Matriz OpenCV
+    # 1. Convertir bytes de HTTP a Matriz
     nparr = np.frombuffer(image_bytes, np.uint8)
     img_raw = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
     if img_raw is None:
         raise ValueError("El archivo enviado no es una imagen válida o está corrupto.")
         
     img_rgb = cv2.cvtColor(img_raw, cv2.COLOR_BGR2RGB)
 
-    # 2. Preprocesamiento estricto
+    # 2. Preprocesamiento de la imagen
     img_procesada = aplicar_pipeline_core(img_rgb)
 
     # 3. Transformación a Tensor
@@ -117,7 +116,7 @@ def predecir_imagen_bytes(image_bytes: bytes) -> dict:
     ])
     img_tensor = transform_inferencia(Image.fromarray(img_procesada)).unsqueeze(0).to(DEVICE)
 
-    # 4. Predicción con la IA
+    # 4. Predicción del modelo
     modelo = get_modelo()
     with torch.no_grad():
         logits = modelo(img_tensor)
@@ -125,23 +124,15 @@ def predecir_imagen_bytes(image_bytes: bytes) -> dict:
         pred_idx = int(np.argmax(probs))
         confianza = float(probs[pred_idx])
 
-    # 5. GENERACIÓN DEL GRAD-CAM
-    # Apuntamos a la última capa convolucional de la ResNet50
+    # 5. Generación del mapa de calor Grad-CAM
+    # Apunta a la última capa convolucional de ResNet50
     target_layers = [modelo.model.layer4[-1]]
-    
-    # Construimos el objeto GradCAM
     cam = GradCAM(model=modelo, target_layers=target_layers)
-    
-    # Generamos la máscara en escala de grises (targets=None usa la clase ganadora predicha)
     grayscale_cam = cam(input_tensor=img_tensor, targets=None)[0, :]
-    
-    # Para superponer el color, la imagen procesada original debe estar en formato float [0, 1]
     rgb_img_float = img_procesada.astype(np.float32) / 255.0
     cam_image_array = show_cam_on_image(rgb_img_float, grayscale_cam, use_rgb=True)
-    # =================================================================
 
-    # 6. Formatear respuesta para el Frontend (React)
-    # Convertimos los float32 a float nativo de Python para que JSON lo pueda serializar
+    # 6. Diccionario con los resultados para el Frontend
     return {
         "success": True,
         "diagnostico_codigo": pred_idx,
@@ -154,5 +145,5 @@ def predecir_imagen_bytes(image_bytes: bytes) -> dict:
             "G3_Severa": round(float(probs[3]) * 100, 2),
             "G4_Proliferativa": round(float(probs[4]) * 100, 2)
         },
-        "cam_image_array": cam_image_array  # <-- Agregamos esto para que el servicio lo guarde
+        "cam_image_array": cam_image_array
     }
