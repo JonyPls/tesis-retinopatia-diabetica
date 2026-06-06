@@ -12,6 +12,7 @@ import {
   DiagnosisResult,
   validarDiagnostico,
 } from "@/services/diagnosisService";
+import { useAuthStore } from "@/store/authStore";
 import { EyeKey, EyeState, DiagnosisHook } from "../types";
 
 const EMPTY_EYE: EyeState = { file: null, preview: null };
@@ -139,8 +140,8 @@ export function useDiagnosis(): DiagnosisHook {
         const BACKEND_URL =
           import.meta.env.VITE_API_URL || "http://localhost:5000";
         if (result.gradcam_url) {
-          // Se reemplaza el nombre del archivo por la URL web completa
-          result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}`;
+          const token = useAuthStore.getState().token;
+          result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}?token=${token}`;
         }
 
         newResults[eye] = result;

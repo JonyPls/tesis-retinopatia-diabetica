@@ -2,8 +2,6 @@ import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-
-from database import obtener_conexion_bd
 from routes.auth_routes import auth_bp
 from routes.patient_routes import patient_bp
 from routes.document_routes import document_bp
