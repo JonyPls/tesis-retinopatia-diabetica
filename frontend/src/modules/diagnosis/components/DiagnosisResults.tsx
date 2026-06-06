@@ -8,7 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
-import { RD_LEVELS, RDLevel } from "@/data/mockData";
+import { RD_LEVELS, RDLevel } from "@/data/rdLevels";
 import { cn } from "@/lib/utils";
 import { DiagnosisResult } from "@/services/diagnosisService";
 import { EyeKey, EyeState } from "../types";

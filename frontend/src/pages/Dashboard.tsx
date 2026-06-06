@@ -4,7 +4,7 @@ import { RecentPatientsTable } from "@/modules/dashboard/components/RecentPatien
 import { RDLevelDistribution } from "@/modules/dashboard/components/RDLevelDistribution";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { dashboardKPIs } from "@/data/mockData";
+import { dashboardKPIs } from "@/data/dashboard";
 import {
   Users,
   Brain,

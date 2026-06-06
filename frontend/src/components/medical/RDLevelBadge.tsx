@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { RDLevel, RD_LEVELS } from "@/data/mockData";
+import { RDLevel, RD_LEVELS } from "@/data/rdLevels";
 
 interface Props {
   level: RDLevel;
