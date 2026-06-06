@@ -22,6 +22,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import api from "@/services/api";
 
 interface Patient {
   id: string | number;
@@ -100,23 +101,8 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchRecentPatients = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const response = await fetch("http://localhost:5000/api/pacientes", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (response.status === 401) {
-          localStorage.removeItem("token");
-          window.location.href = "/";
-          return;
-        }
-
-        const data = await response.json();
-
+        const { data } = await api.get("/pacientes");
         if (data.data) {
-          // Filtrar solo los que tienen registro de visita y ordenarlos descendente
           const sorted = (data.data as Patient[])
             .filter((p) => p.ultima_visita)
             .sort(

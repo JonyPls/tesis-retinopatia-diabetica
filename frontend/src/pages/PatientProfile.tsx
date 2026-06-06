@@ -19,6 +19,7 @@ import {
   Activity,
   Stethoscope,
 } from "lucide-react";
+import api from "@/services/api";
 
 interface Patient {
   id: number;
@@ -88,32 +89,14 @@ export default function PatientProfile() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const token = localStorage.getItem("token");
         const [resPac, resDiag] = await Promise.all([
-          fetch(`http://localhost:5000/api/pacientes/${id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`http://localhost:5000/api/diagnosticos/paciente/${id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+          api.get(`/pacientes/${id}`),
+          api.get(`/diagnosticos/paciente/${id}`),
         ]);
 
-        if (resPac.status === 401 || resDiag.status === 401) {
-          localStorage.removeItem("token");
-          window.location.href = "/";
-          return;
-        }
+        const dataPac = resPac.data;
+        const dataDiag = resDiag.data;
 
-        if (!resPac.ok) {
-          setPatient(null);
-          setIsLoading(false);
-          return;
-        }
-
-        const dataPac = await resPac.json();
-        const dataDiag = await resDiag.json();
-
-        // Validar que el paciente exista
         if (
           dataPac.data &&
           (!Array.isArray(dataPac.data) || dataPac.data.length > 0)

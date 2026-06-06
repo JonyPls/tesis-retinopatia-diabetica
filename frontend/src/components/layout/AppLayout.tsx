@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { Bell, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { buscarPacientes } from "@/services/patientService";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -49,28 +50,8 @@ export function AppLayout({
       setIsSearching(true);
       setIsOpen(true);
       try {
-        const token = localStorage.getItem("token");
-        const response = await fetch(
-          `http://localhost:5000/api/pacientes/buscar?q=${searchQuery}`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-
-        if (response.status === 401) {
-          localStorage.removeItem("token");
-          window.location.href = "/";
-          return;
-        }
-
-        if (response.ok) {
-          const resData = await response.json();
-          // The backend might return { status: 'success', data: [...] } or just an array
-          const patientsArray = Array.isArray(resData)
-            ? resData
-            : resData.data || [];
-          setResults(Array.isArray(patientsArray) ? patientsArray : []);
-        } else {
-          setResults([]);
-        }
+        const data = await buscarPacientes(searchQuery);
+        setResults(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error("Error searching patients:", error);
         setResults([]);

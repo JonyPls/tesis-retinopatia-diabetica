@@ -135,11 +135,11 @@ export function useDiagnosis(): DiagnosisHook {
           eyes[eye].file!,
         );
 
-        // 2. CONSTRUIMOS LA URL COMPLETA DEL GRAD-CAM AQUÍ
+        // 2. Se construye la URL completa para el Grad-CAM si existe
         const BACKEND_URL =
           import.meta.env.VITE_API_URL || "http://localhost:5000";
         if (result.gradcam_url) {
-          // Reemplazamos el nombre del archivo por la URL web completa
+          // Se reemplaza el nombre del archivo por la URL web completa
           result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}`;
         }
 

@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 // 1. Actualizamos el tipo a términos clínicos oftalmológicos
 export type Status = "Normal" | "Seguimiento" | "Crítico" | "Sin Evaluar";
 
-// 2. Mapeamos los colores (Verde, Amarillo/Naranja, Rojo)
+// 2. Mapeamos los colores (Verde, Ámbar, Rojo)
 const map: Record<Status, string> = {
   Normal: "bg-emerald-100 text-emerald-700 border-emerald-200", 
   Seguimiento: "bg-amber-100 text-amber-700 border-amber-200",

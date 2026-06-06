@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import api from "@/services/api";
 
 interface Patient {
   id?: string | number;
@@ -99,20 +100,7 @@ export default function Patients() {
   const fetchPatients = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/pacientes", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.status === 401) {
-        localStorage.removeItem("token");
-        window.location.href = "/";
-        return;
-      }
-
-      const data = await response.json();
+      const { data } = await api.get("/pacientes");
       setPatients(data.data || []);
     } catch (error) {
       console.error("Error al obtener pacientes:", error);
@@ -213,46 +201,27 @@ export default function Patients() {
         telefono: formData.telefono.replace(/\D/g, ""),
       };
 
-      const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/pacientes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+      const { data } = await api.post("/pacientes", payload);
+
+      toast({
+        title: "Paciente registrado",
+        description: "Los datos se han guardado correctamente.",
       });
-
-      if (response.status === 401) {
-        localStorage.removeItem("token");
-        window.location.href = "/";
-        return;
-      }
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast({
-          title: "Paciente registrado",
-          description: "Los datos se han guardado correctamente.",
-        });
-        setOpen(false);
-        setConsent(false);
-        setFormData({
-          tipo_doc: "DNI",
-          nro_documento: "",
-          nombres: "",
-          apellidos: "",
-          sexo: "",
-          fecha_nacimiento: "",
-          telefono: "",
-        });
-        fetchPatients();
-      } else {
-        setFormError(data.message || "Error al registrar el paciente.");
-      }
-    } catch (error) {
-      setFormError("Error de conexión con el servidor.");
+      setOpen(false);
+      setConsent(false);
+      setFormData({
+        tipo_doc: "DNI",
+        nro_documento: "",
+        nombres: "",
+        apellidos: "",
+        sexo: "",
+        fecha_nacimiento: "",
+        telefono: "",
+      });
+      fetchPatients();
+    } catch (error: any) {
+      const msg = error.response?.data?.message;
+      setFormError(msg || "Error de conexión con el servidor.");
     } finally {
       setIsSubmitting(false);
     }
