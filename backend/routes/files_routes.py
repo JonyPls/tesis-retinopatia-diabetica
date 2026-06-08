@@ -10,6 +10,6 @@ RETINAS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'uploads', 'retin
 @token_required
 def serve_retina_image(filename):
     if not os.path.exists(os.path.join(RETINAS_FOLDER, filename)):
-        return jsonify({"status": "error", "message": "Imagen no encontrada."}), 404
+        return jsonify({"success": False, "message": "Imagen no encontrada."}), 404
     
     return send_from_directory(RETINAS_FOLDER, filename)

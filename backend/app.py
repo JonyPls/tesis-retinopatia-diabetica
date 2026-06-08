@@ -28,7 +28,7 @@ app.register_blueprint(files_bp)
 
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({"status": "success", "message": "API del Centro Oftalmológico en línea."}), 200
+    return jsonify({"success": True, "message": "API del Centro Oftalmológico en línea."}), 200
 
 
 

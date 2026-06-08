@@ -6,7 +6,7 @@ from models.auth_model import obtener_usuario_por_username
 
 def autenticar_usuario(username, password):
     if not username or not password:
-        return {"status": "error", "message": "Faltan credenciales."}, 400
+        return {"success": False, "message": "Faltan credenciales."}, 400
 
     try:
         user = obtener_usuario_por_username(username)
@@ -23,19 +23,21 @@ def autenticar_usuario(username, password):
             }, os.getenv('SECRET_KEY'), algorithm="HS256")
 
             return {
-                "status": "success",
+                "success": True,
                 "message": f"Bienvenido, {user['nombres']} {user['apellidos']}",
-                "token": token,
-                "user": {
-                    "id": user['id'],
-                    "username": user['username'],
-                    "nombres": user['nombres'],
-                    "apellidos": user['apellidos'],
-                    "roles": user['roles']
+                "data": {
+                    "token": token,
+                    "user": {
+                        "id": user['id'],
+                        "username": user['username'],
+                        "nombres": user['nombres'],
+                        "apellidos": user['apellidos'],
+                        "roles": user['roles']
+                    }
                 }
             }, 200
 
-        return {"status": "error", "message": "Usuario o contraseña incorrectos."}, 401
+        return {"success": False, "message": "Usuario o contraseña incorrectos."}, 401
     
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500

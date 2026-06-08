@@ -41,7 +41,7 @@ def get_historial_diagnosticos(id):
 def buscar_pacientes():
     query = request.args.get('q', '')
     if len(query) < 2:
-        return jsonify({"status": "success", "data": []}), 200
+        return jsonify({"success": True, "data": []}), 200
         
     resultado, status_code = buscar_pacientes_dinamico(query)
     return jsonify(resultado), status_code

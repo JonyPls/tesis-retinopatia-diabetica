@@ -9,9 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search } from "lucide-react";
+import { Search, Table2, LayoutGrid } from "lucide-react";
 import { usePatients } from "@/modules/patients/hooks/usePatients";
 import { PatientTable } from "@/modules/patients/components/PatientTable";
+import { PatientCardGrid } from "@/modules/patients/components/PatientCardGrid";
 import { CreatePatientDialog } from "@/modules/patients/components/CreatePatientDialog";
 
 const calculateAge = (birthDate: string) => {
@@ -106,13 +107,45 @@ export default function Patients() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center border border-border rounded-md overflow-hidden">
+              <button
+                onClick={() => hook.setViewMode("table")}
+                className={`p-2 transition-colors ${
+                  hook.viewMode === "table"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+                title="Vista tabla"
+              >
+                <Table2 className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => hook.setViewMode("cards")}
+                className={`p-2 transition-colors ${
+                  hook.viewMode === "cards"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+                title="Vista cards"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          <PatientTable
-            patients={hook.currentData}
-            isLoading={hook.isLoading}
-            calculateAge={calculateAge}
-          />
+          {hook.viewMode === "table" ? (
+            <PatientTable
+              patients={hook.currentData}
+              isLoading={hook.isLoading}
+              calculateAge={calculateAge}
+            />
+          ) : (
+            <PatientCardGrid
+              patients={hook.currentData}
+              isLoading={hook.isLoading}
+              calculateAge={calculateAge}
+            />
+          )}
 
           {hook.totalItems > 0 && (
             <div className="flex items-center justify-between pt-5">

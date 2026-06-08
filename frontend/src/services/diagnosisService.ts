@@ -1,7 +1,6 @@
 import api from "./api";
 
 export interface DiagnosisResult {
-  success: boolean;
   diagnostico_id: number;
   diagnostico_codigo: number;
   diagnostico_texto: string;
@@ -24,7 +23,7 @@ export const crearDiagnostico = async (
   const response = await api.post("/diagnosticar", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
-  return response.data;
+  return response.data.data;
 };
 
 export const validarDiagnostico = async (

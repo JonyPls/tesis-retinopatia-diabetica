@@ -24,6 +24,8 @@ export function usePatients() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+
   const [formData, setFormData] = useState<PatientFormData>(INITIAL_FORM);
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -72,10 +74,12 @@ export function usePatients() {
     let rawValue = value;
     if (tipoDoc === "DNI") {
       rawValue = rawValue.replace(/\D/g, "");
+    } else if (tipoDoc === "PAS") {
+      rawValue = rawValue.replace(/[^A-Za-z0-9]/g, "").replace(/Ñ/g, "").toUpperCase();
     } else {
       rawValue = rawValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
     }
-    const maxLength = tipoDoc === "DNI" ? 8 : 12;
+    const maxLength = tipoDoc === "DNI" ? 8 : tipoDoc === "PAS" ? 9 : 12;
     setFormData((prev) => ({
       ...prev,
       nro_documento: rawValue.slice(0, maxLength),
@@ -100,8 +104,12 @@ export function usePatients() {
       setFormError("El DNI debe tener exactamente 8 dígitos.");
       return;
     }
-    if (formData.tipo_doc === "CE" && formData.nro_documento.length < 8) {
-      setFormError("El CE debe tener al menos 8 dígitos.");
+    if (formData.tipo_doc === "CE" && (formData.nro_documento.length < 8 || formData.nro_documento.length > 12)) {
+      setFormError("El CE debe tener entre 8 y 12 caracteres.");
+      return;
+    }
+    if (formData.tipo_doc === "PAS" && (formData.nro_documento.length < 3 || formData.nro_documento.length > 9)) {
+      setFormError("El Pasaporte debe tener entre 3 y 9 caracteres.");
       return;
     }
 
@@ -165,6 +173,8 @@ export function usePatients() {
     startIndex,
     endIndex,
     currentData,
+    viewMode,
+    setViewMode,
     open,
     setOpen,
     consent,

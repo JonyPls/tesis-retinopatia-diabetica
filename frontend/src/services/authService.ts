@@ -1,25 +1,25 @@
 import api from "./api";
 
-interface LoginResponse {
-  status: string;
-  message: string;
+interface UserData {
+  id: number;
+  username: string;
+  nombres: string;
+  apellidos: string;
+  roles: string[];
+}
+
+interface LoginData {
   token: string;
-  user: {
-    id: number;
-    username: string;
-    nombres: string;
-    apellidos: string;
-    roles: string[];
-  };
+  user: UserData;
 }
 
 export const login = async (
   username: string,
   password: string,
-): Promise<LoginResponse> => {
-  const response = await api.post<LoginResponse>("/login", {
+): Promise<LoginData> => {
+  const response = await api.post("/login", {
     username,
     password,
   });
-  return response.data;
+  return response.data.data;
 };

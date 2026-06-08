@@ -149,7 +149,7 @@ export function useDiagnosis(): DiagnosisHook {
         hasError = true;
         toast({
           title: `Error al procesar ${eye === "OD" ? "Ojo Derecho" : "Ojo Izquierdo"}`,
-          description: err.response?.data?.error || "Error inesperado.",
+          description: err.response?.data?.message || "Error inesperado.",
           variant: "destructive",
         });
       }
@@ -196,12 +196,12 @@ export function useDiagnosis(): DiagnosisHook {
         comments[eye],
       );
       if (resp.success) {
-        toast({ title: "Validación guardada", description: resp.mensaje });
+        toast({ title: "Validación guardada", description: resp.message });
         // Opcional: marcar en resultados que fue validado (no tenemos campo específico)
       } else {
         toast({
           title: "Error",
-          description: resp.error || "Error al validar.",
+          description: resp.message || "Error al validar.",
           variant: "destructive",
         });
       }
@@ -239,7 +239,7 @@ export function useDiagnosis(): DiagnosisHook {
           hasError = true;
           toast({
             title: "Error",
-            description: resp.error || `Error al validar ${eye}`,
+            description: resp.message || `Error al validar ${eye}`,
             variant: "destructive",
           });
         }

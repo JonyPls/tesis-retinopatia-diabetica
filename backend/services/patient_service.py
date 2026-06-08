@@ -7,19 +7,20 @@ from models.patient_model import (
     buscar_paciente,
     obtener_pacientes_recientes
 )
+from models.document_model import obtener_tipo_documento_por_codigo
 
 def obtener_todos_pacientes():
     try:
         pacientes = obtener_pacientes()
         return {
-            "status": "success",
+            "success": True,
             "data": pacientes
         }, 200
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500
 
 def registrar_nuevo_paciente(datos_paciente_dict):
-    tipo_doc = datos_paciente_dict.get('tipo_doc')
+    tipo_doc_codigo = datos_paciente_dict.get('tipo_doc')
     nro_documento = datos_paciente_dict.get('nro_documento')
     nombres = datos_paciente_dict.get('nombres')
     apellidos = datos_paciente_dict.get('apellidos')
@@ -27,58 +28,64 @@ def registrar_nuevo_paciente(datos_paciente_dict):
     fecha_nacimiento = datos_paciente_dict.get('fecha_nacimiento')
     telefono = datos_paciente_dict.get('telefono')
 
-    if not all([tipo_doc, nro_documento, nombres, apellidos, sexo, fecha_nacimiento, telefono]):
-        return {"status": "error", "message": "Todos los campos son obligatorios"}, 400
+    if not all([tipo_doc_codigo, nro_documento, nombres, apellidos, sexo, fecha_nacimiento, telefono]):
+        return {"success": False, "message": "Todos los campos son obligatorios"}, 400
+
+    # Convertir código de documento (ej. "DNI") a ID numérico de la BD
+    td = obtener_tipo_documento_por_codigo(tipo_doc_codigo)
+    if not td:
+        return {"success": False, "message": "Tipo de documento inválido"}, 400
+    tipo_doc_id = td["id"]
 
     try:
         # Verificar si existe ya el número de documento
         if obtener_paciente_por_nrodocumento(nro_documento):
-            return {"status": "error", "message": "El documento ya se encuentra registrado en el sistema"}, 409
+            return {"success": False, "message": "El documento ya se encuentra registrado en el sistema"}, 409
 
-        insertar_paciente(tipo_doc, nro_documento, nombres, apellidos, sexo, fecha_nacimiento, telefono)
-        return {"status": "success", "message": "Paciente registrado correctamente"}, 201     
+        insertar_paciente(tipo_doc_id, nro_documento, nombres, apellidos, sexo, fecha_nacimiento, telefono)
+        return {"success": True, "message": "Paciente registrado correctamente"}, 201     
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500
 
 def obtener_detalle_paciente(paciente_id):
     try:
         paciente = obtener_paciente_por_id(paciente_id)
         if paciente:
             return {
-                "status": "success",
+                "success": True,
                 "data": paciente
             }, 200
         else:
-            return {"status": "error", "message": "Paciente no encontrado"}, 404
+            return {"success": False, "message": "Paciente no encontrado"}, 404
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500
 
 
 def obtener_historial_diagnosticos(paciente_id):
     try:
         historial = obtener_diagnosticos_paciente(paciente_id)
         return {
-            "status": "success",
+            "success": True,
             "data": historial
         }, 200
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500
 
 
 def buscar_pacientes_dinamico(query_text):
     try:
         resultados = buscar_paciente(query_text)
         return {
-            "status": "success",
+            "success": True,
             "data": resultados
         }, 200
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500
 
 
 def obtener_recientes():
     try:
         pacientes = obtener_pacientes_recientes()
-        return {"status": "success", "data": pacientes}, 200
+        return {"success": True, "data": pacientes}, 200
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500

@@ -21,7 +21,7 @@ def token_required(f):
         # 3. Si no hay token, bloqueamos el acceso inmediatamente
         if not token:
             return jsonify({
-                "status": "error", 
+                "success": False, 
                 "message": "Falta el token de autorización. Acceso denegado."
             }), 401
 
@@ -32,12 +32,12 @@ def token_required(f):
             
         except jwt.ExpiredSignatureError:
             return jsonify({
-                "status": "error", 
+                "success": False, 
                 "message": "El token ha expirado. Por favor, inicie sesión nuevamente."
             }), 401
         except jwt.InvalidTokenError:
             return jsonify({
-                "status": "error", 
+                "success": False, 
                 "message": "Token inválido o corrupto."
             }), 401
 

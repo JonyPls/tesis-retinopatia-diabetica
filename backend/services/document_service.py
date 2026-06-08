@@ -4,8 +4,8 @@ def obtener_lista_documentos():
     try:
         resultados = obtener_tipos_documento_activos()
         return {
-            "status": "success",
+            "success": True,
             "data": resultados
         }, 200
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return {"success": False, "message": str(e)}, 500

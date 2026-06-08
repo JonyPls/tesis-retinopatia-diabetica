@@ -47,10 +47,10 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         resultado_ia["diagnostico_id"] = nuevo_id
         resultado_ia["gradcam_url"] = nombre_gradcam
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
-        return resultado_ia
+        return {"success": True, "data": resultado_ia}
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "message": str(e)}
     
 
 def confirmar_validacion_diagnostico(diagnostico_id: int, diagnostico_final: int, comentario_medico: str = None) -> dict:
@@ -60,8 +60,8 @@ def confirmar_validacion_diagnostico(diagnostico_id: int, diagnostico_final: int
         
         return {
             "success": True,
-            "estado_validacion": nuevo_estado,
-            "mensaje": "Diagnóstico validado y guardado exitosamente."
+            "data": {"estado_validacion": nuevo_estado},
+            "message": "Diagnóstico validado y guardado exitosamente."
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "message": str(e)}

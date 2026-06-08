@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/store/authStore";
 
 import Login from "./pages/Login";
-import Index from "./pages/Index.tsx";
+import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound.tsx";
 import Patients from "./pages/Patients";
 import PatientProfile from "./pages/PatientProfile";
@@ -46,7 +46,7 @@ const App = () => (
           <Route path="/" element={<Login />} />
 
           {/* RUTAS PROTEGIDAS — cualquier usuario autenticado */}
-          <Route path="/dashboard"     element={<PrivateRoute><Index /></PrivateRoute>} />
+          <Route path="/dashboard"     element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/pacientes"     element={<PrivateRoute><Patients /></PrivateRoute>} />
           <Route path="/pacientes/:id" element={<PrivateRoute><PatientProfile /></PrivateRoute>} />
           <Route path="/diagnostico"   element={<PrivateRoute><Diagnosis /></PrivateRoute>} />

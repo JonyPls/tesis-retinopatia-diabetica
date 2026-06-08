@@ -89,10 +89,10 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-sidebar-accent-foreground whitespace-nowrap">
-                Centro Oftalmológico
+                Sistema Clínico
               </span>
               <span className="text-xs text-sidebar-foreground/90 whitespace-nowrap">
-                del Norte · RD-AI
+                Centro Oftalmológico del Norte
               </span>
             </div>
           )}
