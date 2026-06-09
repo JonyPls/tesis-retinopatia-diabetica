@@ -17,6 +17,10 @@ export interface DiagnosisHook {
   canNext: boolean;
   isSaving: boolean;
   processingEye: EyeKey | null;
+  modalPhase: "idle" | "validating" | "analyzing" | "error";
+  modalProgress: number;
+  validationError: string | null;
+  dismissError: () => void;
 
   // Paso 1 — Paciente
   query: string;

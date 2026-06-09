@@ -17,17 +17,17 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         # Capa 1 de Validación
         check = validar_formato_y_dimensiones(image_bytes)
         if not check["valido"]:
-            return {"success": False, "error": check["error"]}
+            return {"success": False, "message": check["error"]}
         
         # Capa 2 de Validación
         check = validar_region_circular(image_bytes)
         if not check["valido"]:
-            return {"success": False, "error": check["error"]}
+            return {"success": False, "message": check["error"]}
         
         # Capa 3 de Validación
         check = validar_contenido_semantico(image_bytes)
         if not check["valido"]:
-            return {"success": False, "error": check["error"]}
+            return {"success": False, "message": check["error"]}
         
         
         # Proceso normal al ser una retinografía

@@ -1,6 +1,6 @@
 ﻿import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowLeft, Loader2, Save, Brain } from "lucide-react";
+import { ArrowRight, ArrowLeft, Loader2, Save, Brain, XCircle, AlertTriangle } from "lucide-react";
 import { useDiagnosis } from "@/modules/diagnosis/hooks/useDiagnosis";
 import { DiagnosisStepper } from "@/modules/diagnosis/components/DiagnosisStepper";
 import { PatientSelector } from "@/modules/diagnosis/components/PatientSelector";
@@ -27,6 +27,10 @@ export default function Diagnosis() {
     canNext,
     isSaving,
     processingEye,
+    modalPhase,
+    modalProgress,
+    validationError,
+    dismissError,
     resetAll,
     // validation
     activeEye,
@@ -152,31 +156,82 @@ export default function Diagnosis() {
         )}
       </div>
 
-      {/* Modal de carga — analizando imágenes */}
-      {isSaving && (
+      {/* Modal de procesamiento — contenedor único barra persistente */}
+      {modalPhase !== "idle" && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 max-w-sm w-full mx-4">
-            <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Brain className="h-7 w-7 text-primary animate-pulse" />
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-semibold text-foreground">Analizando imágenes</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {processingEye
-                  ? `Procesando ${processingEye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"}...`
-                  : "Preparando análisis..."}
-              </p>
-            </div>
-            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all duration-500"
-                style={{ width: `${processingEye === "OD" ? 50 : processingEye === "OI" ? 100 : 0}%` }}
-              />
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Ejecutando modelo ResNet50 · Deep Learning
-            </div>
+            {modalPhase === "error" ? (
+              <>
+                <div className="h-14 w-14 rounded-xl bg-red-100 flex items-center justify-center">
+                  <XCircle className="h-7 w-7 text-red-600" />
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-red-700">Validación fallida</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    {validationError || "La imagen no cumple con los requisitos."}
+                  </p>
+                </div>
+                <div className="flex items-start gap-3 w-full bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800 leading-relaxed">
+                    <p className="font-medium mb-0.5">Formatos aceptados:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>JPG, PNG o TIFF</li>
+                      <li>Mín. 300×300 píxeles</li>
+                      <li>Región ocular visible</li>
+                      <li>Máx. 30 MB por imagen</li>
+                    </ul>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={dismissError} className="w-full mt-2">
+                  Entendido
+                </Button>
+              </>
+            ) : (
+              <>
+                <div
+                  className={`h-14 w-14 rounded-xl flex items-center justify-center ${
+                    modalPhase === "validating" ? "bg-amber-100" : "bg-primary/10"
+                  }`}
+                >
+                  {modalPhase === "validating" ? (
+                    <Loader2 className="h-7 w-7 text-amber-600 animate-spin" />
+                  ) : (
+                    <Brain className="h-7 w-7 text-primary animate-pulse" />
+                  )}
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-foreground">
+                    {modalPhase === "validating" ? "Validando imagen" : "Analizando con IA"}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {processingEye
+                      ? `${modalPhase === "validating" ? "Verificando" : "Procesando"} ${processingEye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"}...`
+                      : modalPhase === "validating"
+                        ? "Preparando validación..."
+                        : "Preparando análisis..."}
+                  </p>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: modalProgress + "%",
+                      background:
+                        modalPhase === "validating"
+                          ? "linear-gradient(to right, #f59e0b, #d97706)"
+                          : "linear-gradient(to right, #14b8a6, #059669)",
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {modalPhase === "validating"
+                    ? "Formato · Región ocular · CLIP semántico"
+                    : "Ejecutando modelo ResNet50 · Deep Learning"}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

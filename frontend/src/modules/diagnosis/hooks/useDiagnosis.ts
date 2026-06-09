@@ -21,6 +21,10 @@ export function useDiagnosis(): DiagnosisHook {
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [processingEye, setProcessingEye] = useState<EyeKey | null>(null);
+  const [modalPhase, setModalPhase] = useState<"idle" | "validating" | "analyzing" | "error">("idle");
+  const [modalProgress, setModalProgress] = useState(0);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [failedEye, setFailedEye] = useState<EyeKey | null>(null);
 
   // Paso 1
   const [query, setQuery] = useState("");
@@ -117,19 +121,34 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   // ── Guardar y procesar ────────────────────────────────────────────
+  const MIN_VALIDATE_MS = 1500;
+  const MIN_ANALYZE_MS = 2000;
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   const handleSave = async () => {
     if (!selectedPatient) return;
-    setIsSaving(true);
 
     const eyesToProcess = (["OD", "OI"] as EyeKey[]).filter(
       (eye) => eyes[eye].file !== null,
     );
 
     const newResults: Partial<Record<EyeKey, DiagnosisResult>> = {};
+    const N = eyesToProcess.length;
+    let completedSegments = 0;
     let hasError = false;
 
-    for (const eye of eyesToProcess) {
+    setIsSaving(true);
+    setModalPhase("validating");
+    setValidationError(null);
+    setModalProgress(0);
+
+    // ── Loop 1: Validación (1 segmento por ojo) ──────────────────────
+    for (let i = 0; i < N; i++) {
+      const eye = eyesToProcess[i];
       setProcessingEye(eye);
+      const segmentStart = Date.now();
+
       try {
         const ojoDominante = eye === "OD" ? "Derecho" : "Izquierdo";
         const result = await crearDiagnostico(
@@ -138,47 +157,91 @@ export function useDiagnosis(): DiagnosisHook {
           eyes[eye].file!,
         );
 
-        // 2. Se construye la URL completa para el Grad-CAM si existe
-        const BACKEND_URL =
-          import.meta.env.VITE_API_URL || "http://localhost:5000";
-        if (result.gradcam_url) {
-          const token = useAuthStore.getState().token;
-          result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}?token=${token}`;
+        // Garantizar tiempo mínimo de validación
+        const elapsed = Date.now() - segmentStart;
+        if (elapsed < MIN_VALIDATE_MS) {
+          await sleep(MIN_VALIDATE_MS - elapsed);
         }
 
         newResults[eye] = result;
+        completedSegments++;
+        setModalProgress((completedSegments / (2 * N)) * 100);
       } catch (err: any) {
         hasError = true;
-        toast({
-          title: `Error al procesar ${eye === "OD" ? "Ojo Derecho" : "Ojo Izquierdo"}`,
-          description:
-            err.response?.data?.error ||
-            err.response?.data?.message ||
-            "Error inesperado.",
-          variant: "destructive",
-        });
+        const status = err.response?.status;
+        const msg = err.response?.data?.message || "Error inesperado.";
+
+        if (status === 400 || status === 422) {
+          setFailedEye(eye);
+          setValidationError(msg);
+          setModalPhase("error");
+        } else {
+          toast({
+            title: `Error al procesar ${eye === "OD" ? "Ojo Derecho" : "Ojo Izquierdo"}`,
+            description: msg,
+            variant: "destructive",
+          });
+          setModalPhase("idle");
+          setIsSaving(false);
+        }
+        break;
       }
     }
 
+    if (hasError) return;
+
+    // ── Loop 2: Análisis (1 segmento por ojo, solo visual) ──────────
+    setModalPhase("analyzing");
+
+    for (let i = 0; i < N; i++) {
+      const eye = eyesToProcess[i];
+      setProcessingEye(eye);
+
+      // Construir URL Grad-CAM
+      const result = newResults[eye]!;
+      const BACKEND_URL =
+        import.meta.env.VITE_API_URL || "http://localhost:5000";
+      if (result.gradcam_url) {
+        const token = useAuthStore.getState().token;
+        result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}?token=${token}`;
+      }
+
+      const segmentStart = Date.now();
+      await sleep(MIN_ANALYZE_MS);
+
+      completedSegments++;
+      setModalProgress((completedSegments / (2 * N)) * 100);
+    }
+
+    // ── Finalizar ────────────────────────────────────────────────────
+    setProcessingEye(null);
+    setModalPhase("idle");
+    setIsSaving(false);
+    setResults(newResults);
+    setActiveEye(eyesToProcess[0]);
+
+    const init: Record<EyeKey, number> = { OD: 0, OI: 0 };
+    (Object.keys(newResults) as EyeKey[]).forEach((e) => {
+      init[e] = newResults[e]!.diagnostico_codigo;
+    });
+    setFinalSelectionState((prev) => ({ ...prev, ...init }));
+    setComments({ OD: "", OI: "" });
+
+    toast({
+      title: "Diagnóstico guardado",
+      description: "Los resultados han sido guardados correctamente.",
+    });
+    setStep(3);
+  };
+
+  const dismissError = () => {
+    if (failedEye) clearEye(failedEye);
+    setFailedEye(null);
+    setModalPhase("idle");
+    setModalProgress(0);
+    setValidationError(null);
     setProcessingEye(null);
     setIsSaving(false);
-
-    if (!hasError && Object.keys(newResults).length > 0) {
-      setResults(newResults);
-      setActiveEye(eyesToProcess[0]);
-      // Inicializar selecciones finales con lo que predijo la IA
-      const init: Record<EyeKey, number> = { OD: 0, OI: 0 };
-      (Object.keys(newResults) as EyeKey[]).forEach((e) => {
-        init[e] = newResults[e]!.diagnostico_codigo;
-      });
-      setFinalSelectionState((prev) => ({ ...prev, ...init }));
-      setComments({ OD: "", OI: "" });
-      toast({
-        title: "Diagnóstico guardado",
-        description: "Los resultados han sido guardados correctamente.",
-      });
-      setStep(3);
-    }
   };
 
   // ── Validación ────────────────────────────────────────────────────
@@ -305,6 +368,10 @@ export function useDiagnosis(): DiagnosisHook {
     canNext,
     isSaving,
     processingEye,
+    modalPhase,
+    modalProgress,
+    validationError,
+    dismissError,
     // Validación
     finalSelection,
     setFinalSelection,

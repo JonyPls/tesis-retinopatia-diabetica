@@ -56,7 +56,7 @@ def validar_formato_y_dimensiones(image_bytes: bytes) -> dict:
 
 # Capa 2: Validación de región circular dominante ------------------------
 
-UMBRAL_AREA_CIRCULAR = 0.40  # La región circular debe ocupar al menos el 40% del área total
+UMBRAL_AREA_CIRCULAR = 0.40  # La región circular debe ocupar al menos ese porcentaje del área total
 
 def validar_region_circular(image_bytes: bytes) -> dict:
     """
