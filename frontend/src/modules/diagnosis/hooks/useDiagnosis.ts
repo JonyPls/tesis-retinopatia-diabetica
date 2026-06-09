@@ -151,7 +151,10 @@ export function useDiagnosis(): DiagnosisHook {
         hasError = true;
         toast({
           title: `Error al procesar ${eye === "OD" ? "Ojo Derecho" : "Ojo Izquierdo"}`,
-          description: err.response?.data?.message || "Error inesperado.",
+          description:
+            err.response?.data?.error ||
+            err.response?.data?.message ||
+            "Error inesperado.",
           variant: "destructive",
         });
       }

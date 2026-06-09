@@ -3,6 +3,7 @@ import uuid
 from PIL import Image
 import io
 from werkzeug.datastructures import FileStorage
+from dl_model.validator import validar_formato_y_dimensiones, validar_region_circular, validar_contenido_semantico
 from dl_model.inference import predecir_imagen_bytes
 from models.diagnosis_model import crear_diagnostico, validar_diagnostico
 
@@ -12,7 +13,24 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_id: int, ojo_evaluado: str) -> dict:
     try:
         image_bytes = archivo_imagen.read()
+
+        # Capa 1 de Validación
+        check = validar_formato_y_dimensiones(image_bytes)
+        if not check["valido"]:
+            return {"success": False, "error": check["error"]}
         
+        # Capa 2 de Validación
+        check = validar_region_circular(image_bytes)
+        if not check["valido"]:
+            return {"success": False, "error": check["error"]}
+        
+        # Capa 3 de Validación
+        check = validar_contenido_semantico(image_bytes)
+        if not check["valido"]:
+            return {"success": False, "error": check["error"]}
+        
+        
+        # Proceso normal al ser una retinografía
         resultado_ia = predecir_imagen_bytes(image_bytes)
 
         cam_image_array = resultado_ia.pop("cam_image_array")
