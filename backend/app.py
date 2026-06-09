@@ -32,5 +32,14 @@ def home():
 
 
 
+# Precargar CLIP para validación semántica (evita demora en primera petición)
+with app.app_context():
+    from dl_model.validator import _get_clip
+    try:
+        _get_clip()
+        print("[OK] CLIP model loaded successfully")
+    except Exception as e:
+        print(f"[WARN] CLIP model failed to load: {e}")
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

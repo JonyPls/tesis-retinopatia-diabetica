@@ -16,12 +16,12 @@ const EYE_LABEL: Record<EyeKey, { short: string; full: string }> = {
   OI: { short: "OI", full: "Ojo Izquierdo" },
 };
 
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/tiff", "image/bmp"];
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/tiff"];
 const MAX_SIZE_MB = 30;
 
 function validateFile(file: File): string | null {
   if (!ACCEPTED_TYPES.includes(file.type)) {
-    return "Formato no admitido. Use JPG, PNG, TIFF o BMP.";
+    return "Formato no admitido. Use JPG, PNG o TIFF.";
   }
   if (file.size > MAX_SIZE_MB * 1024 * 1024) {
     return `El archivo supera los ${MAX_SIZE_MB} MB permitidos.`;
@@ -131,7 +131,7 @@ export function DropZone({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*,.tif,.tiff"
+          accept=".jpg,.jpeg,.png,.tif,.tiff"
           className="hidden"
           onChange={onInputChange}
         />
@@ -232,7 +232,7 @@ export function DropZone({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,.tif,.tiff"
+        accept=".jpg,.jpeg,.png,.tif,.tiff"
         className="hidden"
         onChange={onInputChange}
       />

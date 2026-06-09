@@ -1,9 +1,11 @@
 import io
+import logging
 import cv2
 import numpy as np
 from PIL import Image
 from transformers import CLIPProcessor, CLIPModel
 import torch
+import logging
 
 # Capa 1: Validación de formato y dimensiones ------------------------
 
@@ -113,22 +115,31 @@ def validar_region_circular(image_bytes: bytes) -> dict:
 
 CLIP_MODEL_ID = "openai/clip-vit-base-patch32"
 
-# Descripciones candidatas para la comparación semántica
 CLIP_PROMPTS = [
-    "a retinal fundus photograph of an eye",       # [0] → aceptar
+    "a retinal fundus photograph of an eye",            # [0] → aceptar
     "a photograph of a planet or astronomical object",  # [1] → rechazar
-    "a generic photograph, document, or non-medical image",  # [2] → rechazar
+    "a photograph of an animal or pet",                 # [2] → rechazar
+    "a photograph of a person or face",                 # [3] → rechazar
+    "a document, screenshot or text image",             # [4] → rechazar
+    "a landscape, nature or outdoor photograph",        # [5] → rechazar
+    "a generic or unrecognized image",                  # [6] → rechazar
 ]
 
-# Índice del prompt que corresponde a una retinografía válida
 PROMPT_VALIDO_IDX = 0
 
-# Singleton para no recargar CLIP en cada petición
+MENSAJES_RECHAZO = {
+    1: "Se detectó una imagen astronómica. Por favor suba una retinografía de fondo de ojo.",
+    2: "Se detectó la fotografía de un animal. Por favor suba una retinografía de fondo de ojo.",
+    3: "Se detectó la fotografía de una persona. Por favor suba una retinografía de fondo de ojo.",
+    4: "Se detectó un documento o captura de pantalla. Por favor suba una retinografía de fondo de ojo.",
+    5: "Se detectó una fotografía de paisaje. Por favor suba una retinografía de fondo de ojo.",
+    6: "La imagen no fue reconocida como una retinografía. Por favor suba una retinografía de fondo de ojo.",
+}
+
 _clip_model     = None
 _clip_processor = None
 
 def _get_clip():
-    """Carga CLIP solo la primera vez que se necesita."""
     global _clip_model, _clip_processor
     if _clip_model is None:
         _clip_model     = CLIPModel.from_pretrained(CLIP_MODEL_ID)
@@ -138,23 +149,11 @@ def _get_clip():
 
 
 def validar_contenido_semantico(image_bytes: bytes) -> dict:
-    """
-    Usa CLIP para verificar semánticamente que el contenido
-    de la imagen corresponde a una retinografía de fondo de ojo
-    y no a otro tipo de imagen que haya superado las capas anteriores
-    (ej. fotografía de un planeta sobre fondo negro).
-
-    Retorna:
-        {"valido": True} si CLIP identifica la imagen como retinografía.
-        {"valido": False, "error": "<motivo>"} en caso contrario.
-    """
     try:
         modelo, processor = _get_clip()
 
-        # 1. Convertir bytes a imagen PIL en RGB
         imagen = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2. Preparar inputs: imagen + todos los prompts de texto
         inputs = processor(
             text=CLIP_PROMPTS,
             images=imagen,
@@ -162,25 +161,22 @@ def validar_contenido_semantico(image_bytes: bytes) -> dict:
             padding=True
         )
 
-        # 3. Calcular similitudes imagen-texto
         with torch.no_grad():
-            outputs    = modelo(**inputs)
-            logits     = outputs.logits_per_image  # shape: [1, n_prompts]
-            probs      = logits.softmax(dim=1).squeeze()  # shape: [n_prompts]
+            outputs = modelo(**inputs)
+            logits  = outputs.logits_per_image
+            probs   = logits.softmax(dim=1).squeeze()
 
-        # 4. El prompt ganador es el de mayor probabilidad
         idx_ganador = int(probs.argmax())
 
         if idx_ganador != PROMPT_VALIDO_IDX:
-            return {
-                "valido": False,
-                "error": "El contenido de la imagen no corresponde a una "
-                         "retinografía de fondo de ojo."
-            }
+            mensaje = MENSAJES_RECHAZO.get(
+                idx_ganador,
+                "La imagen no corresponde a una retinografía de fondo de ojo."
+            )
+            return {"valido": False, "error": mensaje}
 
         return {"valido": True}
 
     except Exception as e:
-        # Si CLIP falla por cualquier razón, dejamos pasar la imagen
-        # para no bloquear el flujo clínico por un error del validador
+        logging.warning("CLIP validation failed, allowing image: %s", e)
         return {"valido": True}
