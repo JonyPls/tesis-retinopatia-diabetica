@@ -16,6 +16,7 @@ export interface DiagnosisHook {
   resetAll: () => void;
   canNext: boolean;
   isSaving: boolean;
+  processingEye: EyeKey | null;
 
   // Paso 1 — Paciente
   query: string;

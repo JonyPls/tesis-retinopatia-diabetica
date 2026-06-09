@@ -1,6 +1,6 @@
 ﻿import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowRight, ArrowLeft, Loader2, Save, Brain } from "lucide-react";
 import { useDiagnosis } from "@/modules/diagnosis/hooks/useDiagnosis";
 import { DiagnosisStepper } from "@/modules/diagnosis/components/DiagnosisStepper";
 import { PatientSelector } from "@/modules/diagnosis/components/PatientSelector";
@@ -20,12 +20,13 @@ import {
 
 export default function Diagnosis() {
   const diagnosisHook = useDiagnosis();
-  const {
+    const {
     step,
     goBack,
     goNext,
     canNext,
     isSaving,
+    processingEye,
     resetAll,
     // validation
     activeEye,
@@ -107,9 +108,7 @@ export default function Diagnosis() {
             className="bg-gradient-primary hover:opacity-90 shadow-elevated"
           >
             {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" /> Analizando...
-              </>
+              <>Procesando...</>
             ) : (
               <>
                 <Save className="h-4 w-4 mr-2" /> Guardar y Analizar{" "}
@@ -152,6 +151,35 @@ export default function Diagnosis() {
           </AlertDialog>
         )}
       </div>
+
+      {/* Modal de carga — analizando imágenes */}
+      {isSaving && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 max-w-sm w-full mx-4">
+            <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Brain className="h-7 w-7 text-primary animate-pulse" />
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-foreground">Analizando imágenes</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {processingEye
+                  ? `Procesando ${processingEye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"}...`
+                  : "Preparando análisis..."}
+              </p>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all duration-500"
+                style={{ width: `${processingEye === "OD" ? 50 : processingEye === "OI" ? 100 : 0}%` }}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Ejecutando modelo ResNet50 · Deep Learning
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

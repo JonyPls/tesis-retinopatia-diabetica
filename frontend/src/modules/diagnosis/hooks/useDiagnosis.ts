@@ -20,6 +20,7 @@ const EMPTY_EYE: EyeState = { file: null, preview: null };
 export function useDiagnosis(): DiagnosisHook {
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
+  const [processingEye, setProcessingEye] = useState<EyeKey | null>(null);
 
   // Paso 1
   const [query, setQuery] = useState("");
@@ -128,6 +129,7 @@ export function useDiagnosis(): DiagnosisHook {
     let hasError = false;
 
     for (const eye of eyesToProcess) {
+      setProcessingEye(eye);
       try {
         const ojoDominante = eye === "OD" ? "Derecho" : "Izquierdo";
         const result = await crearDiagnostico(
@@ -155,6 +157,7 @@ export function useDiagnosis(): DiagnosisHook {
       }
     }
 
+    setProcessingEye(null);
     setIsSaving(false);
 
     if (!hasError && Object.keys(newResults).length > 0) {
@@ -298,6 +301,7 @@ export function useDiagnosis(): DiagnosisHook {
     resetAll,
     canNext,
     isSaving,
+    processingEye,
     // Validación
     finalSelection,
     setFinalSelection,
