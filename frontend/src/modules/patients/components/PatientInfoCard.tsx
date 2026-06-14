@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/medical/StatusBadge";
-import { IdCard, Cake, User, Phone, Calendar } from "lucide-react";
+import { IdCard, Cake, User, Phone, Calendar, ChevronUp, ChevronDown } from "lucide-react";
 import { Patient, Diagnosis } from "../types";
 
 interface PatientInfoCardProps {
@@ -12,6 +12,8 @@ interface PatientInfoCardProps {
   status: string;
   lastVisit: string;
   maxLevel: number;
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 export function PatientInfoCard({
@@ -22,22 +24,56 @@ export function PatientInfoCard({
   status,
   lastVisit,
   maxLevel,
+  collapsed,
+  onToggle,
 }: PatientInfoCardProps) {
   const fullName =
     patient.nombres_apellidos ||
     `${patient.nombres} ${patient.apellidos}`.trim();
 
+  if (collapsed) {
+    return (
+      <div className="flex items-center gap-3 p-2.5 rounded-xl border border-border bg-card shadow-sm">
+        <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-sm shadow-elevated">
+          {getInitials(patient.nombres, patient.apellidos)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold leading-tight">{fullName}</p>
+          <div className="mt-0.5">
+            <StatusBadge status={status as any} />
+          </div>
+        </div>
+        <button
+          onClick={onToggle}
+          className="h-8 w-8 shrink-0 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
+          title="Expandir datos del paciente"
+        >
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <Card className="lg:col-span-1 shadow-card h-fit">
+    <Card className="shadow-card h-fit">
       <CardHeader className="pb-4">
         <div className="flex items-start gap-4">
-          <div className="h-14 w-14 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-lg shadow-elevated">
+          <div className="h-14 w-14 shrink-0 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-lg shadow-elevated">
             {getInitials(patient.nombres, patient.apellidos)}
           </div>
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-base leading-tight">
-              {fullName}
-            </CardTitle>
+            <div className="flex items-start justify-between gap-2">
+              <CardTitle className="text-base leading-tight">
+                {fullName}
+              </CardTitle>
+              <button
+                onClick={onToggle}
+                className="h-8 w-8 shrink-0 rounded-md hover:bg-muted flex items-center justify-center transition-colors -mr-1 -mt-1"
+                title="Colapsar datos del paciente"
+              >
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
             <div className="mt-1.5">
               <StatusBadge status={status as any} />
             </div>

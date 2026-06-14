@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { PatientTimeline } from "@/modules/patients/components/PatientTimeline";
 export default function PatientProfile() {
   const { id } = useParams();
   const hook = usePatientProfile(id);
+  const [infoCollapsed, setInfoCollapsed] = useState(false);
 
   if (hook.isLoading) {
     return (
@@ -67,7 +69,7 @@ export default function PatientProfile() {
         </>
       }
     >
-      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+      <div className={`grid gap-6 grid-cols-1 ${infoCollapsed ? "" : "lg:grid-cols-3"}`}>
         <PatientInfoCard
           patient={hook.patient}
           diagnoses={hook.diagnoses}
@@ -76,8 +78,11 @@ export default function PatientProfile() {
           status={hook.status}
           lastVisit={hook.lastVisit}
           maxLevel={hook.maxLevel}
+          collapsed={infoCollapsed}
+          onToggle={() => setInfoCollapsed((v) => !v)}
         />
         <PatientTimeline
+          className={infoCollapsed ? "lg:col-span-3" : "lg:col-span-2"}
           diagnoses={hook.diagnoses}
           sortedDx={hook.sortedDx}
           mapResultToLevel={hook.mapResultToLevel}

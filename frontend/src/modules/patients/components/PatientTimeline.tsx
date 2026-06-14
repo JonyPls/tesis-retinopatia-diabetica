@@ -1,24 +1,34 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Brain, Calendar, Eye, Stethoscope, FileText, Activity } from "lucide-react";
+import {
+  Brain,
+  Calendar,
+  Eye,
+  Stethoscope,
+  FileText,
+  Activity,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { Diagnosis } from "../types";
+import { RDLevel } from "@/data/rdLevels";
 
 interface PatientTimelineProps {
   diagnoses: Diagnosis[];
   sortedDx: Diagnosis[];
-  mapResultToLevel: (result: string) => number;
+  mapResultToLevel: (result: string) => RDLevel;
+  className?: string;
 }
 
 export function PatientTimeline({
   diagnoses,
   sortedDx,
   mapResultToLevel,
+  className,
 }: PatientTimelineProps) {
   if (diagnoses.length === 0) {
     return (
-      <Card className="lg:col-span-2 shadow-card">
+      <Card className={`shadow-card ${className || ""}`}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
@@ -37,7 +47,7 @@ export function PatientTimeline({
   }
 
   return (
-    <Card className="lg:col-span-2 shadow-card">
+    <Card className={`shadow-card ${className || ""}`}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>

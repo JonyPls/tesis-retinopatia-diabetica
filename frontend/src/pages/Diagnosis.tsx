@@ -1,5 +1,6 @@
 ﻿import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { ArrowRight, ArrowLeft, Loader2, Save, Brain, XCircle, AlertTriangle } from "lucide-react";
 import { useDiagnosis } from "@/modules/diagnosis/hooks/useDiagnosis";
 import { DiagnosisStepper } from "@/modules/diagnosis/components/DiagnosisStepper";
@@ -42,6 +43,15 @@ export default function Diagnosis() {
     validateAll,
     isValidating,
   } = diagnosisHook;
+
+  const [modalClosing, setModalClosing] = useState(false);
+  const handleDismissError = () => {
+    setModalClosing(true);
+    setTimeout(() => {
+      dismissError();
+      setModalClosing(false);
+    }, 300);
+  };
 
   return (
     <AppLayout
@@ -157,16 +167,32 @@ export default function Diagnosis() {
       </div>
 
       {/* Modal de procesamiento — contenedor único barra persistente */}
-      {modalPhase !== "idle" && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 max-w-sm w-full mx-4">
+      {(() => {
+        const modalVisible = modalPhase !== "idle" && !modalClosing;
+        return (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ease-in-out"
+          style={{
+            backgroundColor: modalVisible ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0)",
+            pointerEvents: modalVisible ? "auto" : "none",
+          }}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 max-w-sm w-full mx-4 transition-all duration-300 ease-in-out"
+            style={{
+              transform: modalVisible ? "scale(1)" : "scale(0.9)",
+              opacity: modalVisible ? 1 : 0,
+            }}
+          >
             {modalPhase === "error" ? (
               <>
                 <div className="h-14 w-14 rounded-xl bg-red-100 flex items-center justify-center">
                   <XCircle className="h-7 w-7 text-red-600" />
                 </div>
                 <div className="text-center">
-                  <p className="text-lg font-semibold text-red-700">Validación fallida</p>
+                  <p className="text-lg font-semibold text-red-700">
+                    Validación fallida — {processingEye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"}
+                  </p>
                   <p className="text-sm text-muted-foreground mt-2">
                     {validationError || "La imagen no cumple con los requisitos."}
                   </p>
@@ -183,7 +209,7 @@ export default function Diagnosis() {
                     </ul>
                   </div>
                 </div>
-                <Button variant="outline" onClick={dismissError} className="w-full mt-2">
+                <Button variant="outline" onClick={handleDismissError} className="w-full mt-2">
                   Entendido
                 </Button>
               </>
@@ -234,7 +260,8 @@ export default function Diagnosis() {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </AppLayout>
   );
 }
