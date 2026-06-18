@@ -1,11 +1,12 @@
-import { DiagnosisResult } from "@/services/diagnosisService";
-import { PatientSearchResult } from "@/services/patientService";
+import { DiagnosisResult, DetalleDiagnosticoExistente } from "@/services/diagnosisService";
+import { PatientSearchResult, DiagnosticoVisita } from "@/services/patientService";
 
 export type EyeKey = "OD" | "OI";
 
 export interface EyeState {
   file: File | null;
   preview: string | null;
+  isExistingImage?: boolean;
 }
 
 export interface DiagnosisHook {
@@ -30,6 +31,24 @@ export interface DiagnosisHook {
   isSearching: boolean;
   handleQueryChange: (value: string) => void;
   selectPatient: (p: PatientSearchResult) => void;
+  clearPatient: () => void;
+
+  // Visitas (paso 1)
+  visitas: DiagnosticoVisita[];
+  selectedVisita: DiagnosticoVisita | null | undefined;
+  selectVisita: (v: DiagnosticoVisita | null) => void;
+  hasMoreVisitas: boolean;
+  visitasExpandidas: boolean;
+  verMasVisitas: () => Promise<void>;
+  verMenosVisitas: () => Promise<void>;
+  isLoadingVisitas: boolean;
+
+  // Modal diagnóstico IA existente (Escenario B)
+  showExistingDiagnosisModal: boolean;
+  existingDetalles: DetalleDiagnosticoExistente[];
+  closeExistingDiagnosisModal: () => void;
+  goToStep2FromExisting: () => void;
+  goToStep3FromExisting: () => void;
 
   // Paso 2 — Imágenes
   eyes: Record<EyeKey, EyeState>;

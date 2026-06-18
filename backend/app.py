@@ -7,6 +7,7 @@ from routes.patient_routes import patient_bp
 from routes.document_routes import document_bp
 from routes.diagnosis_routes import diagnosis_bp
 from routes.files_routes import files_bp
+from routes.informe_routes import informe_bp
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -22,7 +23,8 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(patient_bp)
 app.register_blueprint(document_bp)
 app.register_blueprint(diagnosis_bp)
-app.register_blueprint(files_bp) 
+app.register_blueprint(files_bp)
+app.register_blueprint(informe_bp)
 
 # --- RUTAS BASE ---
 

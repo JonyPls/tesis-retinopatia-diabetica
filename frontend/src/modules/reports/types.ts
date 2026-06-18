@@ -1,0 +1,48 @@
+export interface TipoInforme {
+  id: number;
+  nombre: string;
+  descripcion: string;
+}
+
+export interface Informe {
+  id: number;
+  diagnostico_id: number;
+  tipo_informe_id: number;
+  tipo_informe_nombre?: string;
+  datos_estructurados: Record<string, any>;
+  estado: string;
+  fecha_creado: string;
+  fecha_actualizado: string;
+}
+
+export interface SearchableOption {
+  label: string;
+  value: string;
+  group?: string;
+}
+
+export const GONIOSCOPIA_CONCLUSIONES: SearchableOption[] = [
+  { label: "Ángulo abierto", value: "ÁNGULO ABIERTO AO", group: "AO" },
+  { label: "Ángulo estrecho", value: "ÁNGULO ESTRECHO AO", group: "AO" },
+  { label: "Ángulo cerrado", value: "ÁNGULO CERRADO AO", group: "AO" },
+  { label: "Ángulo abierto", value: "ÁNGULO ABIERTO OD", group: "OD" },
+  { label: "Ángulo estrecho", value: "ÁNGULO ESTRECHO OD", group: "OD" },
+  { label: "Ángulo cerrado", value: "ÁNGULO CERRADO OD", group: "OD" },
+  { label: "Ángulo abierto", value: "ÁNGULO ABIERTO OI", group: "OI" },
+  { label: "Ángulo estrecho", value: "ÁNGULO ESTRECHO OI", group: "OI" },
+  { label: "Ángulo cerrado", value: "ÁNGULO CERRADO OI", group: "OI" },
+];
+
+export interface ReportFormHandle {
+  getData: () => Record<string, any>;
+  isValid: () => boolean;
+}
+
+export const CUADRANTES = ["superior", "inferior", "nasal", "temporal"] as const;
+export const GRADOS = ["I", "II", "III", "IV"] as const;
+export const CUADRANTE_LABELS: Record<string, string> = {
+  superior: "Superior",
+  inferior: "Inferior",
+  nasal: "Nasal",
+  temporal: "Temporal",
+};

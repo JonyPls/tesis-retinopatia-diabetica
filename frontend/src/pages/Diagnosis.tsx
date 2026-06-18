@@ -4,9 +4,11 @@ import { useState } from "react";
 import { ArrowRight, ArrowLeft, Loader2, Save, Brain, XCircle, AlertTriangle } from "lucide-react";
 import { useDiagnosis } from "@/modules/diagnosis/hooks/useDiagnosis";
 import { DiagnosisStepper } from "@/modules/diagnosis/components/DiagnosisStepper";
-import { PatientSelector } from "@/modules/diagnosis/components/PatientSelector";
+import { PatientSelectorStep } from "@/modules/reports/components/PatientSelectorStep";
+import { VisitaSelector } from "@/modules/reports/components/VisitaSelector";
 import { ImageUploader } from "@/modules/diagnosis/components/ImageUploader";
 import { DiagnosisResults } from "@/modules/diagnosis/components/DiagnosisResults";
+import { ExistingDiagnosisModal } from "@/modules/diagnosis/components/ExistingDiagnosisModal";
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -61,15 +63,46 @@ export default function Diagnosis() {
       <DiagnosisStepper step={step} />
 
       {step === 1 && (
-        <PatientSelector
-          query={diagnosisHook.query}
-          searchResults={diagnosisHook.searchResults}
-          recentPatients={diagnosisHook.recentPatients}
-          selectedPatient={diagnosisHook.selectedPatient}
-          isSearching={diagnosisHook.isSearching}
-          handleQueryChange={diagnosisHook.handleQueryChange}
-          selectPatient={diagnosisHook.selectPatient}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <PatientSelectorStep
+            query={diagnosisHook.query}
+            searchResults={diagnosisHook.searchResults}
+            recentPatients={diagnosisHook.recentPatients}
+            selectedPatient={diagnosisHook.selectedPatient}
+            isSearching={diagnosisHook.isSearching}
+            onQueryChange={diagnosisHook.handleQueryChange}
+            onSelect={diagnosisHook.selectPatient}
+            onClear={diagnosisHook.clearPatient}
+          />
+
+          <VisitaSelector
+            visitas={diagnosisHook.visitas}
+            selectedVisitaId={
+              diagnosisHook.selectedVisita === undefined
+                ? undefined
+                : diagnosisHook.selectedVisita === null
+                  ? -1
+                  : diagnosisHook.selectedVisita.diagnostico_id
+            }
+            onSelect={diagnosisHook.selectVisita}
+            hasMore={diagnosisHook.hasMoreVisitas}
+            expandida={diagnosisHook.visitasExpandidas}
+            onVerMas={diagnosisHook.verMasVisitas}
+            onVerMenos={diagnosisHook.verMenosVisitas}
+            pacienteSeleccionado={!!diagnosisHook.selectedPatient}
+            cargandoVisitas={diagnosisHook.isLoadingVisitas}
+          />
+
+          <div className="flex justify-end lg:col-span-2 mt-2">
+            <Button
+              onClick={goNext}
+              disabled={!canNext}
+              className="bg-gradient-primary hover:opacity-90"
+            >
+              Continuar <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {step === 2 && (
@@ -95,6 +128,17 @@ export default function Diagnosis() {
         />
       )}
 
+      {/* Modal diagnóstico IA existente */}
+      <ExistingDiagnosisModal
+        open={diagnosisHook.showExistingDiagnosisModal}
+        detalles={diagnosisHook.existingDetalles}
+        onGoToStep2={diagnosisHook.goToStep2FromExisting}
+        onGoToStep3={diagnosisHook.goToStep3FromExisting}
+        onCancel={diagnosisHook.closeExistingDiagnosisModal}
+      />
+
+      {step !== 1 && (
+      <>
       {/* Navegación */}
       <div className="flex items-center justify-between mt-6 pt-4 border-t border-border">
         <Button
@@ -104,16 +148,6 @@ export default function Diagnosis() {
         >
           <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
         </Button>
-
-        {step === 1 && (
-          <Button
-            onClick={goNext}
-            disabled={!canNext}
-            className="bg-gradient-primary hover:opacity-90"
-          >
-            Continuar <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        )}
 
         {step === 2 && (
           <Button
@@ -165,6 +199,8 @@ export default function Diagnosis() {
           </AlertDialog>
         )}
       </div>
+      </>
+      )}
 
       {/* Modal de procesamiento — contenedor único barra persistente */}
       {(() => {

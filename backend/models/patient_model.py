@@ -61,21 +61,14 @@ def obtener_paciente_por_id(cursor, paciente_id):
 @use_db
 def obtener_diagnosticos_paciente(cursor, paciente_id):
     sql = """
-        SELECT 
+        SELECT DISTINCT
             d.id AS diagnostico_id, 
             d.fecha_registro AS fecha_visita, 
-            CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante,
-            dd.ojo_evaluado, 
-            dd.resultado_ia, 
-            dd.probabilidad_ia,
-            dd.diagnostico_final, 
-            dd.estado_validacion,
-            dd.comentario_medico
+            CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante
         FROM diagnosticos d
         JOIN usuarios u ON d.usuario_id = u.id
-        LEFT JOIN diagnosticos_detalle dd ON d.id = dd.diagnostico_id
         WHERE d.paciente_id = %s
-        ORDER BY d.fecha_registro DESC, dd.ojo_evaluado ASC
+        ORDER BY d.fecha_registro DESC
     """
     cursor.execute(sql, (paciente_id,))
     return cursor.fetchall()
@@ -100,7 +93,7 @@ def buscar_paciente(cursor, query_text):
 @use_db
 def obtener_pacientes_recientes(cursor, limit=6):
     sql = """
-        SELECT DISTINCT
+        SELECT
             p.id,
             td.codigo AS tipo_doc_abrev,
             p.nro_documento,
@@ -110,7 +103,8 @@ def obtener_pacientes_recientes(cursor, limit=6):
         JOIN tipos_documento td ON p.tipo_doc = td.id
         JOIN diagnosticos d ON p.id = d.paciente_id
         WHERE p.estado = 'ACTIVO'
-        ORDER BY d.fecha_registro DESC
+        GROUP BY p.id, td.codigo
+        ORDER BY MAX(d.fecha_registro) DESC
         LIMIT %s
     """
     cursor.execute(sql, (limit,))

@@ -2,6 +2,7 @@ import api from "./api";
 
 export interface DiagnosisResult {
   diagnostico_id: number;
+  detalle_id: number;
   diagnostico_codigo: number;
   diagnostico_texto: string;
   confianza_general: number;
@@ -14,16 +15,39 @@ export const crearDiagnostico = async (
   pacienteId: number,
   ojoDominante: "Derecho" | "Izquierdo",
   imagen: File,
+  diagnosticoId?: number,
 ): Promise<DiagnosisResult> => {
   const formData = new FormData();
   formData.append("paciente_id", String(pacienteId));
   formData.append("ojo_evaluado", ojoDominante);
   formData.append("imagen", imagen);
+  if (diagnosticoId !== undefined) {
+    formData.append("diagnostico_id", String(diagnosticoId));
+  }
 
   const response = await api.post("/diagnosticar", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return response.data.data;
+};
+
+export interface DetalleDiagnosticoExistente {
+  detalle_id: number;
+  ojo: 'OD' | 'OI';
+  resultado_ia: number;
+  diagnostico_texto: string;
+  confianza_general: number;
+  probabilidades_detalle: Record<string, number> | null;
+  diagnostico_final: number | null;
+  estado_validacion: string;
+  comentario_medico: string | null;
+  imagen_url: string;
+  gradcam_url: string | null;
+}
+
+export const obtenerDetallesDiagnostico = async (diagnosticoId: number): Promise<DetalleDiagnosticoExistente[]> => {
+  const response = await api.get(`/diagnosticar/diagnostico/${diagnosticoId}/detalles`);
+  return response.data.data.ojos;
 };
 
 export const validarDiagnostico = async (
@@ -35,6 +59,20 @@ export const validarDiagnostico = async (
   if (comentario_medico) payload.comentario_medico = comentario_medico;
   const response = await api.put(
     `/diagnosticar/${diagnosticoId}/validar`,
+    payload,
+  );
+  return response.data;
+};
+
+export const validarDetalleDiagnostico = async (
+  detalleId: number,
+  diagnostico_final: number,
+  comentario_medico?: string,
+) => {
+  const payload: any = { diagnostico_final };
+  if (comentario_medico) payload.comentario_medico = comentario_medico;
+  const response = await api.put(
+    `/diagnosticar/detalle/${detalleId}/validar`,
     payload,
   );
   return response.data;

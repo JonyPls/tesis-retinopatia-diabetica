@@ -12,6 +12,7 @@ import Patients from "./pages/Patients";
 import PatientProfile from "./pages/PatientProfile";
 import Diagnosis from "./pages/Diagnosis";
 import Placeholder from "./pages/Placeholder";
+import ClinicalReports from "./pages/ClinicalReports";
 
 const queryClient = new QueryClient();
 
@@ -50,7 +51,7 @@ const App = () => (
           <Route path="/pacientes"     element={<PrivateRoute><Patients /></PrivateRoute>} />
           <Route path="/pacientes/:id" element={<PrivateRoute><PatientProfile /></PrivateRoute>} />
           <Route path="/diagnostico"   element={<PrivateRoute><Diagnosis /></PrivateRoute>} />
-          <Route path="/informes"      element={<PrivateRoute><Placeholder title="Informes" subtitle="Centro de generación y descarga de informes PDF" /></PrivateRoute>} />
+          <Route path="/informes"      element={<PrivateRoute><ClinicalReports /></PrivateRoute>} />
 
           {/* RUTAS PROTEGIDAS — solo Admin y Gerente General */}
           <Route path="/configuracion" element={

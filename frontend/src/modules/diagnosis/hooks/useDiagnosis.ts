@@ -1,21 +1,25 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { convertToPreviewUrl } from "@/lib/imageUtils";
 import {
   buscarPacientes,
   obtenerPacientesRecientes,
+  obtenerDiagnosticosPaciente,
+  DiagnosticoVisita,
   PatientSearchResult,
 } from "@/services/patientService";
 import {
   crearDiagnostico,
   DiagnosisResult,
-  validarDiagnostico,
+  DetalleDiagnosticoExistente,
+  obtenerDetallesDiagnostico,
+  validarDetalleDiagnostico,
 } from "@/services/diagnosisService";
 import { useAuthStore } from "@/store/authStore";
 import { EyeKey, EyeState, DiagnosisHook } from "../types";
 
-const EMPTY_EYE: EyeState = { file: null, preview: null };
+const EMPTY_EYE: EyeState = { file: null, preview: null, isExistingImage: false };
 
 export function useDiagnosis(): DiagnosisHook {
   const [step, setStep] = useState(1);
@@ -36,6 +40,72 @@ export function useDiagnosis(): DiagnosisHook {
     useState<PatientSearchResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Visita selector (paso 1)
+  const [visitas, setVisitas] = useState<DiagnosticoVisita[]>([]);
+  const [selectedVisita, setSelectedVisita] = useState<DiagnosticoVisita | null | undefined>(undefined);
+  const [hasMoreVisitas, setHasMoreVisitas] = useState(false);
+  const [visitasExpandidas, setVisitasExpandidas] = useState(false);
+  const [isLoadingVisitas, setIsLoadingVisitas] = useState(false);
+  const maxVisitas = 2;
+
+  // Modal diagnóstico IA existente (Escenario B)
+  const [showExistingDiagnosisModal, setShowExistingDiagnosisModal] = useState(false);
+  const [existingDetalles, setExistingDetalles] = useState<DetalleDiagnosticoExistente[]>([]);
+  const [isCheckingDiagnosis, setIsCheckingDiagnosis] = useState(false);
+
+  // ── Helpers: reconstruir resultados y ojos desde detalles existentes ──
+  const construirEyesDesdeDetalles = useCallback((): Record<EyeKey, EyeState> => {
+    const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const token = useAuthStore.getState().token;
+    const newEyes: Record<EyeKey, EyeState> = {
+      OD: { ...EMPTY_EYE },
+      OI: { ...EMPTY_EYE },
+    };
+    existingDetalles.forEach((d) => {
+      const eyeKey = d.ojo;
+      const imagenUrl = `${BACKEND_URL}/uploads/retinas/${d.imagen_url}?token=${token}`;
+      newEyes[eyeKey] = { file: new File([], "existing"), preview: imagenUrl, isExistingImage: true };
+    });
+    return newEyes;
+  }, [existingDetalles]);
+
+  const cargarResultadosExistentes = useCallback(() => {
+    const newResults: Partial<Record<EyeKey, DiagnosisResult>> = {};
+    const newFinalSelection: Record<EyeKey, number> = { OD: 0, OI: 0 };
+    const newComments: Record<EyeKey, string> = { OD: "", OI: "" };
+
+    const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const token = useAuthStore.getState().token;
+
+    existingDetalles.forEach((d) => {
+      const eyeKey = d.ojo;
+      let gradcamUrl: string | undefined;
+      if (d.gradcam_url) {
+        gradcamUrl = `${BACKEND_URL}/uploads/retinas/${d.gradcam_url}?token=${token}`;
+      }
+
+      newResults[eyeKey] = {
+        diagnostico_id: selectedVisita!.diagnostico_id,
+        detalle_id: d.detalle_id,
+        diagnostico_codigo: d.resultado_ia,
+        diagnostico_texto: d.diagnostico_texto,
+        confianza_general: d.confianza_general,
+        probabilidades_detalle: d.probabilidades_detalle || {},
+        mensaje: "Resultado cargado de diagnóstico previo.",
+        gradcam_url: gradcamUrl,
+      };
+
+      newFinalSelection[eyeKey] = d.diagnostico_final ?? d.resultado_ia;
+      newComments[eyeKey] = d.comentario_medico || "";
+    });
+
+    setResults(newResults);
+    setFinalSelectionState(newFinalSelection);
+    setComments(newComments);
+    const firstEye = (Object.keys(newResults) as EyeKey[])[0];
+    if (firstEye) setActiveEye(firstEye);
+  }, [existingDetalles, selectedVisita]);
 
   // Paso 2
   const [eyes, setEyes] = useState<Record<EyeKey, EyeState>>({
@@ -99,6 +169,106 @@ export function useDiagnosis(): DiagnosisHook {
     setSelectedPatient(p);
     setQuery(`${p.nombres} ${p.apellidos}`);
     setSearchResults([]);
+    setSelectedVisita(undefined);
+    setVisitas([]);
+    loadVisitas(p.id);
+  };
+
+  const clearPatient = () => {
+    setSelectedPatient(null);
+    setQuery("");
+    setSearchResults([]);
+    setSelectedVisita(undefined);
+    setVisitas([]);
+    setHasMoreVisitas(false);
+    setVisitasExpandidas(false);
+  };
+
+  const loadVisitas = async (pacienteId: number) => {
+    setIsLoadingVisitas(true);
+    setVisitasExpandidas(false);
+    try {
+      const data = await obtenerDiagnosticosPaciente(pacienteId);
+      const sorted = (data || []).sort(
+        (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
+      );
+      setHasMoreVisitas(sorted.length > maxVisitas);
+      setVisitas(sorted.slice(0, maxVisitas));
+    } catch {
+      setVisitas([]);
+    } finally {
+      setIsLoadingVisitas(false);
+    }
+  };
+
+  const selectVisita = async (v: DiagnosticoVisita | null) => {
+    setSelectedVisita(v);
+    setShowExistingDiagnosisModal(false);
+    setExistingDetalles([]);
+
+    if (v && v.diagnostico_id) {
+      setIsCheckingDiagnosis(true);
+      try {
+        const detalles = await obtenerDetallesDiagnostico(v.diagnostico_id);
+        if (detalles.length > 0) {
+          setExistingDetalles(detalles);
+          setShowExistingDiagnosisModal(true);
+        }
+      } catch {
+        // Silently proceed — if the endpoint fails, treat as no IA diagnosis
+      } finally {
+        setIsCheckingDiagnosis(false);
+      }
+    }
+  };
+
+  const closeExistingDiagnosisModal = () => {
+    setShowExistingDiagnosisModal(false);
+    setExistingDetalles([]);
+    setSelectedVisita(undefined);
+  };
+
+  const goToStep2FromExisting = () => {
+    setShowExistingDiagnosisModal(false);
+    setEyes(construirEyesDesdeDetalles());
+    setStep(2);
+  };
+
+  const goToStep3FromExisting = () => {
+    setShowExistingDiagnosisModal(false);
+    cargarResultadosExistentes();
+    setEyes(construirEyesDesdeDetalles());
+    setStep(3);
+  };
+
+  const verMasVisitas = async () => {
+    if (!selectedPatient) return;
+    setVisitasExpandidas(true);
+    try {
+      const data = await obtenerDiagnosticosPaciente(selectedPatient.id);
+      const sorted = (data || []).sort(
+        (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
+      );
+      setVisitas(sorted);
+      setHasMoreVisitas(false);
+    } catch {
+      setVisitasExpandidas(false);
+    }
+  };
+
+  const verMenosVisitas = async () => {
+    if (!selectedPatient) return;
+    setVisitasExpandidas(false);
+    try {
+      const data = await obtenerDiagnosticosPaciente(selectedPatient.id);
+      const sorted = (data || []).sort(
+        (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
+      );
+      setHasMoreVisitas(sorted.length > maxVisitas);
+      setVisitas(sorted.slice(0, maxVisitas));
+    } catch {
+      // ignore
+    }
   };
 
   // ── Paso 2 ────────────────────────────────────────────────────────
@@ -130,8 +300,20 @@ export function useDiagnosis(): DiagnosisHook {
     if (!selectedPatient) return;
 
     const eyesToProcess = (["OD", "OI"] as EyeKey[]).filter(
-      (eye) => eyes[eye].file !== null,
+      (eye) => eyes[eye].file !== null && !eyes[eye].isExistingImage,
     );
+
+    // No new images to process — load existing results
+    if (eyesToProcess.length === 0) {
+      cargarResultadosExistentes();
+      setEyes(construirEyesDesdeDetalles());
+      toast({
+        title: "Sin cambios",
+        description: "No se detectaron nuevas imágenes. Mostrando resultados previos.",
+      });
+      setStep(3);
+      return;
+    }
 
     const newResults: Partial<Record<EyeKey, DiagnosisResult>> = {};
     const N = eyesToProcess.length;
@@ -144,6 +326,8 @@ export function useDiagnosis(): DiagnosisHook {
     setModalProgress(0);
 
     // ── Loop 1: Validación (1 segmento por ojo) ──────────────────────
+    let sharedDiagnosticoId: number | undefined = selectedVisita?.diagnostico_id;
+
     for (let i = 0; i < N; i++) {
       const eye = eyesToProcess[i];
       setProcessingEye(eye);
@@ -155,7 +339,12 @@ export function useDiagnosis(): DiagnosisHook {
           selectedPatient.id,
           ojoDominante,
           eyes[eye].file!,
+          sharedDiagnosticoId,
         );
+
+        if (i === 0) {
+          sharedDiagnosticoId = result.diagnostico_id;
+        }
 
         // Garantizar tiempo mínimo de validación
         const elapsed = Date.now() - segmentStart;
@@ -217,15 +406,45 @@ export function useDiagnosis(): DiagnosisHook {
     setProcessingEye(null);
     setModalPhase("idle");
     setIsSaving(false);
-    setResults(newResults);
-    setActiveEye(eyesToProcess[0]);
 
-    const init: Record<EyeKey, number> = { OD: 0, OI: 0 };
+    // Merge existing detalle results for eyes that were NOT re-processed
+    const reprocessedEyes = new Set(eyesToProcess);
+    const init: Partial<Record<EyeKey, number>> = {};
+    const mergedComments: Record<EyeKey, string> = { OD: "", OI: "" };
+
     (Object.keys(newResults) as EyeKey[]).forEach((e) => {
       init[e] = newResults[e]!.diagnostico_codigo;
     });
+
+    const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const token = useAuthStore.getState().token;
+
+    existingDetalles.forEach((d) => {
+      const eyeKey = d.ojo;
+      if (!reprocessedEyes.has(eyeKey)) {
+        let gradcamUrl: string | undefined;
+        if (d.gradcam_url) {
+          gradcamUrl = `${BACKEND_URL}/uploads/retinas/${d.gradcam_url}?token=${token}`;
+        }
+        newResults[eyeKey] = {
+          diagnostico_id: selectedVisita!.diagnostico_id,
+          detalle_id: d.detalle_id,
+          diagnostico_codigo: d.resultado_ia,
+          diagnostico_texto: d.diagnostico_texto,
+          confianza_general: d.confianza_general,
+          probabilidades_detalle: d.probabilidades_detalle || {},
+          mensaje: "Resultado cargado de diagnóstico previo.",
+          gradcam_url: gradcamUrl,
+        };
+        init[eyeKey] = d.diagnostico_final ?? d.resultado_ia;
+        mergedComments[eyeKey] = d.comentario_medico || "";
+      }
+    });
+
+    setResults(newResults);
+    setActiveEye(eyesToProcess[0]);
     setFinalSelectionState((prev) => ({ ...prev, ...init }));
-    setComments({ OD: "", OI: "" });
+    setComments(mergedComments);
 
     toast({
       title: "Diagnóstico guardado",
@@ -256,17 +475,16 @@ export function useDiagnosis(): DiagnosisHook {
   const validateDiagnosis = async (eye: EyeKey) => {
     const current = results[eye];
     if (!current) return;
-    const diagnosticoId = current.diagnostico_id;
+    const detalleId = current.detalle_id;
     setIsValidating(true);
     try {
-      const resp = await validarDiagnostico(
-        diagnosticoId,
+      const resp = await validarDetalleDiagnostico(
+        detalleId,
         finalSelection[eye],
         comments[eye],
       );
       if (resp.success) {
         toast({ title: "Validación guardada", description: resp.message });
-        // Opcional: marcar en resultados que fue validado (no tenemos campo específico)
       } else {
         toast({
           title: "Error",
@@ -297,10 +515,10 @@ export function useDiagnosis(): DiagnosisHook {
     for (const eye of availableEyes) {
       const current = results[eye];
       if (!current) continue;
-      const diagnosticoId = current.diagnostico_id;
+      const detalleId = current.detalle_id;
       try {
-        const resp = await validarDiagnostico(
-          diagnosticoId,
+        const resp = await validarDetalleDiagnostico(
+          detalleId,
           finalSelection[eye],
           comments[eye],
         );
@@ -338,7 +556,7 @@ export function useDiagnosis(): DiagnosisHook {
 
   // ── Navegación ────────────────────────────────────────────────────
   const canNext =
-    (step === 1 && selectedPatient !== null) ||
+    (step === 1 && selectedPatient !== null && selectedVisita !== undefined && !isCheckingDiagnosis && !showExistingDiagnosisModal) ||
     (step === 2 && (eyes.OD.file !== null || eyes.OI.file !== null));
 
   const goNext = () => {
@@ -356,6 +574,12 @@ export function useDiagnosis(): DiagnosisHook {
     setSelectedPatient(null);
     setQuery("");
     setSearchResults([]);
+    setSelectedVisita(undefined);
+    setVisitas([]);
+    setHasMoreVisitas(false);
+    setVisitasExpandidas(false);
+    setShowExistingDiagnosisModal(false);
+    setExistingDetalles([]);
     setEyes({ OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } });
     setResults({});
   };
@@ -387,6 +611,22 @@ export function useDiagnosis(): DiagnosisHook {
     isSearching,
     handleQueryChange,
     selectPatient,
+    clearPatient,
+    // Visitas
+    visitas,
+    selectedVisita,
+    selectVisita,
+    hasMoreVisitas,
+    visitasExpandidas,
+    verMasVisitas,
+    verMenosVisitas,
+    isLoadingVisitas,
+    // Modal diagnóstico IA existente
+    showExistingDiagnosisModal,
+    existingDetalles,
+    closeExistingDiagnosisModal,
+    goToStep2FromExisting,
+    goToStep3FromExisting,
     eyes,
     handleFile,
     clearEye,
