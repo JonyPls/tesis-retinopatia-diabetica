@@ -240,7 +240,7 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
                     (c) => !grados[ojo]?.[c],
                   ),
                 )
-              ? "Faltan cuadrantes por seleccionar en uno o más ojos"
+              ? "Faltan cuadrantes por seleccionar en uno o ambos ojos"
               : "Selecciona al menos una conclusión"
         : null;
 
@@ -266,9 +266,9 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
     }, [readOnly, initialData]);
 
     return (
-      <div className={`rounded-xl border border-border bg-card overflow-hidden ${readOnly ? "opacity-70" : ""}`}>
+      <div className={`rounded-xl border border-border bg-card ${readOnly ? "opacity-70" : ""}`}>
         <fieldset disabled={readOnly} className="contents">
-          <div className="bg-muted/50 px-5 py-3.5 border-b border-border flex items-center gap-3">
+          <div className="bg-muted/50 px-5 py-3.5 border-b border-border rounded-t-xl overflow-hidden flex items-center gap-3">
             <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
               {readOnly ? (
                 <EyeOff className="h-4.5 w-4.5 text-muted-foreground" />
@@ -319,7 +319,7 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
           </div>
 
           {!readOnly && (disabledReason || isSaving) && (
-            <div className="border-t border-border px-4 py-3 flex items-center justify-end gap-3">
+            <div className="border-t border-border px-4 py-3 rounded-b-xl overflow-hidden flex items-center justify-end gap-3">
               {disabledReason && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
                   <Info className="h-4 w-4 shrink-0 text-gray-500" />

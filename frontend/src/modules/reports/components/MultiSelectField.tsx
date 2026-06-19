@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 import { SearchableOption } from "../types";
 
 interface MultiSelectFieldProps {
@@ -14,9 +15,8 @@ export function MultiSelectField({
   options,
   selected,
   onSelectionChange,
-  placeholder = "Buscar opción...",
+  placeholder = "Seleccionar...",
 }: MultiSelectFieldProps) {
-  const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -30,7 +30,6 @@ export function MultiSelectField({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Grupos bloqueados: grupos de las selecciones actuales + AO si hay alguna selección de ojo
   const blockedGroups = useMemo(() => {
     const groups = new Set<string>();
     for (const val of selected) {
@@ -53,11 +52,7 @@ export function MultiSelectField({
     return !blockedGroups.has(o.group);
   });
 
-  const filtered = available.filter((o) =>
-    o.label.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  const grouped = filtered.reduce<Record<string, SearchableOption[]>>((acc, opt) => {
+  const grouped = available.reduce<Record<string, SearchableOption[]>>((acc, opt) => {
     const g = opt.group || "_";
     if (!acc[g]) acc[g] = [];
     acc[g].push(opt);
@@ -67,7 +62,6 @@ export function MultiSelectField({
   const handleSelect = (opt: SearchableOption) => {
     if (selected.includes(opt.value)) return;
     onSelectionChange([...selected, opt.value]);
-    setSearch("");
     setIsOpen(false);
   };
 
@@ -90,19 +84,20 @@ export function MultiSelectField({
       <label className="text-sm font-medium text-foreground">{label}</label>
 
       <div ref={wrapperRef} className="relative">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => setIsOpen(true)}
-          placeholder={placeholder}
-          className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-left ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring flex items-center justify-between gap-2"
+        >
+          {selected.length === 0 ? (
+            <span className="text-muted-foreground">{placeholder}</span>
+          ) : (
+            <span>{selectedLabels.map((s) => s.label).join(", ")}</span>
+          )}
+          <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </button>
 
-        {isOpen && filtered.length > 0 && (
+        {isOpen && available.length > 0 && (
           <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-md border border-border bg-white shadow-lg max-h-56 overflow-y-auto">
             {Object.entries(grouped).map(([group, opts]) => (
               <div key={group}>

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { EyeToggle } from "../EyeToggle";
 import { MultiSelectField } from "../MultiSelectField";
 import { CUADRANTES, CUADRANTE_LABELS, GRADOS, GONIOSCOPIA_CONCLUSIONES } from "../../types";
@@ -20,6 +20,24 @@ export function GonioscopiaFields({
   conclusiones,
   onConclusionesChange,
 }: GonioscopiaFieldsProps) {
+  useEffect(() => {
+    const hasOD = ojos.includes("OD");
+    const hasOI = ojos.includes("OI");
+    const validGroups = new Set<string>();
+    if (hasOD && hasOI) validGroups.add("AO");
+    if (hasOD) validGroups.add("OD");
+    if (hasOI) validGroups.add("OI");
+
+    const filtered = conclusiones.filter((val) => {
+      const opt = GONIOSCOPIA_CONCLUSIONES.find((o) => o.value === val);
+      return !opt?.group || validGroups.has(opt.group);
+    });
+
+    if (filtered.length !== conclusiones.length) {
+      onConclusionesChange(filtered);
+    }
+  }, [ojos, conclusiones, onConclusionesChange]);
+
   const filteredConclusiones = useMemo(() => {
     const grupos: string[] = [];
     const hasOD = ojos.includes("OD");
@@ -92,7 +110,7 @@ export function GonioscopiaFields({
           options={filteredConclusiones}
           selected={conclusiones}
           onSelectionChange={onConclusionesChange}
-          placeholder="Buscar opción de conclusión..."
+          placeholder="Seleccionar conclusión..."
         />
       </div>
     </div>

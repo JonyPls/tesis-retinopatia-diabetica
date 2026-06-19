@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  RefreshCw,
   Save,
   Loader2,
   Plus,
@@ -184,18 +185,53 @@ export default function ClinicalReports() {
 
             {/* Empty state */}
             {viewingExistingId === null && hook.selectedTipos.length === 0 && (
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <div className="p-8 text-center space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    No has seleccionado ningún informe.
-                  </p>
-                  {hook.availableTipos.length > 0 && (
-                    <Button variant="outline" size="sm" onClick={hook.openAddTipoModal}>
-                      <Plus className="h-4 w-4 mr-2" /> Agregar informe
-                    </Button>
-                  )}
+              hook.informesExistentes.length === 0 ? (
+                /* Sin informes existentes — mensaje original */
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <div className="p-8 text-center space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      No has seleccionado ningún informe.
+                    </p>
+                    {hook.availableTipos.length > 0 && (
+                      <Button variant="outline" size="sm" onClick={hook.openAddTipoModal}>
+                        <Plus className="h-4 w-4 mr-2" /> Agregar informe
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : hook.availableTipos.length > 0 ? (
+                /* Hay existentes + hay más tipos disponibles */
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <div className="p-8 text-center space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Los informes seleccionados ya se encuentran registrados para esta visita.
+                      ¿Deseas crear una nueva visita o agregar otro informe?
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      <Button variant="outline" size="sm"
+                        onClick={() => { setViewingExistingId(null); hook.selectVisita(null); }}>
+                        <RefreshCw className="h-4 w-4 mr-2" /> Crear nueva visita
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={hook.openAddTipoModal}>
+                        <Plus className="h-4 w-4 mr-2" /> Agregar otro informe
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Todos los tipos ya están registrados */
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <div className="p-8 text-center space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Todos los tipos de informe disponibles ya han sido registrados para esta visita.
+                    </p>
+                    <Button variant="outline" size="sm"
+                      onClick={() => { setViewingExistingId(null); hook.selectVisita(null); }}>
+                      <RefreshCw className="h-4 w-4 mr-2" /> Crear nueva visita
+                    </Button>
+                  </div>
+                </div>
+              )
             )}
 
             {/* Navigation — always visible */}
@@ -245,7 +281,7 @@ export default function ClinicalReports() {
                   {hook.selectedPatient?.apellidos}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Doc: {hook.selectedPatient?.nro_documento}
+                  {hook.selectedPatient?.tipo_doc_abrev} {hook.selectedPatient?.nro_documento}
                 </p>
                 {hook.selectedVisita && (
                   <p className="text-xs text-muted-foreground">
@@ -418,7 +454,7 @@ export default function ClinicalReports() {
         open={hook.showAddTipoModal}
         onClose={hook.closeAddTipoModal}
         availableTipos={hook.availableTipos}
-        onAdd={hook.addTipo}
+        onAdd={hook.addTipos}
       />
 
       <ConfirmDelete

@@ -52,6 +52,7 @@ export function useReports() {
   const [showAddTipoModal, setShowAddTipoModal] = useState(false);
   const [formValidity, setFormValidity] = useState<Record<number, boolean>>({});
   const formRefs = useRef<Record<number, ReportFormHandle | null>>({});
+  const backupSelectedTipos = useRef<TipoInforme[]>([]);
 
   // Load tipos on mount
   useEffect(() => {
@@ -126,6 +127,10 @@ export function useReports() {
     setSelectedVisita(v);
     setInformesExistentes([]);
     setActiveTipoIndex(0);
+    if (v === null && backupSelectedTipos.current.length > 0) {
+      setSelectedTipos(backupSelectedTipos.current);
+      backupSelectedTipos.current = [];
+    }
   };
 
   const verMenosVisitas = useCallback(async () => {
@@ -189,7 +194,10 @@ export function useReports() {
       });
       setInformesExistentes(existentes);
       const existingIds = new Set(existentes.map((i) => i.tipo_informe_id));
-      setSelectedTipos((prev) => prev.filter((t) => !existingIds.has(t.id)));
+      setSelectedTipos((prev) => {
+        backupSelectedTipos.current = prev;
+        return prev.filter((t) => !existingIds.has(t.id));
+      });
     } catch {
       setInformesExistentes([]);
     } finally {
@@ -258,6 +266,15 @@ export function useReports() {
     setSelectedTipos((prev) => {
       setActiveTipoIndex(prev.length);
       return [...prev, tipo];
+    });
+    setShowAddTipoModal(false);
+  };
+
+  const addTipos = (tipos: TipoInforme[]) => {
+    setSelectedTipos((prev) => {
+      if (tipos.length > 0) setActiveTipoIndex(prev.length);
+      const nuevos = tipos.filter((t) => !prev.some((p) => p.id === t.id));
+      return [...prev, ...nuevos];
     });
     setShowAddTipoModal(false);
   };
@@ -332,6 +349,7 @@ export function useReports() {
     setHasMoreVisitas(false);
     setInformesExistentes([]);
     setActiveTipoIndex(0);
+    backupSelectedTipos.current = [];
   };
 
   const resetAll = () => {
@@ -348,6 +366,7 @@ export function useReports() {
     setActiveTipoIndex(0);
     setShowAddTipoModal(false);
     setFormValidity({});
+    backupSelectedTipos.current = [];
   };
 
   return {
@@ -387,6 +406,7 @@ export function useReports() {
     closeAddTipoModal: () => setShowAddTipoModal(false),
     removeTipo,
     addTipo,
+    addTipos,
     availableTipos,
     saveAll,
     formRefs,
