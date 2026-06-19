@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Save,
   Loader2,
@@ -28,7 +30,9 @@ export default function ClinicalReports() {
       ? "Selecciona uno o más tipos de examen clínico"
       : hook.step === 2
         ? "Busque y seleccione el paciente evaluado"
-        : `${hook.selectedTipos[hook.activeTipoIndex]?.nombre} · ${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`;
+        : hook.selectedTipos.length > 0
+          ? `${hook.selectedTipos[hook.activeTipoIndex]?.nombre} · ${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`
+          : `${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`;
 
   return (
     <AppLayout title="Informes Clínicos" subtitle={stepSubtitle}>
@@ -126,63 +130,73 @@ export default function ClinicalReports() {
           <div className="lg:col-span-2 space-y-4">
             {hook.selectedTipos.length > 0 && (
               <>
-                {/* All forms — hidden if not active, keeps refs alive */}
-                {hook.selectedTipos.map((t, idx) => (
-                  <div key={t.id} className={idx !== hook.activeTipoIndex ? 'hidden' : ''}>
-                    <ReportForm
-                      ref={(el) => {
-                        hook.formRefs.current[t.id] = el;
-                      }}
-                      tipo={t}
-                      isSaving={hook.isSaving}
-                      onValidityChange={(valid) => hook.handleValidityChange(t.id, valid)}
-                    />
-                  </div>
-                ))}
+                <div>
+                  {/* All forms — hidden if not active, keeps refs alive */}
+                  {hook.selectedTipos.map((t, idx) => (
+                    <div key={t.id} className={idx !== hook.activeTipoIndex ? 'hidden' : ''}>
+                      <ReportForm
+                        ref={(el) => {
+                          hook.formRefs.current[t.id] = el;
+                        }}
+                        tipo={t}
+                        isSaving={hook.isSaving}
+                        onValidityChange={(valid) => hook.handleValidityChange(t.id, valid)}
+                      />
+                    </div>
+                  ))}
+                </div>
 
                 {/* Navigation */}
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <Button variant="outline" size="sm" onClick={hook.goBack}>
                     <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
                   </Button>
-                  <Button
-                    onClick={hook.saveAll}
-                    disabled={hook.isSaving || !hook.allValid}
-                    className="bg-gradient-primary hover:opacity-90"
-                  >
-                    {hook.isSaving ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Guardando...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        Guardar Todo
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => hook.setActiveTipoIndex(hook.activeTipoIndex - 1)}
+                      disabled={hook.activeTipoIndex === 0}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => hook.setActiveTipoIndex(hook.activeTipoIndex + 1)}
+                      disabled={hook.activeTipoIndex === hook.selectedTipos.length - 1}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </>
             )}
 
             {hook.selectedTipos.length === 0 && (
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <div className="p-8 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Todos los tipos seleccionados ya tienen informes registrados
-                    para esta visita.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={hook.goBack}
-                    className="mt-3"
-                  >
+              <>
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <div className="p-8 text-center space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      No has seleccionado ningún informe.
+                    </p>
+                    {hook.availableTipos.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={hook.openAddTipoModal}
+                      >
+                        <Plus className="h-4 w-4 mr-2" /> Agregar informe
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-start">
+                  <Button variant="outline" size="sm" onClick={hook.goBack}>
                     <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
                   </Button>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -190,9 +204,14 @@ export default function ClinicalReports() {
           <div className="space-y-4">
             {/* Patient info */}
             <div className="rounded-xl border border-border bg-card overflow-hidden">
-              <div className="bg-muted/50 px-4 py-2.5 border-b border-border flex items-center gap-2">
-                <User className="h-3.5 w-3.5 text-muted-foreground" />
-                <h4 className="text-xs font-semibold">PACIENTE</h4>
+              <div className="bg-muted/50 px-5 py-3.5 border-b border-border flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <User className="h-4.5 w-4.5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold">Paciente</h3>
+                  <p className="text-xs text-muted-foreground">Datos del paciente seleccionado</p>
+                </div>
               </div>
               <div className="p-4 space-y-1">
                 <p className="text-sm font-medium">
@@ -215,10 +234,15 @@ export default function ClinicalReports() {
 
             {/* Interactive report list */}
             <div className="rounded-xl border border-border bg-card overflow-hidden">
-              <div className="bg-muted/50 px-4 py-2.5 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                  <h4 className="text-xs font-semibold">INFORMES</h4>
+              <div className="bg-muted/50 px-5 py-3.5 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <FileText className="h-4.5 w-4.5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold">Informes</h3>
+                    <p className="text-xs text-muted-foreground">Lista de informes a registrar</p>
+                  </div>
                 </div>
                 {hook.availableTipos.length > 0 && (
                   <button
@@ -306,6 +330,27 @@ export default function ClinicalReports() {
                 ))}
               </div>
             </div>
+
+            {/* Save button below the list */}
+            {hook.selectedTipos.length > 0 && (
+              <Button
+                onClick={hook.saveAll}
+                disabled={hook.isSaving || !hook.allValid}
+                className="w-full bg-gradient-primary hover:opacity-90"
+              >
+                {hook.isSaving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Guardar Todo
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       )}

@@ -123,6 +123,13 @@ export const BulletedListEditor = forwardRef<BulletedListEditorHandle, BulletedL
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              onBlur={() => {
+                const trimmed = input.trim();
+                if (trimmed) {
+                  onChange([...items, trimmed]);
+                  setInput("");
+                }
+              }}
               placeholder={placeholder || "Escriba y presione Enter para agregar..."}
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
