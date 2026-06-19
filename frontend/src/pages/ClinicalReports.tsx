@@ -13,6 +13,7 @@ import {
   User,
   FileText,
 } from "lucide-react";
+import { useState } from "react";
 import { useReports } from "@/modules/reports/hooks/useReports";
 import { ReportsStepper } from "@/modules/reports/components/ReportsStepper";
 import { TypeSelector } from "@/modules/reports/components/TypeSelector";
@@ -24,15 +25,18 @@ import { cn } from "@/lib/utils";
 
 export default function ClinicalReports() {
   const hook = useReports();
+  const [viewingExistingId, setViewingExistingId] = useState<number | null>(null);
 
   const stepSubtitle =
     hook.step === 1
       ? "Selecciona uno o más tipos de examen clínico"
       : hook.step === 2
         ? "Busque y seleccione el paciente evaluado"
-        : hook.selectedTipos.length > 0
-          ? `${hook.selectedTipos[hook.activeTipoIndex]?.nombre} · ${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`
-          : `${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`;
+        : viewingExistingId !== null
+          ? `${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos} · Informe registrado`
+          : hook.selectedTipos.length > 0 && hook.activeTipoIndex >= 0
+            ? `${hook.selectedTipos[hook.activeTipoIndex]?.nombre} · ${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`
+            : `${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`;
 
   return (
     <AppLayout title="Informes Clínicos" subtitle={stepSubtitle}>
@@ -128,76 +132,85 @@ export default function ClinicalReports() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left: form */}
           <div className="lg:col-span-2 space-y-4">
+            {/* Editing forms — always in DOM (hidden with CSS when viewing existing) */}
             {hook.selectedTipos.length > 0 && (
-              <>
-                <div>
-                  {/* All forms — hidden if not active, keeps refs alive */}
-                  {hook.selectedTipos.map((t, idx) => (
-                    <div key={t.id} className={idx !== hook.activeTipoIndex ? 'hidden' : ''}>
-                      <ReportForm
-                        ref={(el) => {
-                          hook.formRefs.current[t.id] = el;
-                        }}
-                        tipo={t}
-                        isSaving={hook.isSaving}
-                        onValidityChange={(valid) => hook.handleValidityChange(t.id, valid)}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Navigation */}
-                <div className="flex justify-between items-center">
-                  <Button variant="outline" size="sm" onClick={hook.goBack}>
-                    <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
-                  </Button>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => hook.setActiveTipoIndex(hook.activeTipoIndex - 1)}
-                      disabled={hook.activeTipoIndex === 0}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => hook.setActiveTipoIndex(hook.activeTipoIndex + 1)}
-                      disabled={hook.activeTipoIndex === hook.selectedTipos.length - 1}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+              <div className={viewingExistingId !== null ? 'hidden' : ''}>
+                {hook.selectedTipos.map((t, idx) => (
+                  <div key={t.id} className={idx !== hook.activeTipoIndex ? 'hidden' : ''}>
+                    <ReportForm
+                      ref={(el) => { hook.formRefs.current[t.id] = el; }}
+                      tipo={t}
+                      isSaving={hook.isSaving}
+                      onValidityChange={(valid) => hook.handleValidityChange(t.id, valid)}
+                    />
                   </div>
-                </div>
-              </>
+                ))}
+              </div>
             )}
 
-            {hook.selectedTipos.length === 0 && (
-              <>
-                <div className="rounded-xl border border-border bg-card overflow-hidden">
-                  <div className="p-8 text-center space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      No has seleccionado ningún informe.
-                    </p>
-                    {hook.availableTipos.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={hook.openAddTipoModal}
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Agregar informe
-                      </Button>
-                    )}
-                  </div>
+            {/* Read‑only existing report (mounted separately, coexists with editing forms) */}
+            {viewingExistingId !== null && (
+              (() => {
+                const inf = hook.informesExistentes.find(i => i.id === viewingExistingId);
+                if (!inf) {
+                  console.warn('[ClinicalReports] informe no encontrado para viewingExistingId=', viewingExistingId);
+                  return null;
+                }
+                console.log('[ClinicalReports] mostrando informe registrado:', inf.datos_estructurados);
+                return (
+                  <ReportForm
+                    key={inf.id}
+                    tipo={{ id: inf.tipo_informe_id, nombre: inf.tipo_informe_nombre || "", descripcion: "" }}
+                    isSaving={false}
+                    readOnly={true}
+                    initialData={inf}
+                  />
+                );
+              })()
+            )}
+
+            {/* Empty state */}
+            {viewingExistingId === null && hook.selectedTipos.length === 0 && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="p-8 text-center space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    No has seleccionado ningún informe.
+                  </p>
+                  {hook.availableTipos.length > 0 && (
+                    <Button variant="outline" size="sm" onClick={hook.openAddTipoModal}>
+                      <Plus className="h-4 w-4 mr-2" /> Agregar informe
+                    </Button>
+                  )}
                 </div>
-                <div className="flex justify-start">
-                  <Button variant="outline" size="sm" onClick={hook.goBack}>
-                    <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
+              </div>
+            )}
+
+            {/* Navigation — always visible */}
+            <div className="flex justify-between items-center">
+              <Button variant="outline" size="sm" onClick={() => { setViewingExistingId(null); hook.goBack(); }}>
+                <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
+              </Button>
+              {viewingExistingId === null && hook.selectedTipos.length > 0 && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => hook.setActiveTipoIndex(hook.activeTipoIndex - 1)}
+                    disabled={hook.activeTipoIndex === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => hook.setActiveTipoIndex(hook.activeTipoIndex + 1)}
+                    disabled={hook.activeTipoIndex === hook.selectedTipos.length - 1}
+                  >
+                    <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Right: patient info + interactive list */}
@@ -272,13 +285,13 @@ export default function ClinicalReports() {
 
                 {/* New tipos — clickable cards */}
                 {hook.selectedTipos.map((t, idx) => {
-                  const isActive = idx === hook.activeTipoIndex;
+                  const isActive = viewingExistingId === null && idx === hook.activeTipoIndex;
                   const isValid = hook.formValidity[t.id] === true;
                   return (
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => hook.setActiveTipoIndex(idx)}
+                      onClick={() => { hook.setActiveTipoIndex(idx); setViewingExistingId(null); }}
                       className={cn(
                         "w-full flex items-center justify-between px-3 py-2.5 rounded-md transition-colors text-left",
                         isActive
@@ -314,20 +327,33 @@ export default function ClinicalReports() {
                   );
                 })}
 
-                {/* Existing informes */}
-                {hook.informesExistentes.map((inf) => (
-                  <div
-                    key={inf.id}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-md bg-muted/10 border border-dashed border-border"
-                  >
-                    <span className="text-sm text-muted-foreground">
-                      {inf.tipo_informe_nombre}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded font-medium">
-                      Registrado
-                    </span>
-                  </div>
-                ))}
+                {/* Existing informes — clickable with active state */}
+                {hook.informesExistentes.map((inf) => {
+                  const isActive = viewingExistingId === inf.id;
+                  return (
+                    <button
+                      key={inf.id}
+                      type="button"
+                      onClick={() => setViewingExistingId(isActive ? null : inf.id)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-2.5 rounded-md transition-colors text-left",
+                        isActive
+                          ? "bg-primary/5 border-l-2 border-primary"
+                          : "bg-muted/10 border border-dashed border-border hover:bg-muted/30",
+                      )}
+                    >
+                      <span className={cn(
+                        "text-sm font-medium",
+                        isActive ? "text-primary" : "text-muted-foreground",
+                      )}>
+                        {inf.tipo_informe_nombre}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded font-medium">
+                        Registrado
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

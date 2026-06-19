@@ -37,11 +37,19 @@ def crear_nuevo_informe(datos, usuario_id):
 
     return {"success": True, "data": {"id": informe_id, "diagnostico_id": diagnostico_id}}, 201
 
+def _parsear_datos(informe: dict) -> dict:
+    if isinstance(informe.get("datos_estructurados"), str):
+        try:
+            informe["datos_estructurados"] = json.loads(informe["datos_estructurados"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return informe
+
 def obtener_informe(informe_id):
     informe = obtener_informe_por_id(informe_id)
     if not informe:
         return {"success": False, "message": "Informe no encontrado."}, 404
-    return {"success": True, "data": informe}, 200
+    return {"success": True, "data": _parsear_datos(informe)}, 200
 
 def actualizar_informe_existente(informe_id, datos):
     datos_estructurados = datos.get("datos_estructurados")
@@ -64,11 +72,11 @@ def eliminar_informe_existente(informe_id):
 
 def obtener_informes_paciente(paciente_id):
     informes = listar_informes_por_paciente(paciente_id)
-    return {"success": True, "data": informes}, 200
+    return {"success": True, "data": [_parsear_datos(inf) for inf in informes]}, 200
 
 def obtener_informes_por_paciente(paciente_id):
     return obtener_informes_paciente(paciente_id)
 
 def consultar_informes_por_diagnostico(diagnostico_id):
     informes = obtener_informes_por_diagnostico(diagnostico_id)
-    return {"success": True, "data": informes}, 200
+    return {"success": True, "data": [_parsear_datos(inf) for inf in informes]}, 200

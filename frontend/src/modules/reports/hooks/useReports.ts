@@ -181,7 +181,12 @@ export function useReports() {
     setIsLoadingInformesExistentes(true);
     try {
       const res = await api.get(`/informes/diagnostico/${diagnosticoId}`);
-      const existentes: Informe[] = res.data.data || [];
+      const existentes: Informe[] = (res.data.data || []).map((inf: any) => {
+        if (typeof inf.datos_estructurados === "string") {
+          try { inf.datos_estructurados = JSON.parse(inf.datos_estructurados); } catch {}
+        }
+        return inf as Informe;
+      });
       setInformesExistentes(existentes);
       const existingIds = new Set(existentes.map((i) => i.tipo_informe_id));
       setSelectedTipos((prev) => prev.filter((t) => !existingIds.has(t.id)));
