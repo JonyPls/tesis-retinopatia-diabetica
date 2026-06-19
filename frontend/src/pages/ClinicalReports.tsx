@@ -21,11 +21,24 @@ import { PatientSelectorStep } from "@/modules/reports/components/PatientSelecto
 import { VisitaSelector } from "@/modules/reports/components/VisitaSelector";
 import { ReportForm } from "@/modules/reports/components/ReportForm";
 import { AddTipoModal } from "@/modules/reports/components/AddTipoModal";
+import { ConfirmDelete } from "@/components/ui/ConfirmDelete";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
 export default function ClinicalReports() {
   const hook = useReports();
   const [viewingExistingId, setViewingExistingId] = useState<number | null>(null);
+  const [removingTipoId, setRemovingTipoId] = useState<number | null>(null);
 
   const stepSubtitle =
     hook.step === 1
@@ -316,7 +329,7 @@ export default function ClinicalReports() {
                         </span>
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); hook.removeTipo(t.id); }}
+                          onClick={(e) => { e.stopPropagation(); setRemovingTipoId(t.id); }}
                           className="text-muted-foreground hover:text-destructive transition-colors"
                           title="Quitar"
                         >
@@ -359,23 +372,43 @@ export default function ClinicalReports() {
 
             {/* Save button below the list */}
             {hook.selectedTipos.length > 0 && (
-              <Button
-                onClick={hook.saveAll}
-                disabled={hook.isSaving || !hook.allValid}
-                className="w-full bg-gradient-primary hover:opacity-90"
-              >
-                {hook.isSaving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Guardar Todo
-                  </>
-                )}
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    disabled={hook.isSaving || !hook.allValid}
+                    className="w-full bg-gradient-primary hover:opacity-90"
+                  >
+                    {hook.isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Guardar Todo
+                      </>
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Confirmar guardado</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Se guardarán {hook.selectedTipos.length} informe(s) para{" "}
+                      {hook.selectedPatient?.nombres}{" "}
+                      {hook.selectedPatient?.apellidos}.
+                      ¿Deseas continuar?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={hook.saveAll} disabled={hook.isSaving}>
+                      {hook.isSaving ? "Guardando..." : "Guardar"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         </div>
@@ -386,6 +419,23 @@ export default function ClinicalReports() {
         onClose={hook.closeAddTipoModal}
         availableTipos={hook.availableTipos}
         onAdd={hook.addTipo}
+      />
+
+      <ConfirmDelete
+        open={removingTipoId !== null}
+        onConfirm={() => {
+          if (removingTipoId !== null) hook.removeTipo(removingTipoId);
+          setRemovingTipoId(null);
+        }}
+        onCancel={() => setRemovingTipoId(null)}
+        title="Quitar informe"
+        description={
+          removingTipoId !== null
+            ? `¿Estás seguro de que deseas quitar "${hook.selectedTipos.find((t) => t.id === removingTipoId)?.nombre || ""}" de la lista?`
+            : ""
+        }
+        confirmText="Sí, quitar"
+        cancelText="Cancelar"
       />
     </AppLayout>
   );
