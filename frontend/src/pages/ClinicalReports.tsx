@@ -132,9 +132,9 @@ export default function ClinicalReports() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left: form */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Editing forms — always in DOM (hidden with CSS when viewing existing) */}
-            {hook.selectedTipos.length > 0 && (
-              <div className={viewingExistingId !== null ? 'hidden' : ''}>
+            {/* Editing forms — only rendered when not viewing existing (avoids space-y margin) */}
+            {viewingExistingId === null && hook.selectedTipos.length > 0 && (
+              <div>
                 {hook.selectedTipos.map((t, idx) => (
                   <div key={t.id} className={idx !== hook.activeTipoIndex ? 'hidden' : ''}>
                     <ReportForm
