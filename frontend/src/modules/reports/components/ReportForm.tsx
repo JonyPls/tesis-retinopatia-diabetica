@@ -1,5 +1,11 @@
-import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
-import { FileText } from "lucide-react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
+import { FileText, Info } from "lucide-react";
 import { TipoInforme, ReportFormHandle } from "../types";
 import { GonioscopiaFields } from "./fields/GonioscopiaFields";
 import { PaquimetriaFields } from "./fields/PaquimetriaFields";
@@ -17,7 +23,9 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
 
     // Gonioscopia state
     const [conclusiones, setConclusiones] = useState<string[]>([]);
-    const [grados, setGrados] = useState<Record<string, Record<string, string>>>({
+    const [grados, setGrados] = useState<
+      Record<string, Record<string, string>>
+    >({
       OD: { superior: "", inferior: "", nasal: "", temporal: "" },
       OI: { superior: "", inferior: "", nasal: "", temporal: "" },
     });
@@ -26,7 +34,9 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
     const [paqValores, setPaqValores] = useState<Record<string, string>>({});
 
     // Campo visual state
-    const [cvCampos, setCvCampos] = useState<Record<string, Record<string, string>>>({});
+    const [cvCampos, setCvCampos] = useState<
+      Record<string, Record<string, string>>
+    >({});
     const [cvConclusion, setCvConclusion] = useState<string[]>([]);
     const cvFieldsRef = useRef<{ flushConclusion: () => string[] }>(null);
 
@@ -105,7 +115,8 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
                   "fondo",
                   "puntos_presentados",
                 ].every((k) => cvCampos[ojo]?.[k]?.trim()),
-              )
+              ) &&
+              cvConclusion.length > 0
             );
           }
 
@@ -136,11 +147,7 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
       setPaqValores((prev) => ({ ...prev, [ojo]: valor }));
     };
 
-    const handleCvCampoChange = (
-      ojo: string,
-      campo: string,
-      valor: string,
-    ) => {
+    const handleCvCampoChange = (ojo: string, campo: string, valor: string) => {
       setCvCampos((prev) => ({
         ...prev,
         [ojo]: { ...prev[ojo], [campo]: valor },
@@ -167,7 +174,7 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
                 "fondo",
                 "puntos_presentados",
               ].every((k) => cvCampos[ojo]?.[k]?.trim()),
-            )
+            ) && cvConclusion.length > 0
           : ojos.every((ojo) =>
               ["superior", "inferior", "nasal", "temporal"].every(
                 (c) => grados[ojo]?.[c],
@@ -177,18 +184,30 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
     const disabledReason = !canSave
       ? tipo.id === 4
         ? ojos.some(
-            (ojo) =>
-              !paqValores[ojo] || parseInt(paqValores[ojo], 10) <= 0,
+            (ojo) => !paqValores[ojo] || parseInt(paqValores[ojo], 10) <= 0,
           )
           ? "Ingresa el valor de paquimetría para cada ojo activo"
           : "Selecciona al menos un ojo"
         : tipo.id === 2
-          ? "Completa todos los campos para cada ojo activo"
-          : ojos.some((ojo) =>
-              ["superior", "inferior", "nasal", "temporal"].some(
-                (c) => !grados[ojo]?.[c],
-              ),
+          ? ojos.some((ojo) =>
+              [
+                "programa",
+                "fijación",
+                "comprobar_fijación",
+                "pérdidas",
+                "falso_positivo",
+                "error",
+                "fondo",
+                "puntos_presentados",
+              ].some((k) => !cvCampos[ojo]?.[k]?.trim()),
             )
+            ? "Completa todos los campos para cada ojo activo"
+            : "Agrega al menos una conclusión"
+          : ojos.some((ojo) =>
+                ["superior", "inferior", "nasal", "temporal"].some(
+                  (c) => !grados[ojo]?.[c],
+                ),
+              )
             ? "Faltan cuadrantes por seleccionar en uno o más ojos"
             : "Selecciona al menos una conclusión"
       : null;
@@ -245,18 +264,19 @@ export const ReportForm = forwardRef<ReportFormHandle, ReportFormProps>(
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-3 flex items-center justify-end">
-          {disabledReason && (
-            <span className="text-xs text-muted-foreground text-right leading-tight max-w-[240px]">
-              {disabledReason}
-            </span>
-          )}
-          {isSaving && (
-            <span className="text-xs text-muted-foreground ml-3">
-              Guardando...
-            </span>
-          )}
-        </div>
+        {(disabledReason || isSaving) && (
+          <div className="border-t border-border px-4 py-3 flex items-center justify-end gap-3">
+            {disabledReason && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+                <Info className="h-4 w-4 shrink-0 text-gray-500" />
+                <span>{disabledReason}</span>
+              </div>
+            )}
+            {isSaving && (
+              <span className="text-xs text-muted-foreground">Guardando...</span>
+            )}
+          </div>
+        )}
       </div>
     );
   },

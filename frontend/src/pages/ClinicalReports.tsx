@@ -122,29 +122,10 @@ export default function ClinicalReports() {
 
       {hook.step === 3 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          {/* Left: tabs + form */}
+          {/* Left: form */}
           <div className="lg:col-span-2 space-y-4">
             {hook.selectedTipos.length > 0 && (
               <>
-                {/* Tipo tabs */}
-                <div className="flex gap-2 flex-wrap">
-                  {hook.selectedTipos.map((t, idx) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => hook.setActiveTipoIndex(idx)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                        idx === hook.activeTipoIndex
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:bg-muted/80",
-                      )}
-                    >
-                      {t.nombre}
-                    </button>
-                  ))}
-                </div>
-
                 {/* All forms — hidden if not active, keeps refs alive */}
                 {hook.selectedTipos.map((t, idx) => (
                   <div key={t.id} className={idx !== hook.activeTipoIndex ? 'hidden' : ''}>
@@ -205,7 +186,7 @@ export default function ClinicalReports() {
             )}
           </div>
 
-          {/* Right: patient info + list */}
+          {/* Right: patient info + interactive list */}
           <div className="space-y-4">
             {/* Patient info */}
             <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -232,7 +213,7 @@ export default function ClinicalReports() {
               </div>
             </div>
 
-            {/* Selected tipos list */}
+            {/* Interactive report list */}
             <div className="rounded-xl border border-border bg-card overflow-hidden">
               <div className="bg-muted/50 px-4 py-2.5 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -265,34 +246,60 @@ export default function ClinicalReports() {
                     </p>
                   )}
 
-                {/* New tipos */}
-                {hook.selectedTipos.map((t) => (
-                  <div
-                    key={t.id}
-                    className="flex items-center justify-between px-3 py-2 rounded-md bg-muted/30"
-                  >
-                    <span className="text-sm">{t.nombre}</span>
+                {/* New tipos — clickable cards */}
+                {hook.selectedTipos.map((t, idx) => {
+                  const isActive = idx === hook.activeTipoIndex;
+                  const isValid = hook.formValidity[t.id] === true;
+                  return (
                     <button
+                      key={t.id}
                       type="button"
-                      onClick={() => hook.removeTipo(t.id)}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                      title="Quitar"
+                      onClick={() => hook.setActiveTipoIndex(idx)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-2.5 rounded-md transition-colors text-left",
+                        isActive
+                          ? "bg-primary/5 border-l-2 border-primary"
+                          : "bg-muted/30 hover:bg-muted/50",
+                      )}
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <span className={cn(
+                        "text-sm font-medium",
+                        isActive && "text-primary",
+                      )}>
+                        {t.nombre}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={cn(
+                          "text-[10px] font-medium px-1.5 py-0.5 rounded",
+                          isValid
+                            ? "text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30"
+                            : "text-amber-700 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30",
+                        )}>
+                          {isValid ? "Completo" : "Pendiente"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); hook.removeTipo(t.id); }}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Quitar"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </button>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {/* Existing informes */}
                 {hook.informesExistentes.map((inf) => (
                   <div
                     key={inf.id}
-                    className="flex items-center justify-between px-3 py-2 rounded-md bg-muted/10 border border-dashed border-border"
+                    className="flex items-center justify-between px-3 py-2.5 rounded-md bg-muted/10 border border-dashed border-border"
                   >
                     <span className="text-sm text-muted-foreground">
                       {inf.tipo_informe_nombre}
                     </span>
-                    <span className="text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded font-medium">
                       Registrado
                     </span>
                   </div>

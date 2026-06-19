@@ -342,6 +342,7 @@ export function useReports() {
     setInformesExistentes([]);
     setActiveTipoIndex(0);
     setShowAddTipoModal(false);
+    setFormValidity({});
   };
 
   return {
@@ -386,5 +387,6 @@ export function useReports() {
     formRefs,
     handleValidityChange,
     allValid,
+    formValidity,
   };
 }
