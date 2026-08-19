@@ -61,13 +61,18 @@ def obtener_paciente_por_id(cursor, paciente_id):
 @use_db
 def obtener_diagnosticos_paciente(cursor, paciente_id):
     sql = """
-        SELECT DISTINCT
-            d.id AS diagnostico_id, 
-            d.fecha_registro AS fecha_visita, 
-            CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante
+        SELECT
+            d.id AS diagnostico_id,
+            d.fecha_registro AS fecha_visita,
+            CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante,
+            CASE WHEN COUNT(DISTINCT dd.id) > 0 THEN 1 ELSE 0 END AS tiene_diagnostico_ia,
+            CASE WHEN COUNT(DISTINCT i.id) > 0 THEN 1 ELSE 0 END AS tiene_informes
         FROM diagnosticos d
         JOIN usuarios u ON d.usuario_id = u.id
+        LEFT JOIN diagnosticos_detalle dd ON dd.diagnostico_id = d.id
+        LEFT JOIN informes i ON i.diagnostico_id = d.id AND i.estado = 'ACTIVO'
         WHERE d.paciente_id = %s
+        GROUP BY d.id, d.fecha_registro, u.nombres, u.apellidos
         ORDER BY d.fecha_registro DESC
     """
     cursor.execute(sql, (paciente_id,))

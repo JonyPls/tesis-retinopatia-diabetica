@@ -17,9 +17,11 @@ export interface Diagnosis {
   diagnostico_id: number;
   fecha_visita: string;
   medico_tratante?: string;
-  ojo_evaluado: string;
-  resultado_ia: string;
-  probabilidad_ia: number;
+  tiene_informes: number;
+  tiene_diagnostico_ia: number;
+  ojo_evaluado?: string;
+  resultado_ia?: string;
+  probabilidad_ia?: number;
   comentario_medico?: string;
 }
 

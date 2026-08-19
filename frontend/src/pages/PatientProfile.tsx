@@ -85,7 +85,6 @@ export default function PatientProfile() {
           className={infoCollapsed ? "lg:col-span-3" : "lg:col-span-2"}
           diagnoses={hook.diagnoses}
           sortedDx={hook.sortedDx}
-          mapResultToLevel={hook.mapResultToLevel}
         />
       </div>
     </AppLayout>

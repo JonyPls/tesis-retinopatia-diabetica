@@ -1,44 +1,90 @@
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  Brain,
-  Calendar,
-  Eye,
-  Stethoscope,
-  FileText,
   Activity,
+  Calendar,
+  User,
+  Brain,
+  FileText,
+  ArrowRight,
+  SlidersHorizontal,
+  ArrowUpDown,
+  X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
-import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { Diagnosis } from "../types";
-import { RDLevel } from "@/data/rdLevels";
 
 interface PatientTimelineProps {
   diagnoses: Diagnosis[];
   sortedDx: Diagnosis[];
-  mapResultToLevel: (result: string) => RDLevel;
   className?: string;
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("es-PE", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function PatientTimeline({
   diagnoses,
   sortedDx,
-  mapResultToLevel,
   className,
 }: PatientTimelineProps) {
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  const toDateKey = (iso: string) => iso.split("T")[0].split(" ")[0];
+
+  const filtered = useMemo(() => {
+    let list = [...sortedDx];
+
+    if (dateFrom) {
+      list = list.filter((dx) => toDateKey(dx.fecha_visita) >= dateFrom);
+    }
+    if (dateTo) {
+      list = list.filter((dx) => toDateKey(dx.fecha_visita) <= dateTo);
+    }
+
+    if (sortAsc) {
+      list.sort(
+        (a, b) =>
+          new Date(a.fecha_visita).getTime() -
+          new Date(b.fecha_visita).getTime(),
+      );
+    }
+
+    return list;
+  }, [sortedDx, dateFrom, dateTo, sortAsc]);
+
+  const clearFilters = () => {
+    setDateFrom("");
+    setDateTo("");
+    setSortAsc(false);
+  };
+
+  const hasActiveFilters = dateFrom || dateTo || sortAsc;
+
   if (diagnoses.length === 0) {
     return (
       <Card className={`shadow-card ${className || ""}`}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
-            Historial de Diagnósticos Oftalmológicos
+            Historial de Visitas
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-10">
             <p className="text-muted-foreground text-sm">
-              Aún no hay diagnósticos registrados para este paciente.
+              Aún no hay visitas registradas para este paciente.
             </p>
           </div>
         </CardContent>
@@ -53,76 +99,118 @@ export function PatientTimeline({
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <Activity className="h-4 w-4 text-primary" />
-              Historial de Diagnósticos Oftalmológicos
+              Historial de Visitas
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              {sortedDx.length} registro(s) · Cronología descendente
+              {sortedDx.length} visita(s) · Últimos diagnósticos registrados
             </p>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowFilters((v) => !v)}
+            className={showFilters ? "text-primary" : "text-muted-foreground"}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </Button>
         </div>
+
+        {showFilters && (
+          <>
+            <div className="h-px bg-border my-3" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder="Desde"
+                className="h-8 w-[140px] text-xs"
+              />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                placeholder="Hasta"
+                className="h-8 w-[140px] text-xs"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSortAsc((v) => !v)}
+                className={sortAsc ? "text-primary" : "text-muted-foreground"}
+              >
+                <ArrowUpDown className="h-4 w-4 mr-1" />
+                <span className="text-xs">{sortAsc ? "Asc" : "Desc"}</span>
+              </Button>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  <X className="h-3 w-3" />
+                  Limpiar
+                </button>
+              )}
+            </div>
+            <div className="h-px bg-border mt-3" />
+          </>
+        )}
       </CardHeader>
+
       <CardContent>
-        <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-border">
-          {sortedDx.map((dx) => (
-            <div key={dx.diagnostico_id} className="relative">
-              <div className="absolute -left-[18px] top-1 h-3 w-3 rounded-full bg-card border-2 border-primary shadow-card" />
-              <div className="rounded-lg border border-border bg-card p-4 hover:shadow-elevated transition-shadow">
-                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                  <div>
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                      {new Date(dx.fecha_visita).toLocaleDateString("es-PE", {
-                        day: "2-digit",
-                        month: "long",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+        <div className="space-y-3">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No se encontraron visitas en este rango de fechas.
+            </p>
+          ) : (
+            filtered.map((dx) => (
+              <div
+                key={dx.diagnostico_id}
+                className="rounded-lg border border-border bg-card p-4 hover:shadow-elevated transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                      {formatDate(dx.fecha_visita)}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-                      <Stethoscope className="h-3 w-3" />{" "}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                      <User className="h-3.5 w-3.5 shrink-0" />
                       {dx.medico_tratante || "Desconocido"}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-medium">
-                      <Eye className="h-3 w-3" />
-                      {dx.ojo_evaluado === "Derecho"
-                        ? "Ojo Derecho"
-                        : dx.ojo_evaluado === "Izquierdo"
-                          ? "Ojo Izquierdo"
-                          : "Ambos Ojos"}
-                    </span>
-                    <RDLevelBadge
-                      level={mapResultToLevel(dx.resultado_ia)}
-                      size="sm"
-                    />
+
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    {dx.tiene_informes === 1 && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 text-xs font-medium">
+                        <FileText className="h-3 w-3" />
+                        Informes
+                      </span>
+                    )}
+                    {dx.tiene_diagnostico_ia === 1 && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 text-xs font-medium">
+                        <Brain className="h-3 w-3" />
+                        Diagnóstico IA
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <p className="text-sm text-foreground/80 leading-relaxed">
-                  {dx.comentario_medico || "Sin observaciones."}
-                </p>
-
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                  <div className="text-xs text-muted-foreground">
-                    Confianza IA:{" "}
-                    <span className="font-medium text-foreground tabular-nums">
-                      {(dx.probabilidad_ia * 100).toFixed(1)}%
-                    </span>
-                  </div>
+                <div className="flex justify-end mt-2">
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-teal-700 hover:text-teal-800 hover:bg-teal-50"
                   >
-                    <FileText className="h-3.5 w-3.5 mr-1" />
-                    Ver Informe PDF
+                    Ver detalles
+                    <ArrowRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
