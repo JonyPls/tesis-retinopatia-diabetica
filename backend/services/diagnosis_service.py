@@ -6,7 +6,7 @@ import io
 from werkzeug.datastructures import FileStorage
 from dl_model.validator import validar_formato_y_dimensiones, validar_region_circular, validar_contenido_semantico
 from dl_model.inference import predecir_imagen_bytes
-from models.diagnosis_model import crear_diagnostico, validar_detalle_diagnostico, obtener_detalles_por_diagnostico
+from src.repositories.diagnosis_repository import DiagnosisRepository
 
 RD_LABELS = {
     0: "Normal",
@@ -66,7 +66,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             })
         }
 
-        nuevo_id, detalle_id = crear_diagnostico(datos_bd, diagnostico_id)
+        nuevo_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(datos_bd, diagnostico_id)
 
         # Convertir y guardar como JPG solo si el INSERT fue exitoso
         imagen = Image.open(io.BytesIO(image_bytes))
@@ -89,7 +89,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
 
 def consultar_detalles_existentes(diagnostico_id: int) -> dict:
     try:
-        detalles = obtener_detalles_por_diagnostico(diagnostico_id)
+        detalles = DiagnosisRepository.obtener_detalles_por_diagnostico(diagnostico_id)
 
         ojos = []
         for d in detalles:
@@ -134,7 +134,7 @@ def consultar_detalles_existentes(diagnostico_id: int) -> dict:
 
 def confirmar_validacion_detalle(detalle_id: int, diagnostico_final: int, comentario_medico: str = None) -> dict:
     try:
-        nuevo_estado = validar_detalle_diagnostico(detalle_id, diagnostico_final, comentario_medico)
+        nuevo_estado = DiagnosisRepository.validar_detalle_diagnostico(detalle_id, diagnostico_final, comentario_medico)
         
         return {
             "success": True,

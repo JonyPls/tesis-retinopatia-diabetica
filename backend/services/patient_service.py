@@ -1,17 +1,10 @@
-from models.patient_model import (
-    obtener_pacientes,
-    obtener_paciente_por_nrodocumento,
-    insertar_paciente,
-    obtener_paciente_por_id,
-    obtener_diagnosticos_paciente,
-    buscar_paciente,
-    obtener_pacientes_recientes
-)
-from models.document_model import obtener_tipo_documento_por_codigo
+from src.repositories.patient_repository import PatientRepository
+from src.repositories.document_repository import DocumentRepository
+from src.models.patient_entities import Paciente
 
 def obtener_todos_pacientes():
     try:
-        pacientes = obtener_pacientes()
+        pacientes = PatientRepository.obtener_pacientes()
         return {
             "success": True,
             "data": pacientes
@@ -32,24 +25,33 @@ def registrar_nuevo_paciente(datos_paciente_dict):
         return {"success": False, "message": "Todos los campos son obligatorios"}, 400
 
     # Convertir código de documento (ej. "DNI") a ID numérico de la BD
-    td = obtener_tipo_documento_por_codigo(tipo_doc_codigo)
+    td = DocumentRepository.obtener_tipo_documento_por_codigo(tipo_doc_codigo)
     if not td:
         return {"success": False, "message": "Tipo de documento inválido"}, 400
     tipo_doc_id = td["id"]
 
     try:
         # Verificar si existe ya el número de documento
-        if obtener_paciente_por_nrodocumento(nro_documento):
+        if PatientRepository.obtener_paciente_por_nrodocumento(nro_documento):
             return {"success": False, "message": "El documento ya se encuentra registrado en el sistema"}, 409
 
-        insertar_paciente(tipo_doc_id, nro_documento, nombres, apellidos, sexo, fecha_nacimiento, telefono)
+        nuevo_paciente = Paciente(
+            tipo_doc=tipo_doc_id, 
+            nro_documento=nro_documento, 
+            nombres=nombres, 
+            apellidos=apellidos, 
+            sexo=sexo, 
+            fecha_nacimiento=fecha_nacimiento, 
+            telefono=telefono
+        )
+        PatientRepository.insertar_paciente(nuevo_paciente)
         return {"success": True, "message": "Paciente registrado correctamente"}, 201     
     except Exception as e:
         return {"success": False, "message": str(e)}, 500
 
 def obtener_detalle_paciente(paciente_id):
     try:
-        paciente = obtener_paciente_por_id(paciente_id)
+        paciente = PatientRepository.obtener_paciente_por_id(paciente_id)
         if paciente:
             return {
                 "success": True,
@@ -63,7 +65,7 @@ def obtener_detalle_paciente(paciente_id):
 
 def obtener_historial_diagnosticos(paciente_id):
     try:
-        historial = obtener_diagnosticos_paciente(paciente_id)
+        historial = PatientRepository.obtener_diagnosticos_paciente(paciente_id)
         return {
             "success": True,
             "data": historial
@@ -74,7 +76,7 @@ def obtener_historial_diagnosticos(paciente_id):
 
 def buscar_pacientes_dinamico(query_text):
     try:
-        resultados = buscar_paciente(query_text)
+        resultados = PatientRepository.buscar_paciente(query_text)
         return {
             "success": True,
             "data": resultados
@@ -85,7 +87,7 @@ def buscar_pacientes_dinamico(query_text):
 
 def obtener_recientes():
     try:
-        pacientes = obtener_pacientes_recientes()
+        pacientes = PatientRepository.obtener_pacientes_recientes()
         return {"success": True, "data": pacientes}, 200
     except Exception as e:
         return {"success": False, "message": str(e)}, 500

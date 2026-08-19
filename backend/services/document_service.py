@@ -1,8 +1,8 @@
-from models.document_model import obtener_tipos_documento_activos
+from src.repositories.document_repository import DocumentRepository
 
 def obtener_lista_documentos():
     try:
-        resultados = obtener_tipos_documento_activos()
+        resultados = DocumentRepository.obtener_tipos_documento_activos()
         return {
             "success": True,
             "data": resultados

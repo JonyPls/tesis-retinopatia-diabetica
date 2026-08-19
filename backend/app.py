@@ -18,6 +18,10 @@ app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
+# Configurar SQLAlchemy ORM
+from database import init_db
+init_db(app)
+
 # Registrar Blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(patient_bp)

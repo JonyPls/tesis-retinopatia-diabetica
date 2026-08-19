@@ -4,7 +4,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { Bell, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { buscarPacientes } from "@/services/patientService";
+import { buscarPacientes } from "@/features/patients/api/patientService";
 
 interface AppLayoutProps {
   children: ReactNode;
