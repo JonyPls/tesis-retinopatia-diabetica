@@ -3,7 +3,8 @@ import { CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface LoginFormProps {
   username: string;
@@ -12,6 +13,7 @@ interface LoginFormProps {
   setPassword: (value: string) => void;
   error: string;
   isLoading: boolean;
+  isSuccess: boolean;
   showPassword: boolean;
   setShowPassword: (value: boolean) => void;
   handleSubmit: (e: React.FormEvent) => void;
@@ -24,6 +26,7 @@ export function LoginForm({
   setPassword,
   error,
   isLoading,
+  isSuccess,
   showPassword,
   setShowPassword,
   handleSubmit,
@@ -39,7 +42,7 @@ export function LoginForm({
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
-            disabled={isLoading}
+            disabled={isLoading || isSuccess}
           />
         </div>
         <div className="space-y-2">
@@ -51,7 +54,7 @@ export function LoginForm({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              disabled={isLoading}
+              disabled={isLoading || isSuccess}
               className="pr-10"
             />
             <Button
@@ -83,10 +86,25 @@ export function LoginForm({
       <CardFooter>
         <Button
           type="submit"
-          className="w-full bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 shadow-md text-white border-0"
-          disabled={isLoading}
+          className={cn(
+            "w-full shadow-md text-white border-0 transition-all duration-300",
+            isSuccess 
+              ? "bg-green-600 hover:bg-green-700" 
+              : "bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600"
+          )}
+          disabled={isLoading || isSuccess}
         >
-          {isLoading ? "Verificando..." : "Ingresar"}
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verificando...
+            </>
+          ) : isSuccess ? (
+            <>
+              <CheckCircle2 className="mr-2 h-4 w-4" /> Verificado
+            </>
+          ) : (
+            "Ingresar"
+          )}
         </Button>
       </CardFooter>
     </form>

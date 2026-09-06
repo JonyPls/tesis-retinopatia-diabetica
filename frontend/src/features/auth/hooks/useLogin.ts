@@ -8,6 +8,7 @@ export function useLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const navigate = useNavigate();
@@ -17,15 +18,22 @@ export function useLogin() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
+    setIsSuccess(false);
 
     try {
       const data = await loginService(username, password);
-      login(data.token, data.user);
-      navigate("/dashboard");
+      
+      setIsLoading(false);
+      setIsSuccess(true);
+      
+      setTimeout(() => {
+        login(data.token, data.user);
+        navigate("/dashboard");
+      }, 700);
+      
     } catch (err: any) {
       const msg = err.response?.data?.message;
       setError(msg || "Error al iniciar sesión. Verifica tus credenciales.");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -37,6 +45,7 @@ export function useLogin() {
     setPassword,
     error,
     isLoading,
+    isSuccess,
     showPassword,
     setShowPassword,
     handleSubmit,
