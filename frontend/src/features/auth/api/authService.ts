@@ -5,7 +5,9 @@ interface UserData {
   username: string;
   nombres: string;
   apellidos: string;
+  cargo?: string | null;
   roles: string[];
+  permisos?: string[];
 }
 
 interface LoginData {

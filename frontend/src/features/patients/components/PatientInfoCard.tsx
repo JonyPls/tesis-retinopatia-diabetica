@@ -1,7 +1,20 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/medical/StatusBadge";
-import { IdCard, Cake, User, Phone, Calendar, ChevronUp, ChevronDown } from "lucide-react";
+import {
+  AlertCircle,
+  Cake,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  IdCard,
+  Mail,
+  MapPin,
+  Phone,
+  ShieldCheck,
+  User,
+} from "lucide-react";
 import { Patient, Diagnosis } from "../types";
 
 interface PatientInfoCardProps {
@@ -103,6 +116,19 @@ export function PatientInfoCard({
           value={`${calculateAge(patient.fecha_nacimiento)} años`}
         />
         <InfoRow icon={Phone} label="Teléfono" value={patient.telefono} />
+        <InfoRow icon={Mail} label="Correo" value={patient.correo} />
+        <InfoRow icon={MapPin} label="Dirección" value={patient.direccion} />
+        <InfoRow
+          icon={ShieldCheck}
+          label="Consentimiento"
+          value={
+            patient.consentimiento_informado
+              ? patient.fecha_consentimiento
+                ? `Archivado · ${new Date(patient.fecha_consentimiento).toLocaleDateString("es-PE")}`
+                : "Archivado"
+              : "No registrado"
+          }
+        />
         <InfoRow icon={Calendar} label="Última visita" value={lastVisit} />
 
         <Separator className="my-4" />
@@ -128,6 +154,24 @@ export function PatientInfoCard({
             </div>
           </div>
         </div>
+
+        <Separator className="my-4" />
+
+        <div className="space-y-3">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+            Antecedentes
+          </div>
+          <InfoRow
+            icon={FileText}
+            label="Clínicos"
+            value={patient.antecedentes_clinicos}
+          />
+          <InfoRow
+            icon={AlertCircle}
+            label="Alergias"
+            value={patient.alergias}
+          />
+        </div>
       </CardContent>
     </Card>
   );
@@ -141,7 +185,7 @@ function InfoRow({
 }: {
   icon: any;
   label: string;
-  value: string;
+  value?: string | null;
   mono?: boolean;
 }) {
   return (
@@ -152,7 +196,7 @@ function InfoRow({
         <div
           className={`text-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}
         >
-          {value}
+          {value || "No registrado"}
         </div>
       </div>
     </div>

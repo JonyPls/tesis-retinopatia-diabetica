@@ -18,7 +18,7 @@ interface PatientTableProps {
   calculateAge: (date: string) => string | number;
 }
 
-const formatPhone = (phone: string) => {
+const formatPhone = (phone?: string) => {
   if (!phone) return "";
   const formatted = phone.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
   return `+51 ${formatted}`;
@@ -130,7 +130,7 @@ export function PatientTable({
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
-                  <Phone className="h-3 w-3" /> {formatPhone(p.telefono)}
+                  <Phone className="h-3 w-3" /> {formatPhone(p.telefono) || "Sin teléfono"}
                 </span>
               </TableCell>
               <TableCell className="text-sm">

@@ -85,7 +85,7 @@ export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, e
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Nueva Visita</p>
-            <p className="text-xs text-muted-foreground">Crear un nuevo registro de diagnóstico</p>
+            <p className="text-xs text-muted-foreground">Crear una nueva atención clínica</p>
           </div>
           {isNew && (
             <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
@@ -107,10 +107,10 @@ export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, e
 
             <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
               {visitas.map((v) => {
-                const active = selectedVisitaId === v.diagnostico_id;
+                const active = selectedVisitaId === v.visita_id;
                 return (
                   <button
-                    key={v.diagnostico_id}
+                    key={v.visita_id}
                     type="button"
                     onClick={() => onSelect(v)}
                     className={cn(

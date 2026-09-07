@@ -11,7 +11,7 @@ interface PatientCardGridProps {
   calculateAge: (date: string) => string | number;
 }
 
-const formatPhone = (phone: string) => {
+const formatPhone = (phone?: string) => {
   if (!phone) return "";
   const formatted = phone.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
   return `+51 ${formatted}`;

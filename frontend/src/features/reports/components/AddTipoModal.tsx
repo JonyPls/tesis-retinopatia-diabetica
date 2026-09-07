@@ -1,15 +1,13 @@
 import { useState, useMemo } from "react";
+import { Dialog } from "@/components/ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { FileText, Search, Check } from "lucide-react";
 import { TipoInforme } from "../types";
 
@@ -68,22 +66,14 @@ export function AddTipoModal({ open, onClose, availableTipos, onAdd }: AddTipoMo
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
-      <DialogContent className="sm:max-w-[480px] [&>button.absolute]:opacity-100 [&>button.absolute]:hover:bg-muted-foreground/15 [&>button.absolute]:hover:text-foreground [&>button.absolute]:transition-colors">
-        <DialogHeader className="flex-row items-start gap-4 space-y-0">
-          <div className="rounded-xl bg-primary/10 p-3 text-primary shrink-0">
-            <FileText className="h-6 w-6" />
-          </div>
-          <div>
-            <DialogTitle className="text-xl text-emerald-800">Agregar Informe</DialogTitle>
-            <DialogDescription className="mt-1">
-              Seleccione uno o más informes para agregar al diagnóstico.
-            </DialogDescription>
-          </div>
-        </DialogHeader>
+      <AppModalContent className="sm:max-w-[480px]">
+        <AppModalHeader
+          icon={<FileText className="h-6 w-6" />}
+          title="Agregar Informe"
+          subtitle="Seleccione uno o más informes para agregar al diagnóstico."
+        />
 
-        <Separator />
-
-        <div className="space-y-3">
+        <AppModalBody className="space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -145,11 +135,9 @@ export function AddTipoModal({ open, onClose, availableTipos, onAdd }: AddTipoMo
               {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
             </p>
           )}
-        </div>
+        </AppModalBody>
 
-        <Separator />
-
-        <DialogFooter className="gap-3">
+        <AppModalFooter>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancelar
           </Button>
@@ -161,8 +149,8 @@ export function AddTipoModal({ open, onClose, availableTipos, onAdd }: AddTipoMo
           >
             Agregar ({selectedIds.size})
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

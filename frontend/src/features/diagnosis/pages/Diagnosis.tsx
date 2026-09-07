@@ -1,29 +1,63 @@
+import { useState } from "react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Brain,
+  ClipboardCheck,
+  Image as ImageIcon,
+  Loader2,
+  Save,
+  UserRound,
+  XCircle,
+} from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { ArrowRight, ArrowLeft, Loader2, Save, Brain, XCircle, AlertTriangle } from "lucide-react";
-import { useDiagnosis } from "../hooks/useDiagnosis";
-import { DiagnosisStepper } from "../components/DiagnosisStepper";
-import { PatientSelectorStep } from "@/features/reports/components/PatientSelectorStep";
-import { VisitaSelector } from "@/features/reports/components/VisitaSelector";
-import { ImageUploader } from "../components/ImageUploader";
-import { DiagnosisResults } from "../components/DiagnosisResults";
-import { ExistingDiagnosisModal } from "../components/ExistingDiagnosisModal";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  AppAlertModalBody,
+  AppAlertModalContent,
+  AppAlertModalFooter,
+  AppAlertModalHeader,
+} from "@/components/ui/app-alert-modal";
+import { CreatePatientDialog } from "@/features/patients/components/CreatePatientDialog";
+import { usePatients } from "@/features/patients/hooks/usePatients";
+import { DiagnosisPatientStep } from "../components/DiagnosisPatientStep";
+import { DiagnosisResults } from "../components/DiagnosisResults";
+import { DiagnosisStepper } from "../components/DiagnosisStepper";
+import { ImageUploader } from "../components/ImageUploader";
+import { useDiagnosis } from "../hooks/useDiagnosis";
+
+const STEP_COPY = {
+  1: {
+    title: "Seleccionar paciente",
+    subtitle:
+      "Busque por documento, nombres o apellidos. Si aún no existe, puede registrarlo desde este flujo.",
+    icon: UserRound,
+  },
+  2: {
+    title: "Cargar imágenes",
+    subtitle:
+      "Adjunte las imágenes de fondo de ojo para OD, OI o ambos ojos antes de iniciar el análisis.",
+    icon: ImageIcon,
+  },
+  3: {
+    title: "Validar resultado",
+    subtitle:
+      "Revise la predicción de la IA y confirme el diagnóstico final con criterio médico.",
+    icon: ClipboardCheck,
+  },
+};
 
 export default function Diagnosis() {
   const diagnosisHook = useDiagnosis();
-    const {
+  const {
     step,
     goBack,
     goNext,
@@ -34,19 +68,32 @@ export default function Diagnosis() {
     modalProgress,
     validationError,
     dismissError,
-    resetAll,
-    // validation
-    activeEye,
-    finalSelection,
-    setFinalSelection,
-    comments,
-    setComment,
-    validateDiagnosis,
     validateAll,
     isValidating,
   } = diagnosisHook;
 
+  const patientRegistration = usePatients({
+    autoFetch: false,
+    onCreated: (patient) => {
+      diagnosisHook.selectPatient({
+        id: Number(patient.id),
+        tipo_doc_abrev: patient.tipo_doc_abrev || patient.tipo_doc || "DNI",
+        tipo_doc: patient.tipo_doc,
+        tipo_doc_id: patient.tipo_doc_id,
+        nro_documento: patient.nro_documento,
+        nombres: patient.nombres || "",
+        apellidos: patient.apellidos || "",
+      });
+    },
+  });
+
   const [modalClosing, setModalClosing] = useState(false);
+  const [stepperLayout, setStepperLayout] = useState<"side" | "top">("side");
+  const currentStep = STEP_COPY[step as keyof typeof STEP_COPY] ?? STEP_COPY[1];
+  const StepIcon = currentStep.icon;
+  const selectedPatient = diagnosisHook.selectedPatient;
+  const processedEyes = Object.values(diagnosisHook.results).filter(Boolean).length;
+
   const handleDismissError = () => {
     setModalClosing(true);
     setTimeout(() => {
@@ -55,247 +102,355 @@ export default function Diagnosis() {
     }, 300);
   };
 
+  const handleTipoDocChange = (val: string) => {
+    patientRegistration.setFormData((prev) => ({
+      ...prev,
+      tipo_doc: val,
+      nro_documento: "",
+    }));
+  };
+
+  const registrationDialog = (
+    <CreatePatientDialog
+      open={patientRegistration.open}
+      onOpenChange={patientRegistration.setOpen}
+      formData={patientRegistration.formData}
+      formError={patientRegistration.formError}
+      isSubmitting={patientRegistration.isSubmitting}
+      consent={patientRegistration.consent}
+      onConsentChange={patientRegistration.setConsent}
+      onDocumentChange={(value) =>
+        patientRegistration.handleDocumentChange(
+          value,
+          patientRegistration.formData.tipo_doc,
+        )
+      }
+      onPhoneChange={patientRegistration.handlePhoneChange}
+      onFieldChange={patientRegistration.handleChange}
+      onSubmit={patientRegistration.handleSubmit}
+      onTipoDocChange={handleTipoDocChange}
+      triggerLabel="Nuevo paciente"
+    />
+  );
+
   return (
     <AppLayout
       title="Módulo de Diagnóstico IA"
       subtitle="Evaluación asistida por Deep Learning · Retinopatía Diabética"
     >
-      <DiagnosisStepper step={step} />
-
-      {step === 1 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          <PatientSelectorStep
-            query={diagnosisHook.query}
-            searchResults={diagnosisHook.searchResults}
-            recentPatients={diagnosisHook.recentPatients}
-            selectedPatient={diagnosisHook.selectedPatient}
-            isSearching={diagnosisHook.isSearching}
-            onQueryChange={diagnosisHook.handleQueryChange}
-            onSelect={diagnosisHook.selectPatient}
-            onClear={diagnosisHook.clearPatient}
-          />
-
-          <VisitaSelector
-            visitas={diagnosisHook.visitas}
-            selectedVisitaId={
-              diagnosisHook.selectedVisita === undefined
-                ? undefined
-                : diagnosisHook.selectedVisita === null
-                  ? -1
-                  : diagnosisHook.selectedVisita.diagnostico_id
+      <div
+        className={
+          stepperLayout === "side"
+            ? "grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]"
+            : "grid gap-6"
+        }
+      >
+        {stepperLayout === "side" ? (
+          <aside className="xl:sticky xl:top-6 xl:self-start">
+            <DiagnosisStepper
+              step={step}
+              layout={stepperLayout}
+              selectedPatient={selectedPatient}
+              eyes={diagnosisHook.eyes}
+              processedEyes={processedEyes}
+              onToggleLayout={() =>
+                setStepperLayout((current) =>
+                  current === "side" ? "top" : "side",
+                )
+              }
+            />
+          </aside>
+        ) : (
+          <DiagnosisStepper
+            step={step}
+            layout={stepperLayout}
+            selectedPatient={selectedPatient}
+            eyes={diagnosisHook.eyes}
+            processedEyes={processedEyes}
+            onToggleLayout={() =>
+              setStepperLayout((current) =>
+                current === "side" ? "top" : "side",
+              )
             }
-            onSelect={diagnosisHook.selectVisita}
-            hasMore={diagnosisHook.hasMoreVisitas}
-            expandida={diagnosisHook.visitasExpandidas}
-            onVerMas={diagnosisHook.verMasVisitas}
-            onVerMenos={diagnosisHook.verMenosVisitas}
-            pacienteSeleccionado={!!diagnosisHook.selectedPatient}
-            cargandoVisitas={diagnosisHook.isLoadingVisitas}
           />
+        )}
 
-          <div className="flex justify-end lg:col-span-2 mt-2">
-            <Button
-              onClick={goNext}
-              disabled={!canNext}
-              className="bg-gradient-primary hover:opacity-90"
-            >
-              Continuar <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
-          </div>
-        </div>
-      )}
+        <Card className="overflow-hidden shadow-card">
+          <CardHeader className="border-b border-border bg-muted/35 px-5 py-3.5 lg:px-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <StepIcon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="text-base leading-tight">
+                    {currentStep.title}
+                  </CardTitle>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                    {currentStep.subtitle}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
 
-      {step === 2 && (
-        <ImageUploader
-          eyes={diagnosisHook.eyes}
-          handleFile={diagnosisHook.handleFile}
-          clearEye={diagnosisHook.clearEye}
-        />
-      )}
-
-      {step === 3 && (
-        <DiagnosisResults
-          results={diagnosisHook.results}
-          eyes={diagnosisHook.eyes}
-          activeEye={diagnosisHook.activeEye}
-          setActiveEye={diagnosisHook.setActiveEye}
-          finalSelection={diagnosisHook.finalSelection}
-          setFinalSelection={diagnosisHook.setFinalSelection}
-          comments={diagnosisHook.comments}
-          setComment={diagnosisHook.setComment}
-          validateDiagnosis={diagnosisHook.validateDiagnosis}
-          isValidating={diagnosisHook.isValidating}
-        />
-      )}
-
-      {/* Modal diagnóstico IA existente */}
-      <ExistingDiagnosisModal
-        open={diagnosisHook.showExistingDiagnosisModal}
-        detalles={diagnosisHook.existingDetalles}
-        onGoToStep2={diagnosisHook.goToStep2FromExisting}
-        onGoToStep3={diagnosisHook.goToStep3FromExisting}
-        onCancel={diagnosisHook.closeExistingDiagnosisModal}
-      />
-
-      {step !== 1 && (
-      <>
-      {/* Navegación */}
-      <div className="flex items-center justify-between mt-6 pt-4 border-t border-border">
-        <Button
-          variant="outline"
-          onClick={goBack}
-          disabled={step === 1 || isSaving}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
-        </Button>
-
-        {step === 2 && (
-          <Button
-            onClick={goNext}
-            disabled={!canNext || isSaving}
-            className="bg-gradient-primary hover:opacity-90 shadow-elevated"
-          >
-            {isSaving ? (
-              <>Procesando...</>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" /> Guardar y Analizar{" "}
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </>
+          <CardContent className="p-5 lg:p-6">
+            {step === 1 && (
+              <DiagnosisPatientStep
+                query={diagnosisHook.query}
+                searchResults={diagnosisHook.searchResults}
+                recentPatients={diagnosisHook.recentPatients}
+                selectedPatient={diagnosisHook.selectedPatient}
+                isSearching={diagnosisHook.isSearching}
+                isLoadingMore={diagnosisHook.isLoadingMorePatients}
+                hasMoreSearchResults={diagnosisHook.hasMoreSearchResults}
+                registrationDialog={registrationDialog}
+                onQueryChange={diagnosisHook.handleQueryChange}
+                onLoadMore={diagnosisHook.loadMorePatients}
+                onSelect={diagnosisHook.selectPatient}
+                onClear={diagnosisHook.clearPatient}
+              />
             )}
-          </Button>
-        )}
 
-        {step === 3 && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
+            {step === 2 && (
+              <ImageUploader
+                embedded
+                eyes={diagnosisHook.eyes}
+                handleFile={diagnosisHook.handleFile}
+                clearEye={diagnosisHook.clearEye}
+                onAutoSelect={diagnosisHook.autoSelectRetinographImages}
+                isAutoSelecting={diagnosisHook.isAutoSelectingImages}
+              />
+            )}
+
+            {step === 3 && (
+              <DiagnosisResults
+                results={diagnosisHook.results}
+                eyes={diagnosisHook.eyes}
+                activeEye={diagnosisHook.activeEye}
+                setActiveEye={diagnosisHook.setActiveEye}
+                finalSelection={diagnosisHook.finalSelection}
+                setFinalSelection={diagnosisHook.setFinalSelection}
+                comments={diagnosisHook.comments}
+                setComment={diagnosisHook.setComment}
+                validateDiagnosis={diagnosisHook.validateDiagnosis}
+                isValidating={diagnosisHook.isValidating}
+              />
+            )}
+          </CardContent>
+
+          <div
+            className={`flex flex-col-reverse gap-3 border-t border-border bg-muted/25 px-5 py-4 sm:flex-row sm:items-center lg:px-6 ${
+              step === 1 ? "sm:justify-end" : "sm:justify-between"
+            }`}
+          >
+            {step !== 1 && (
               <Button
-                disabled={isValidating}
-                className="bg-gradient-primary hover:opacity-90"
+                variant="outline"
+                onClick={goBack}
+                disabled={isSaving}
+                className="sm:w-auto"
               >
-                {isValidating ? "Guardando..." : "Guardar Diagnóstico"}{" "}
-                <ArrowRight className="h-4 w-4 ml-2" />
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Anterior
               </Button>
-            </AlertDialogTrigger>
+            )}
 
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Confirmar guardado</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Se guardarán las validaciones para los ojos procesados y
-                  volverás al dashboard. ¿Deseas continuar?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => validateAll()}
-                  disabled={isValidating}
-                >
-                  {isValidating ? "Guardando..." : "Guardar y regresar"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+            {step === 1 && (
+              <Button
+                onClick={goNext}
+                disabled={!canNext}
+                className="bg-gradient-primary shadow-elevated hover:opacity-90"
+              >
+                Continuar
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            )}
+
+            {step === 2 && (
+              <Button
+                onClick={goNext}
+                disabled={!canNext || isSaving}
+                className="bg-gradient-primary shadow-elevated hover:opacity-90"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Procesando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Guardar y analizar
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            )}
+
+            {step === 3 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    disabled={isValidating}
+                    className="bg-gradient-primary hover:opacity-90"
+                  >
+                    {isValidating ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        Guardar diagnóstico
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+
+                <AppAlertModalContent>
+                  <AppAlertModalHeader
+                    icon={<Save className="h-6 w-6" />}
+                    title="Confirmar guardado"
+                    subtitle="Revise esta acción antes de continuar."
+                  />
+                  <AppAlertModalBody>
+                    Se guardarán las validaciones para los ojos procesados y
+                    volverás al dashboard. ¿Deseas continuar?
+                  </AppAlertModalBody>
+                  <AppAlertModalFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => validateAll()}
+                      disabled={isValidating}
+                    >
+                      {isValidating ? "Guardando..." : "Guardar y regresar"}
+                    </AlertDialogAction>
+                  </AppAlertModalFooter>
+                </AppAlertModalContent>
+              </AlertDialog>
+            )}
+          </div>
+        </Card>
       </div>
-      </>
-      )}
 
       {/* Modal de procesamiento — contenedor único barra persistente */}
       {(() => {
         const modalVisible = modalPhase !== "idle" && !modalClosing;
         return (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ease-in-out"
-          style={{
-            backgroundColor: modalVisible ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0)",
-            pointerEvents: modalVisible ? "auto" : "none",
-          }}
-        >
           <div
-            className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 max-w-sm w-full mx-4 transition-all duration-300 ease-in-out"
+            className="fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ease-in-out"
             style={{
-              transform: modalVisible ? "scale(1)" : "scale(0.9)",
-              opacity: modalVisible ? 1 : 0,
+              backgroundColor: modalVisible
+                ? "rgba(0,0,0,0.5)"
+                : "rgba(0,0,0,0)",
+              pointerEvents: modalVisible ? "auto" : "none",
             }}
           >
-            {modalPhase === "error" ? (
-              <>
-                <div className="h-14 w-14 rounded-xl bg-red-100 flex items-center justify-center">
-                  <XCircle className="h-7 w-7 text-red-600" />
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-semibold text-red-700">
-                    Validación fallida — {processingEye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    {validationError || "La imagen no cumple con los requisitos."}
-                  </p>
-                </div>
-                <div className="flex items-start gap-3 w-full bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="text-xs text-amber-800 leading-relaxed">
-                    <p className="font-medium mb-0.5">Formatos aceptados:</p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      <li>JPG, PNG o TIFF</li>
-                      <li>Mín. 300×300 píxeles</li>
-                      <li>Región ocular visible</li>
-                      <li>Máx. 30 MB por imagen</li>
-                    </ul>
+            <div
+              className="mx-4 flex w-full max-w-sm flex-col items-center gap-5 rounded-2xl bg-white p-8 shadow-2xl transition-all duration-300 ease-in-out dark:bg-slate-900"
+              style={{
+                transform: modalVisible ? "scale(1)" : "scale(0.9)",
+                opacity: modalVisible ? 1 : 0,
+              }}
+            >
+              {modalPhase === "error" ? (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-red-100">
+                    <XCircle className="h-7 w-7 text-red-600" />
                   </div>
-                </div>
-                <Button variant="outline" onClick={handleDismissError} className="w-full mt-2">
-                  Entendido
-                </Button>
-              </>
-            ) : (
-              <>
-                <div
-                  className={`h-14 w-14 rounded-xl flex items-center justify-center ${
-                    modalPhase === "validating" ? "bg-amber-100" : "bg-primary/10"
-                  }`}
-                >
-                  {modalPhase === "validating" ? (
-                    <Loader2 className="h-7 w-7 text-amber-600 animate-spin" />
-                  ) : (
-                    <Brain className="h-7 w-7 text-primary animate-pulse" />
-                  )}
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-semibold text-foreground">
-                    {modalPhase === "validating" ? "Validando imagen" : "Analizando con IA"}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {processingEye
-                      ? `${modalPhase === "validating" ? "Verificando" : "Procesando"} ${processingEye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"}...`
-                      : modalPhase === "validating"
-                        ? "Preparando validación..."
-                        : "Preparando análisis..."}
-                  </p>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div className="text-center">
+                    <p className="text-lg font-semibold text-red-700">
+                      Validación fallida —{" "}
+                      {processingEye === "OD"
+                        ? "ojo derecho (OD)"
+                        : "ojo izquierdo (OI)"}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {validationError ||
+                        "La imagen no cumple con los requisitos."}
+                    </p>
+                  </div>
+                  <div className="flex w-full items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <div className="text-xs leading-relaxed text-amber-800">
+                      <p className="mb-0.5 font-medium">Formatos aceptados:</p>
+                      <ul className="list-inside list-disc space-y-0.5">
+                        <li>JPG, PNG o TIFF</li>
+                        <li>Mín. 300×300 píxeles</li>
+                        <li>Región ocular visible</li>
+                        <li>Máx. 30 MB por imagen</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleDismissError}
+                    className="mt-2 w-full"
+                  >
+                    Entendido
+                  </Button>
+                </>
+              ) : (
+                <>
                   <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{
-                      width: modalProgress + "%",
-                      background:
-                        modalPhase === "validating"
-                          ? "linear-gradient(to right, #f59e0b, #d97706)"
-                          : "linear-gradient(to right, #14b8a6, #059669)",
-                    }}
-                  />
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {modalPhase === "validating"
-                    ? "Formato · Región ocular · CLIP semántico"
-                    : "Ejecutando modelo ResNet50 · Deep Learning"}
-                </div>
-              </>
-            )}
+                    className={`flex h-14 w-14 items-center justify-center rounded-xl ${
+                      modalPhase === "validating"
+                        ? "bg-amber-100"
+                        : "bg-primary/10"
+                    }`}
+                  >
+                    {modalPhase === "validating" ? (
+                      <Loader2 className="h-7 w-7 animate-spin text-amber-600" />
+                    ) : (
+                      <Brain className="h-7 w-7 animate-pulse text-primary" />
+                    )}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-semibold text-foreground">
+                      {modalPhase === "validating"
+                        ? "Validando imagen"
+                        : "Analizando con IA"}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {processingEye
+                        ? `${
+                            modalPhase === "validating"
+                              ? "Verificando"
+                              : "Procesando"
+                          } ${
+                            processingEye === "OD"
+                              ? "ojo derecho (OD)"
+                              : "ojo izquierdo (OI)"
+                          }...`
+                        : modalPhase === "validating"
+                          ? "Preparando validación..."
+                          : "Preparando análisis..."}
+                    </p>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: modalProgress + "%",
+                        background:
+                          modalPhase === "validating"
+                            ? "linear-gradient(to right, #f59e0b, #d97706)"
+                            : "linear-gradient(to right, #14b8a6, #059669)",
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {modalPhase === "validating"
+                      ? "Formato · Región ocular · CLIP semántico"
+                      : "Ejecutando modelo ResNet50 · Deep Learning"}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
         );
       })()}
     </AppLayout>

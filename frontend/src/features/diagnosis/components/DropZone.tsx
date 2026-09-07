@@ -1,11 +1,13 @@
 import { useRef, useState, useCallback } from "react";
-import { UploadCloud, X, Eye, AlertCircle } from "lucide-react";
+import { UploadCloud, X, Eye, AlertCircle, Image } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EyeKey } from "../types";
+import { ImagePreviewLightbox } from "./ImagePreviewLightbox";
 
 interface DropZoneProps {
   eye: EyeKey;
   preview: string | null;
+  fileName?: string;
   hasFile: boolean;
   onFile: (eye: EyeKey, file?: File) => void;
   onClear: (eye: EyeKey) => void;
@@ -32,6 +34,7 @@ function validateFile(file: File): string | null {
 export function DropZone({
   eye,
   preview,
+  fileName,
   hasFile,
   onFile,
   onClear,
@@ -39,6 +42,7 @@ export function DropZone({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const label = EYE_LABEL[eye];
 
@@ -85,7 +89,13 @@ export function DropZone({
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     setError(null);
+    setPreviewOpen(false);
     onClear(eye);
+  };
+
+  const handleReplace = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    inputRef.current?.click();
   };
 
   // ── Render: con imagen cargada ─────────────────────────────────
@@ -97,20 +107,33 @@ export function DropZone({
           <span className="text-xs font-semibold uppercase tracking-wider text-primary">
             {label.full}
           </span>
-          <button
-            onClick={handleClear}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-          >
-            <X className="h-3 w-3" />
-            Quitar
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleReplace}
+              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+            >
+              <UploadCloud className="h-3 w-3" />
+              Reemplazar
+            </button>
+            <button
+              type="button"
+              onClick={handleClear}
+              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+              Quitar
+            </button>
+          </div>
         </div>
 
-        {/* Imagen con overlay de edición */}
-        <div
-          className="group relative rounded-lg border-2 border-primary/30 bg-black overflow-hidden cursor-pointer"
+        {/* Imagen con vista ampliada */}
+        <button
+          type="button"
+          className="group relative overflow-hidden rounded-lg border-2 border-primary/30 bg-black text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           style={{ aspectRatio: "1 / 1" }}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => setPreviewOpen(true)}
+          aria-label={`Ver imagen de ${label.full} en grande`}
         >
           <img
             src={preview}
@@ -119,14 +142,14 @@ export function DropZone({
           />
           {/* Hover overlay */}
           <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black/40">
-            <UploadCloud className="h-7 w-7 text-white mb-1" />
-            <span className="text-xs text-white font-medium">Reemplazar</span>
+            <Image className="h-7 w-7 text-white mb-1" />
+            <span className="text-xs text-white font-medium">Clic para ver</span>
           </div>
           {/* Badge de ojo en esquina */}
           <div className="absolute top-2 left-2 rounded-md bg-primary/90 px-2 py-0.5 text-[10px] font-bold text-primary-foreground backdrop-blur-sm">
             {label.short}
           </div>
-        </div>
+        </button>
 
         <input
           ref={inputRef}
@@ -135,6 +158,16 @@ export function DropZone({
           className="hidden"
           onChange={onInputChange}
         />
+
+        {previewOpen && (
+          <ImagePreviewLightbox
+            src={preview}
+            title={`${label.short} · ${label.full}`}
+            subtitle={fileName}
+            alt={`Retina ${label.full}`}
+            onClose={() => setPreviewOpen(false)}
+          />
+        )}
       </div>
     );
   }

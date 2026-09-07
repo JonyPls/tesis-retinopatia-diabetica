@@ -26,14 +26,15 @@ import { ConfirmDelete } from "@/components/ui/ConfirmDelete";
 import {
   AlertDialog,
   AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import {
+  AppAlertModalBody,
+  AppAlertModalContent,
+  AppAlertModalFooter,
+  AppAlertModalHeader,
+} from "@/components/ui/app-alert-modal";
 import { cn } from "@/lib/utils";
 
 export default function ClinicalReports() {
@@ -116,7 +117,7 @@ export default function ClinicalReports() {
                 ? undefined
                 : hook.selectedVisita === null
                   ? -1
-                  : hook.selectedVisita.diagnostico_id
+                  : hook.selectedVisita.visita_id
             }
             onSelect={hook.selectVisita}
             hasMore={hook.hasMoreVisitas}
@@ -427,23 +428,25 @@ export default function ClinicalReports() {
                     )}
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Confirmar guardado</AlertDialogTitle>
-                    <AlertDialogDescription>
+                <AppAlertModalContent>
+                  <AppAlertModalHeader
+                    icon={<Save className="h-6 w-6" />}
+                    title="Confirmar guardado"
+                    subtitle="Revise esta acción antes de continuar."
+                  />
+                  <AppAlertModalBody>
                       Se guardarán {hook.selectedTipos.length} informe(s) para{" "}
                       {hook.selectedPatient?.nombres}{" "}
                       {hook.selectedPatient?.apellidos}.
                       ¿Deseas continuar?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
+                  </AppAlertModalBody>
+                  <AppAlertModalFooter>
                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
                     <AlertDialogAction onClick={hook.saveAll} disabled={hook.isSaving}>
                       {hook.isSaving ? "Guardando..." : "Guardar"}
                     </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
+                  </AppAlertModalFooter>
+                </AppAlertModalContent>
               </AlertDialog>
             )}
           </div>

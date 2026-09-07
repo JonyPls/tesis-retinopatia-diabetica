@@ -26,13 +26,17 @@ const PrivateRoute = ({ children }: { children: JSX.Element }) => {
 const RoleRoute = ({
   children,
   roles,
+  permission,
 }: {
   children: JSX.Element;
   roles: string[];
+  permission?: string;
 }) => {
-  const { isAuthenticated, hasRole } = useAuthStore();
+  const { isAuthenticated, hasRole, hasPermission } = useAuthStore();
   if (!isAuthenticated) return <Navigate to="/" replace />;
-  if (!hasRole(roles)) return <Navigate to="/dashboard" replace />;
+  if (!hasRole(roles) && (!permission || !hasPermission(permission))) {
+    return <Navigate to="/dashboard" replace />;
+  }
   return children;
 };
 
@@ -55,7 +59,10 @@ const App = () => (
 
           {/* RUTAS PROTEGIDAS — solo Admin y Gerente General */}
           <Route path="/configuracion" element={
-            <RoleRoute roles={["Admin", "Gerente General"]}>
+            <RoleRoute
+              roles={["Admin", "Gerente General", "Administrador del sistema"]}
+              permission="configuracion.ver"
+            >
               <Placeholder title="Configuración" subtitle="Preferencias del sistema y del usuario" />
             </RoleRoute>
           } />

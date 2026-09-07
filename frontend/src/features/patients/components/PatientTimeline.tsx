@@ -102,7 +102,7 @@ export function PatientTimeline({
               Historial de Visitas
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              {sortedDx.length} visita(s) · Últimos diagnósticos registrados
+              {sortedDx.length} visita(s) · Actividad clínica registrada
             </p>
           </div>
           <Button
@@ -167,7 +167,7 @@ export function PatientTimeline({
           ) : (
             filtered.map((dx) => (
               <div
-                key={dx.diagnostico_id}
+                key={dx.visita_id || dx.diagnostico_id}
                 className="rounded-lg border border-border bg-card p-4 hover:shadow-elevated transition-shadow"
               >
                 <div className="flex items-start justify-between gap-3">

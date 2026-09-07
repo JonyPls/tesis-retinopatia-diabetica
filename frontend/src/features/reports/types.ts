@@ -6,10 +6,13 @@ export interface TipoInforme {
 
 export interface Informe {
   id: number;
-  diagnostico_id: number;
+  visita_id: number;
+  diagnostico_id?: number;
   tipo_informe_id: number;
   tipo_informe_nombre?: string;
+  schema_version?: number;
   datos_estructurados: Record<string, any>;
+  conclusion?: string | null;
   estado: string;
   fecha_creado: string;
   fecha_actualizado: string;

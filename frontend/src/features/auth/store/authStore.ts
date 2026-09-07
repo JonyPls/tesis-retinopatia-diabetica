@@ -6,7 +6,9 @@ interface User {
   username: string;
   nombres: string;
   apellidos: string;
+  cargo?: string | null;
   roles: string[];
+  permisos?: string[];
 }
 
 interface AuthState {
@@ -18,6 +20,7 @@ interface AuthState {
   login: (token: string, user: User) => void;
   logout: () => void;
   hasRole: (roles: string[]) => boolean;
+  hasPermission: (permission: string) => boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -40,6 +43,11 @@ export const useAuthStore = create<AuthState>()(
       hasRole: (roles) => {
         const userRoles = get().user?.roles ?? [];
         return roles.some((r) => userRoles.includes(r));
+      },
+
+      hasPermission: (permission) => {
+        const permissions = get().user?.permisos ?? [];
+        return permissions.includes(permission);
       },
     }),
     {

@@ -1,7 +1,10 @@
 import api from "@/lib/api";
+import type { EyeKey } from "../types";
 
 export interface DiagnosisResult {
-  diagnostico_id: number;
+  visita_id: number;
+  diagnostico_id?: number;
+  diagnostico_retinopatia_id?: number;
   detalle_id: number;
   diagnostico_codigo: number;
   diagnostico_texto: string;
@@ -15,14 +18,14 @@ export const crearDiagnostico = async (
   pacienteId: number,
   ojoDominante: "Derecho" | "Izquierdo",
   imagen: File,
-  diagnosticoId?: number,
+  visitaId?: number,
 ): Promise<DiagnosisResult> => {
   const formData = new FormData();
   formData.append("paciente_id", String(pacienteId));
   formData.append("ojo_evaluado", ojoDominante);
   formData.append("imagen", imagen);
-  if (diagnosticoId !== undefined) {
-    formData.append("diagnostico_id", String(diagnosticoId));
+  if (visitaId !== undefined) {
+    formData.append("visita_id", String(visitaId));
   }
 
   const response = await api.post("/diagnosticar", formData, {
@@ -45,10 +48,12 @@ export interface DetalleDiagnosticoExistente {
   gradcam_url: string | null;
 }
 
-export const obtenerDetallesDiagnostico = async (diagnosticoId: number): Promise<DetalleDiagnosticoExistente[]> => {
-  const response = await api.get(`/diagnosticar/diagnostico/${diagnosticoId}/detalles`);
+export const obtenerDetallesVisita = async (visitaId: number): Promise<DetalleDiagnosticoExistente[]> => {
+  const response = await api.get(`/diagnosticar/visita/${visitaId}/detalles`);
   return response.data.data.ojos;
 };
+
+export const obtenerDetallesDiagnostico = obtenerDetallesVisita;
 
 export const validarDiagnostico = async (
   diagnosticoId: number,
@@ -75,5 +80,45 @@ export const validarDetalleDiagnostico = async (
     `/diagnosticar/detalle/${detalleId}/validar`,
     payload,
   );
+  return response.data;
+};
+
+export interface RetinographAutoImage {
+  filename: string;
+  documento: string;
+  ojo: EyeKey;
+  ojo_original: "R" | "L";
+  tipo_imagen: string;
+  secuencia: number;
+  extension: string;
+  fecha_exportacion: string;
+  mime_type: string;
+}
+
+export interface RetinographAutoSelection {
+  paciente_id: number;
+  documento: string;
+  directorio: string;
+  encontradas: number;
+  imagenes: Partial<Record<EyeKey, RetinographAutoImage | null>>;
+}
+
+export const obtenerSeleccionAutomaticaRetinografo = async (
+  pacienteId: number,
+): Promise<RetinographAutoSelection> => {
+  const response = await api.get(
+    `/diagnosticar/retinografo/auto-seleccion/${pacienteId}`,
+  );
+  return response.data.data;
+};
+
+export const descargarImagenRetinografo = async (
+  pacienteId: number,
+  filename: string,
+): Promise<Blob> => {
+  const response = await api.get("/diagnosticar/retinografo/imagen", {
+    params: { paciente_id: pacienteId, filename },
+    responseType: "blob",
+  });
   return response.data;
 };

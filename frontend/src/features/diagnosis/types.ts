@@ -1,5 +1,5 @@
-import { DiagnosisResult, DetalleDiagnosticoExistente } from "@/features/diagnosis/api/diagnosisService";
-import { PatientSearchResult, DiagnosticoVisita } from "@/features/patients/api/patientService";
+import { DiagnosisResult } from "@/features/diagnosis/api/diagnosisService";
+import { PatientSearchResult } from "@/features/patients/api/patientService";
 
 export type EyeKey = "OD" | "OI";
 
@@ -29,30 +29,18 @@ export interface DiagnosisHook {
   recentPatients: PatientSearchResult[];
   selectedPatient: PatientSearchResult | null;
   isSearching: boolean;
+  isLoadingMorePatients: boolean;
+  hasMoreSearchResults: boolean;
+  isAutoSelectingImages: boolean;
   handleQueryChange: (value: string) => void;
+  loadMorePatients: () => Promise<void>;
   selectPatient: (p: PatientSearchResult) => void;
   clearPatient: () => void;
-
-  // Visitas (paso 1)
-  visitas: DiagnosticoVisita[];
-  selectedVisita: DiagnosticoVisita | null | undefined;
-  selectVisita: (v: DiagnosticoVisita | null) => void;
-  hasMoreVisitas: boolean;
-  visitasExpandidas: boolean;
-  verMasVisitas: () => Promise<void>;
-  verMenosVisitas: () => Promise<void>;
-  isLoadingVisitas: boolean;
-
-  // Modal diagnóstico IA existente (Escenario B)
-  showExistingDiagnosisModal: boolean;
-  existingDetalles: DetalleDiagnosticoExistente[];
-  closeExistingDiagnosisModal: () => void;
-  goToStep2FromExisting: () => void;
-  goToStep3FromExisting: () => void;
 
   // Paso 2 — Imágenes
   eyes: Record<EyeKey, EyeState>;
   handleFile: (eye: EyeKey, file?: File) => void;
+  autoSelectRetinographImages: () => Promise<void>;
   clearEye: (eye: EyeKey) => void;
 
   // Paso 3 — Resultados

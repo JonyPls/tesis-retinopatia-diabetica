@@ -10,5 +10,5 @@ class DocumentRepository:
 
     @staticmethod
     def obtener_tipos_documento_activos():
-        tipos = TipoDocumento.query.filter_by(estado='A').order_by(TipoDocumento.id).all()
+        tipos = TipoDocumento.query.filter_by(estado='ACTIVO').order_by(TipoDocumento.id).all()
         return [{"id": t.id, "nombre": t.nombre, "codigo": t.codigo} for t in tipos]

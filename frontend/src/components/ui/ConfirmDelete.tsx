@@ -1,12 +1,12 @@
+import { Dialog } from "@/components/ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
+import { Trash2 } from "lucide-react";
 
 interface ConfirmDeleteProps {
   open: boolean;
@@ -29,20 +29,25 @@ export function ConfirmDelete({
 }: ConfirmDeleteProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
+      <AppModalContent>
+        <AppModalHeader
+          icon={<Trash2 className="h-6 w-6" />}
+          iconClassName="bg-red-100 text-red-700"
+          title={title}
+          subtitle="Esta acción requiere confirmación."
+        />
+        <AppModalBody>
+          <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+        </AppModalBody>
+        <AppModalFooter>
           <Button variant="outline" onClick={onCancel}>
             {cancelText}
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
             {confirmText}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

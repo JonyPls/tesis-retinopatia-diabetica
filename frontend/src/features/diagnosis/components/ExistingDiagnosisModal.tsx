@@ -1,4 +1,10 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
+import {
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { DetalleDiagnosticoExistente } from "@/features/diagnosis/api/diagnosisService";
 import { Eye, ImageIcon, MessageSquare } from "lucide-react";
@@ -28,18 +34,14 @@ export function ExistingDiagnosisModal({
 }: ExistingDiagnosisModalProps) {
   return (
     <Dialog open={open} onOpenChange={(open) => { if (!open) onCancel(); }}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            <Eye className="h-5 w-5 text-primary" />
-            Diagnóstico IA Existente
-          </DialogTitle>
-          <DialogDescription>
-            Este paciente ya tiene un diagnóstico IA registrado en la visita seleccionada.
-          </DialogDescription>
-        </DialogHeader>
+      <AppModalContent className="max-w-xl">
+        <AppModalHeader
+          icon={<Eye className="h-6 w-6" />}
+          title="Diagnóstico IA Existente"
+          subtitle="Este paciente ya tiene un diagnóstico IA registrado en la visita seleccionada."
+        />
 
-        <div className="space-y-3 py-2">
+        <AppModalBody className="space-y-3">
           <p className="text-sm font-medium text-muted-foreground">
             Ojos evaluados:
           </p>
@@ -53,8 +55,8 @@ export function ExistingDiagnosisModal({
                   key={d.detalle_id}
                   className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3"
                 >
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Eye className="h-5 w-5 text-primary" />
+                  <div className="h-10 w-10 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                    <Eye className="h-5 w-5 text-primary/70" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold">
@@ -80,9 +82,9 @@ export function ExistingDiagnosisModal({
               ))}
             </div>
           )}
-        </div>
+        </AppModalBody>
 
-        <div className="space-y-2 pt-2 border-t border-border">
+        <AppModalFooter className="flex-col-reverse sm:flex-col sm:items-stretch sm:space-x-0">
           <p className="text-sm font-medium">¿Qué deseas hacer?</p>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={onGoToStep2} className="whitespace-nowrap">
@@ -99,8 +101,8 @@ export function ExistingDiagnosisModal({
           <Button variant="ghost" onClick={onCancel} className="w-full text-xs text-foreground">
             Cancelar
           </Button>
-        </div>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

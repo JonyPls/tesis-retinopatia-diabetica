@@ -11,9 +11,21 @@ const INITIAL_FORM: PatientFormData = {
   sexo: "",
   fecha_nacimiento: "",
   telefono: "",
+  correo: "",
+  direccion: "",
+  antecedentes_clinicos: "",
+  alergias: "",
 };
 
-export function usePatients() {
+interface UsePatientsOptions {
+  autoFetch?: boolean;
+  onCreated?: (patient: Patient) => void;
+}
+
+export function usePatients({
+  autoFetch = true,
+  onCreated,
+}: UsePatientsOptions = {}) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -48,8 +60,8 @@ export function usePatients() {
   };
 
   useEffect(() => {
-    fetchPatients();
-  }, []);
+    if (autoFetch) fetchPatients();
+  }, [autoFetch]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -123,8 +135,18 @@ export function usePatients() {
       return;
     }
 
+    if (!formData.nombres.trim() || !formData.apellidos.trim()) {
+      setFormError("Debe ingresar nombres y apellidos.");
+      return;
+    }
+
     if (!formData.sexo) {
       setFormError("Debe seleccionar un sexo.");
+      return;
+    }
+
+    if (!formData.fecha_nacimiento) {
+      setFormError("Debe ingresar la fecha de nacimiento.");
       return;
     }
 
@@ -133,23 +155,31 @@ export function usePatients() {
       const payload = {
         tipo_doc: formData.tipo_doc,
         nro_documento: formData.nro_documento,
-        nombres: formData.nombres,
-        apellidos: formData.apellidos,
+        nombres: formData.nombres.trim(),
+        apellidos: formData.apellidos.trim(),
         sexo: formData.sexo,
         fecha_nacimiento: formData.fecha_nacimiento,
-        telefono: formData.telefono.replace(/\D/g, ""),
+        telefono: formData.telefono.replace(/\D/g, "") || null,
+        correo: formData.correo.trim() || null,
+        direccion: formData.direccion.trim() || null,
+        antecedentes_clinicos: formData.antecedentes_clinicos.trim() || null,
+        alergias: formData.alergias.trim() || null,
+        consentimiento_informado: consent,
       };
 
-      await api.post("/pacientes", payload);
+      const res = await api.post("/pacientes", payload);
 
       toast({
         title: "Paciente registrado",
         description: "Los datos se han guardado correctamente.",
       });
+      if (res.data?.data) {
+        onCreated?.(res.data.data);
+      }
       setOpen(false);
       setConsent(false);
       setFormData(INITIAL_FORM);
-      fetchPatients();
+      if (autoFetch) fetchPatients();
     } catch (error: any) {
       const msg = error.response?.data?.message;
       setFormError(msg || "Error de conexión con el servidor.");

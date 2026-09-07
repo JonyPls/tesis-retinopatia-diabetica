@@ -1,6 +1,6 @@
-import { Info } from "lucide-react";
+import { Info, Sparkles, UploadCloud } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { UploadCloud } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { EyeKey, EyeState } from "../types";
 import { DropZone } from "./DropZone";
 
@@ -8,35 +8,64 @@ interface ImageUploaderProps {
   eyes: Record<EyeKey, EyeState>;
   handleFile: (eye: EyeKey, file?: File) => void;
   clearEye: (eye: EyeKey) => void;
+  onAutoSelect?: () => void;
+  isAutoSelecting?: boolean;
+  embedded?: boolean;
 }
 
 export function ImageUploader({
   eyes,
   handleFile,
   clearEye,
+  onAutoSelect,
+  isAutoSelecting = false,
+  embedded = false,
 }: ImageUploaderProps) {
   const loadedCount = (["OD", "OI"] as EyeKey[]).filter(
     (e) => eyes[e].file !== null,
   ).length;
 
-  return (
-    <Card className="shadow-card">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <UploadCloud className="h-4 w-4 text-primary" />
-          Imágenes de Fondo de Ojo
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Suba las imágenes de fondo de ojo. Puede cargar ambos ojos en el mismo diagnóstico.
-        </p>
-      </CardHeader>
+  const content = (
+    <>
+      {!embedded && (
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <UploadCloud className="h-4 w-4 text-primary" />
+            Imágenes de Fondo de Ojo
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Suba las imágenes de fondo de ojo. Puede cargar ambos ojos en el mismo diagnóstico.
+          </p>
+        </CardHeader>
+      )}
 
-      <CardContent className="space-y-5">
+      <CardContent className={embedded ? "space-y-5 p-0" : "space-y-5"}>
+        {embedded && (
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Imágenes a evaluar</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Puede cargar OD, OI o ambos ojos dentro de la misma visita clínica.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={onAutoSelect}
+              disabled={isAutoSelecting || !onAutoSelect}
+              className="shrink-0 bg-gradient-primary hover:opacity-90"
+            >
+              <Sparkles className="h-4 w-4" />
+              {isAutoSelecting ? "Buscando..." : "Selección Auto"}
+            </Button>
+          </div>
+        )}
+
         {/* Dropzones: OD | OI en cuadrícula */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           <DropZone
             eye="OD"
             preview={eyes.OD.preview}
+            fileName={eyes.OD.file?.name}
             hasFile={eyes.OD.file !== null}
             onFile={handleFile}
             onClear={clearEye}
@@ -44,6 +73,7 @@ export function ImageUploader({
           <DropZone
             eye="OI"
             preview={eyes.OI.preview}
+            fileName={eyes.OI.file?.name}
             hasFile={eyes.OI.file !== null}
             onFile={handleFile}
             onClear={clearEye}
@@ -88,6 +118,12 @@ export function ImageUploader({
           </p>
         </div>
       </CardContent>
-    </Card>
+    </>
   );
+
+  if (embedded) {
+    return <div>{content}</div>;
+  }
+
+  return <Card className="shadow-card">{content}</Card>;
 }

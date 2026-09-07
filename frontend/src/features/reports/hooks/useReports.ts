@@ -5,7 +5,7 @@ import api from "@/lib/api";
 import {
   buscarPacientes,
   obtenerPacientesRecientes,
-  obtenerDiagnosticosPaciente,
+  obtenerVisitasPaciente,
   DiagnosticoVisita,
   PatientSearchResult,
 } from "@/features/patients/api/patientService";
@@ -110,7 +110,7 @@ export function useReports() {
     setIsLoadingVisitas(true);
     setVisitasExpandidas(false);
     try {
-      const data = await withMinDuration(obtenerDiagnosticosPaciente(pacienteId));
+      const data = await withMinDuration(obtenerVisitasPaciente(pacienteId));
       const sorted = (data || []).sort(
         (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
       );
@@ -137,7 +137,7 @@ export function useReports() {
     if (!selectedPatient) return;
     setVisitasExpandidas(false);
     try {
-      const data = await obtenerDiagnosticosPaciente(selectedPatient.id);
+      const data = await obtenerVisitasPaciente(selectedPatient.id);
       const sorted = (data || []).sort(
         (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
       );
@@ -152,7 +152,7 @@ export function useReports() {
     if (!selectedPatient) return;
     setVisitasExpandidas(true);
     try {
-      const data = await obtenerDiagnosticosPaciente(selectedPatient.id);
+      const data = await obtenerVisitasPaciente(selectedPatient.id);
       const sorted = (data || []).sort(
         (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
       );
@@ -177,15 +177,15 @@ export function useReports() {
 
   // Load existing informes when entering step 3 with an existing visita
   useEffect(() => {
-    if (step === 3 && selectedVisita?.diagnostico_id) {
-      loadInformesExistentes(selectedVisita.diagnostico_id);
+    if (step === 3 && selectedVisita?.visita_id) {
+      loadInformesExistentes(selectedVisita.visita_id);
     }
-  }, [step, selectedVisita?.diagnostico_id]);
+  }, [step, selectedVisita?.visita_id]);
 
-  const loadInformesExistentes = async (diagnosticoId: number) => {
+  const loadInformesExistentes = async (visitaId: number) => {
     setIsLoadingInformesExistentes(true);
     try {
-      const res = await api.get(`/informes/diagnostico/${diagnosticoId}`);
+      const res = await api.get(`/informes/visita/${visitaId}`);
       const existentes: Informe[] = (res.data.data || []).map((inf: any) => {
         if (typeof inf.datos_estructurados === "string") {
           try { inf.datos_estructurados = JSON.parse(inf.datos_estructurados); } catch {}
@@ -300,7 +300,7 @@ export function useReports() {
     setIsSaving(true);
     let hasError = false;
     let savedCount = 0;
-    let nuevoDiagnosticoId: number | null = null;
+    let nuevaVisitaId: number | null = null;
 
     for (const tipo of selectedTipos) {
       const handle = formRefs.current[tipo.id];
@@ -311,13 +311,13 @@ export function useReports() {
           datos_estructurados: handle!.getData(),
         };
         if (selectedVisita) {
-          payload.diagnostico_id = selectedVisita.diagnostico_id;
-        } else if (nuevoDiagnosticoId !== null) {
-          payload.diagnostico_id = nuevoDiagnosticoId;
+          payload.visita_id = selectedVisita.visita_id;
+        } else if (nuevaVisitaId !== null) {
+          payload.visita_id = nuevaVisitaId;
         }
         const res = await api.post("/informes", payload);
-        if (!selectedVisita && nuevoDiagnosticoId === null) {
-          nuevoDiagnosticoId = res.data.data?.diagnostico_id ?? null;
+        if (!selectedVisita && nuevaVisitaId === null) {
+          nuevaVisitaId = res.data.data?.visita_id ?? res.data.data?.diagnostico_id ?? null;
         }
         savedCount++;
       } catch (err: any) {

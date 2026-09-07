@@ -8,6 +8,7 @@ from services.informe_service import (
     eliminar_informe_existente,
     obtener_informes_por_paciente,
     consultar_informes_por_diagnostico,
+    consultar_informes_por_visita,
 )
 informe_bp = Blueprint("informe_bp", __name__)
 
@@ -48,6 +49,12 @@ def eliminar(informe_id):
 @token_required
 def listar_por_paciente(paciente_id):
     resp, status = obtener_informes_por_paciente(paciente_id)
+    return jsonify(resp), status
+
+@informe_bp.route("/api/informes/visita/<int:visita_id>", methods=["GET"])
+@token_required
+def listar_por_visita(visita_id):
+    resp, status = consultar_informes_por_visita(visita_id)
     return jsonify(resp), status
 
 @informe_bp.route("/api/informes/diagnostico/<int:diagnostico_id>", methods=["GET"])

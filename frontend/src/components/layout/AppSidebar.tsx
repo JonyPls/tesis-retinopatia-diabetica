@@ -21,6 +21,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuthStore } from "@/features/auth/store/authStore";
@@ -36,7 +37,7 @@ const adminItems = [
   { title: "Configuración", url: "/configuracion", icon: Settings },
 ];
 
-const ADMIN_ROLES = ["Admin", "Gerente General"];
+const ADMIN_ROLES = ["Admin", "Gerente General", "Administrador del sistema"];
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -45,8 +46,9 @@ export function AppSidebar() {
   const navigate = useNavigate();
 
   // Leer del store en lugar de localStorage directamente
-  const { user, logout, hasRole } = useAuthStore();
-  const showAdminItems = hasRole(ADMIN_ROLES);
+  const { user, logout, hasRole, hasPermission } = useAuthStore();
+  const showAdminItems =
+    hasPermission("configuracion.ver") || hasRole(ADMIN_ROLES);
 
   // Nombre e iniciales
   const firstName = user?.nombres?.split(" ")[0] ?? "";
@@ -75,8 +77,10 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border bg-sidebar">
         <div
           className={cn(
-            "flex items-center py-3 transition-all",
-            collapsed ? "justify-center px-0" : "gap-3 px-2",
+            "flex py-3 transition-all",
+            collapsed
+              ? "flex-col items-center justify-center gap-2 px-0"
+              : "items-center gap-3 px-2",
           )}
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md overflow-hidden bg-transparent">
@@ -96,6 +100,13 @@ export function AppSidebar() {
               </span>
             </div>
           )}
+          <SidebarTrigger
+            className={cn(
+              "hidden h-8 w-8 shrink-0 rounded-md border border-sidebar-border bg-sidebar-accent/70 text-sidebar-accent-foreground shadow-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:inline-flex",
+              !collapsed && "ml-auto",
+            )}
+            title={collapsed ? "Expandir menú" : "Contraer menú"}
+          />
         </div>
       </SidebarHeader>
 

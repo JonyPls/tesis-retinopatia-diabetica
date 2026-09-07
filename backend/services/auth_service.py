@@ -34,7 +34,9 @@ def autenticar_usuario(username, password):
                         "username": user.username,
                         "nombres": user.nombres,
                         "apellidos": user.apellidos,
-                        "roles": roles
+                        "cargo": user.cargo.nombre if user.cargo else None,
+                        "roles": roles,
+                        "permisos": user.permisos
                     }
                 }
             }, 200

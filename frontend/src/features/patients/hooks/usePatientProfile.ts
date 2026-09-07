@@ -15,7 +15,7 @@ export function usePatientProfile(id: string | undefined) {
       try {
         const [resPac, resDiag] = await Promise.all([
           api.get(`/pacientes/${id}`),
-          api.get(`/diagnosticos/paciente/${id}`),
+          api.get(`/pacientes/${id}/visitas`),
         ]);
 
         const dataPac = resPac.data;
@@ -85,7 +85,11 @@ export function usePatientProfile(id: string | undefined) {
 
   const maxLevel =
     diagnoses.length > 0
-      ? Math.max(...diagnoses.map((d) => mapResultToLevel(d.resultado_ia)))
+      ? Math.max(
+          ...diagnoses.map((d) =>
+            d.maxima_gravedad ?? mapResultToLevel(d.resultado_ia || ""),
+          ),
+        )
       : 0;
 
   const status = (() => {
