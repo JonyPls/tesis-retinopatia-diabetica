@@ -79,6 +79,12 @@ export function useDiagnosis(): DiagnosisHook {
     OD: "",
     OI: "",
   });
+  const [correctionReasons, setCorrectionReasons] = useState<
+    Record<EyeKey, string>
+  >({
+    OD: "",
+    OI: "",
+  });
   const [isValidating, setIsValidating] = useState(false);
 
   const navigate = useNavigate();
@@ -160,6 +166,7 @@ export function useDiagnosis(): DiagnosisHook {
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
+    setCorrectionReasons({ OD: "", OI: "" });
   };
 
   const clearPatient = () => {
@@ -170,6 +177,9 @@ export function useDiagnosis(): DiagnosisHook {
     setHasMoreSearchResults(false);
     setEyes({ OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } });
     setResults({});
+    setFinalSelectionState({ OD: 0, OI: 0 });
+    setComments({ OD: "", OI: "" });
+    setCorrectionReasons({ OD: "", OI: "" });
   };
 
   // ── Paso 2 ────────────────────────────────────────────────────────
@@ -252,6 +262,7 @@ export function useDiagnosis(): DiagnosisHook {
       setResults({});
       setFinalSelectionState({ OD: 0, OI: 0 });
       setComments({ OD: "", OI: "" });
+      setCorrectionReasons({ OD: "", OI: "" });
 
       toast({
         title: "Selección automática lista",
@@ -385,6 +396,7 @@ export function useDiagnosis(): DiagnosisHook {
     setActiveEye(eyesToProcess[0]);
     setFinalSelectionState((prev) => ({ ...prev, ...init }));
     setComments({ OD: "", OI: "" });
+    setCorrectionReasons({ OD: "", OI: "" });
 
     toast({
       title: "Diagnóstico guardado",
@@ -406,15 +418,46 @@ export function useDiagnosis(): DiagnosisHook {
   // ── Validación ────────────────────────────────────────────────────
   const setFinalSelection = (eye: EyeKey, value: number) => {
     setFinalSelectionState((prev) => ({ ...prev, [eye]: value }));
+    const currentIa = results[eye]?.diagnostico_codigo;
+    if (currentIa !== undefined && Number(value) === Number(currentIa)) {
+      setCorrectionReasons((prev) => ({ ...prev, [eye]: "" }));
+    }
   };
 
   const setComment = (eye: EyeKey, text: string) => {
     setComments((prev) => ({ ...prev, [eye]: text }));
   };
 
+  const setCorrectionReason = (eye: EyeKey, text: string) => {
+    setCorrectionReasons((prev) => ({ ...prev, [eye]: text }));
+  };
+
+  const needsCorrectionReason = (eye: EyeKey) => {
+    const current = results[eye];
+    if (!current) return false;
+    return Number(finalSelection[eye]) !== Number(current.diagnostico_codigo);
+  };
+
+  const ensureCorrectionReason = (eye: EyeKey) => {
+    if (!needsCorrectionReason(eye)) return true;
+    if (correctionReasons[eye].trim()) return true;
+
+    setActiveEye(eye);
+    toast({
+      title: "Motivo de corrección requerido",
+      description: `Ingrese el motivo de corrección para ${
+        eye === "OD" ? "ojo derecho (OD)" : "ojo izquierdo (OI)"
+      }.`,
+      variant: "destructive",
+    });
+    return false;
+  };
+
   const validateDiagnosis = async (eye: EyeKey) => {
     const current = results[eye];
     if (!current) return;
+    if (!ensureCorrectionReason(eye)) return;
+
     const detalleId = current.detalle_id;
     setIsValidating(true);
     try {
@@ -422,6 +465,7 @@ export function useDiagnosis(): DiagnosisHook {
         detalleId,
         finalSelection[eye],
         comments[eye],
+        correctionReasons[eye],
       );
       if (resp.success) {
         toast({ title: "Validación guardada", description: resp.message });
@@ -455,12 +499,18 @@ export function useDiagnosis(): DiagnosisHook {
     for (const eye of availableEyes) {
       const current = results[eye];
       if (!current) continue;
+      if (!ensureCorrectionReason(eye)) {
+        hasError = true;
+        break;
+      }
+
       const detalleId = current.detalle_id;
       try {
         const resp = await validarDetalleDiagnostico(
           detalleId,
           finalSelection[eye],
           comments[eye],
+          correctionReasons[eye],
         );
         if (!resp.success) {
           hasError = true;
@@ -518,6 +568,9 @@ export function useDiagnosis(): DiagnosisHook {
     setHasMoreSearchResults(false);
     setEyes({ OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } });
     setResults({});
+    setFinalSelectionState({ OD: 0, OI: 0 });
+    setComments({ OD: "", OI: "" });
+    setCorrectionReasons({ OD: "", OI: "" });
   };
 
   return {
@@ -537,6 +590,8 @@ export function useDiagnosis(): DiagnosisHook {
     setFinalSelection,
     comments,
     setComment,
+    correctionReasons,
+    setCorrectionReason,
     validateDiagnosis,
     validateAll,
     isValidating,

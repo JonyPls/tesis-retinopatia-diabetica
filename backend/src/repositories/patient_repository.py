@@ -94,11 +94,14 @@ class PatientRepository:
 
     @staticmethod
     def obtener_diagnosticos_paciente(paciente_id: int):
-        query = text("""
+        visitas_query = text("""
             SELECT
                 v.id AS visita_id,
                 v.id AS diagnostico_id,
                 dr.id AS diagnostico_retinopatia_id,
+                dr.estado AS diagnostico_ia_estado,
+                dr.modelo_nombre,
+                dr.modelo_version,
                 v.fecha_visita AS fecha_visita,
                 CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante,
                 v.motivo_consulta,
@@ -106,6 +109,8 @@ class PatientRepository:
                 v.estado,
                 CASE WHEN COUNT(DISTINCT drd.id) > 0 THEN 1 ELSE 0 END AS tiene_diagnostico_ia,
                 CASE WHEN COUNT(DISTINCT i.id) > 0 THEN 1 ELSE 0 END AS tiene_informes,
+                COUNT(DISTINCT drd.id) AS total_ojos_diagnosticados,
+                COUNT(DISTINCT i.id) AS total_informes,
                 MAX(COALESCE(drd.resultado_final_id, drd.resultado_ia_id)) AS maxima_gravedad
             FROM visitas_clinicas v
             JOIN usuarios u ON v.usuario_id = u.id
@@ -117,6 +122,9 @@ class PatientRepository:
             GROUP BY
                 v.id,
                 dr.id,
+                dr.estado,
+                dr.modelo_nombre,
+                dr.modelo_version,
                 v.fecha_visita,
                 u.nombres,
                 u.apellidos,
@@ -125,8 +133,89 @@ class PatientRepository:
                 v.estado
             ORDER BY v.fecha_visita DESC
         """)
-        result = db.session.execute(query, {"paciente_id": paciente_id})
-        return [dict(row._mapping) for row in result]
+        visitas_result = db.session.execute(visitas_query, {"paciente_id": paciente_id})
+        visitas = [dict(row._mapping) for row in visitas_result]
+
+        if not visitas:
+            return []
+
+        detalles_query = text("""
+            SELECT
+                dr.visita_id,
+                drd.id AS detalle_id,
+                drd.ojo_evaluado,
+                drd.resultado_ia_id,
+                gia.nombre AS resultado_ia_nombre,
+                drd.resultado_final_id,
+                gfinal.nombre AS resultado_final_nombre,
+                drd.probabilidad_ia,
+                drd.estado_validacion,
+                drd.comentario_medico,
+                drd.motivo_correccion,
+                drd.imagen_original_url,
+                drd.imagen_gradcam_url,
+                drd.nombre_archivo_original,
+                drd.fecha_validacion
+            FROM diagnosticos_retinopatia dr
+            JOIN visitas_clinicas v ON v.id = dr.visita_id
+            JOIN diagnosticos_retinopatia_detalle drd ON drd.diagnostico_retinopatia_id = dr.id
+            LEFT JOIN grados_retinopatia gia ON gia.id = drd.resultado_ia_id
+            LEFT JOIN grados_retinopatia gfinal ON gfinal.id = drd.resultado_final_id
+            WHERE v.paciente_id = :paciente_id
+              AND v.estado <> 'ANULADA'
+              AND dr.estado <> 'ANULADO'
+            ORDER BY dr.visita_id DESC, FIELD(drd.ojo_evaluado, 'Derecho', 'Izquierdo')
+        """)
+        detalles_result = db.session.execute(detalles_query, {"paciente_id": paciente_id})
+        detalles_por_visita = {}
+        for row in detalles_result:
+            detalle = dict(row._mapping)
+            visita_id = detalle.pop("visita_id")
+            if detalle.get("probabilidad_ia") is not None:
+                detalle["probabilidad_ia"] = float(detalle["probabilidad_ia"])
+            detalles_por_visita.setdefault(visita_id, []).append(detalle)
+
+        informes_query = text("""
+            SELECT
+                i.visita_id,
+                i.id,
+                i.tipo_informe_id,
+                ti.nombre AS tipo_informe_nombre,
+                i.conclusion,
+                i.estado,
+                i.fecha_creado,
+                i.fecha_actualizado
+            FROM informes i
+            JOIN tipos_informe ti ON ti.id = i.tipo_informe_id
+            JOIN visitas_clinicas v ON v.id = i.visita_id
+            WHERE v.paciente_id = :paciente_id
+              AND v.estado <> 'ANULADA'
+              AND i.estado = 'ACTIVO'
+            ORDER BY i.visita_id DESC, ti.nombre ASC
+        """)
+        informes_result = db.session.execute(informes_query, {"paciente_id": paciente_id})
+        informes_por_visita = {}
+        for row in informes_result:
+            informe = dict(row._mapping)
+            visita_id = informe.pop("visita_id")
+            informes_por_visita.setdefault(visita_id, []).append(informe)
+
+        for visita in visitas:
+            visita_id = visita["visita_id"]
+            detalles = detalles_por_visita.get(visita_id, [])
+            visita["informes"] = informes_por_visita.get(visita_id, [])
+            visita["diagnostico_ia"] = None
+
+            if visita.get("diagnostico_retinopatia_id"):
+                visita["diagnostico_ia"] = {
+                    "id": visita["diagnostico_retinopatia_id"],
+                    "estado": visita.get("diagnostico_ia_estado"),
+                    "modelo_nombre": visita.get("modelo_nombre"),
+                    "modelo_version": visita.get("modelo_version"),
+                    "detalles": detalles,
+                }
+
+        return visitas
 
     @staticmethod
     def buscar_paciente(query_text: str, page: int = 1, per_page: int = 5):

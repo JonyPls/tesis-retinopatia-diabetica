@@ -52,6 +52,8 @@ export interface DiagnosisHook {
   setFinalSelection: (eye: EyeKey, value: number) => void;
   comments: Record<EyeKey, string>;
   setComment: (eye: EyeKey, text: string) => void;
+  correctionReasons: Record<EyeKey, string>;
+  setCorrectionReason: (eye: EyeKey, text: string) => void;
   validateDiagnosis: (eye: EyeKey) => Promise<void>;
   validateAll: () => Promise<void>;
   isValidating: boolean;

@@ -42,7 +42,7 @@ class DiagnosticoDetalle(db.Model):
     resultado_ia_id = db.Column(db.SmallInteger, db.ForeignKey('grados_retinopatia.id'))
     resultado_final_id = db.Column(db.SmallInteger, db.ForeignKey('grados_retinopatia.id'))
     resultado_completo = db.Column(db.JSON)
-    estado_validacion = db.Column(db.Enum('Pendiente', 'Aprobado', 'Corregido'), default='Pendiente')
+    estado_validacion = db.Column(db.Enum('PENDIENTE', 'APROBADO', 'CORREGIDO'), default='PENDIENTE', nullable=False)
     comentario_medico = db.Column(db.Text)
     motivo_correccion = db.Column(db.Text)
     validado_por = db.Column(db.Integer, db.ForeignKey('usuarios.id'))

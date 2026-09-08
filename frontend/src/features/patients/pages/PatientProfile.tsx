@@ -50,7 +50,7 @@ export default function PatientProfile() {
   return (
     <AppLayout
       title={fullName}
-      subtitle={`Historia clínica · ${hook.patient.tipo_doc_abrev || hook.patient.tipo_doc} ${hook.patient.nro_documento}`}
+      subtitle="Historia clínica"
       actions={
         <>
           <Button variant="outline" asChild>
@@ -72,12 +72,10 @@ export default function PatientProfile() {
       <div className={`grid gap-6 grid-cols-1 ${infoCollapsed ? "" : "lg:grid-cols-3"}`}>
         <PatientInfoCard
           patient={hook.patient}
-          diagnoses={hook.diagnoses}
           calculateAge={hook.calculateAge}
           getInitials={hook.getInitials}
           status={hook.status}
           lastVisit={hook.lastVisit}
-          maxLevel={hook.maxLevel}
           collapsed={infoCollapsed}
           onToggle={() => setInfoCollapsed((v) => !v)}
         />

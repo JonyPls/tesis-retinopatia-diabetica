@@ -42,8 +42,9 @@ export interface DetalleDiagnosticoExistente {
   confianza_general: number;
   probabilidades_detalle: Record<string, number> | null;
   diagnostico_final: number | null;
-  estado_validacion: string;
+  estado_validacion: "PENDIENTE" | "APROBADO" | "CORREGIDO";
   comentario_medico: string | null;
+  motivo_correccion: string | null;
   imagen_url: string;
   gradcam_url: string | null;
 }
@@ -73,9 +74,13 @@ export const validarDetalleDiagnostico = async (
   detalleId: number,
   diagnostico_final: number,
   comentario_medico?: string,
+  motivo_correccion?: string,
 ) => {
   const payload: any = { diagnostico_final };
-  if (comentario_medico) payload.comentario_medico = comentario_medico;
+  const comentario = comentario_medico?.trim();
+  const motivo = motivo_correccion?.trim();
+  if (comentario) payload.comentario_medico = comentario;
+  if (motivo) payload.motivo_correccion = motivo;
   const response = await api.put(
     `/diagnosticar/detalle/${detalleId}/validar`,
     payload,

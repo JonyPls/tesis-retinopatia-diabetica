@@ -145,6 +145,7 @@ def _consultar_detalles(visita_id: int = None, diagnostico_id: int = None) -> di
                 "diagnostico_final": d['diagnostico_final'],
                 "estado_validacion": d['estado_validacion'],
                 "comentario_medico": d['comentario_medico'],
+                "motivo_correccion": d['motivo_correccion'],
                 "imagen_url": d['imagen_url'],
                 "gradcam_url": gradcam_url,
             }
@@ -162,9 +163,21 @@ def _consultar_detalles(visita_id: int = None, diagnostico_id: int = None) -> di
         return {"success": False, "message": str(e)}
     
 
-def confirmar_validacion_detalle(detalle_id: int, diagnostico_final: int, comentario_medico: str = None, usuario_id: int = None) -> dict:
+def confirmar_validacion_detalle(
+    detalle_id: int,
+    diagnostico_final: int,
+    comentario_medico: str = None,
+    motivo_correccion: str = None,
+    usuario_id: int = None,
+) -> dict:
     try:
-        nuevo_estado = DiagnosisRepository.validar_detalle_diagnostico(detalle_id, diagnostico_final, comentario_medico, usuario_id)
+        nuevo_estado = DiagnosisRepository.validar_detalle_diagnostico(
+            detalle_id,
+            diagnostico_final,
+            comentario_medico,
+            motivo_correccion,
+            usuario_id,
+        )
         
         return {
             "success": True,

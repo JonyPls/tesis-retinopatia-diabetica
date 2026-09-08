@@ -32,7 +32,7 @@ class DiagnosisRepository:
                 usuario_id=datos_bd['usuario_id'],
                 modelo_nombre=datos_bd.get('modelo_nombre') or 'ResNet50',
                 modelo_version=datos_bd.get('modelo_version'),
-                estado='PENDIENTE',
+                estado='PROCESADO',
             )
             db.session.add(diag)
             db.session.flush()
@@ -62,7 +62,7 @@ class DiagnosisRepository:
         if datos_bd.get('resultado_completo'):
             detalle.resultado_completo = datos_bd['resultado_completo']
         
-        detalle.estado_validacion = 'Pendiente'
+        detalle.estado_validacion = 'PENDIENTE'
         detalle.resultado_final_id = None
         detalle.comentario_medico = None
         detalle.motivo_correccion = None
@@ -103,6 +103,7 @@ class DiagnosisRepository:
                 "diagnostico_final": d.resultado_final_id,
                 "estado_validacion": d.estado_validacion,
                 "comentario_medico": d.comentario_medico,
+                "motivo_correccion": d.motivo_correccion,
                 "imagen_url": d.imagen_original_url,
                 "gradcam_url": d.imagen_gradcam_url,
             }
@@ -110,26 +111,38 @@ class DiagnosisRepository:
         ]
 
     @staticmethod
-    def validar_detalle_diagnostico(detalle_id: int, diagnostico_final: int, comentario_medico: str = None, usuario_id: int = None):
+    def validar_detalle_diagnostico(
+        detalle_id: int,
+        diagnostico_final: int,
+        comentario_medico: str = None,
+        motivo_correccion: str = None,
+        usuario_id: int = None,
+    ):
         detalle = DiagnosticoDetalle.query.get(detalle_id)
         if not detalle:
             raise Exception("Detalle de diagnóstico no encontrado.")
 
         resultado_ia = detalle.resultado_ia_id
+        comentario_medico = comentario_medico.strip() if comentario_medico else None
+        motivo_correccion = motivo_correccion.strip() if motivo_correccion else None
 
         if int(diagnostico_final) == int(resultado_ia):
-            estado_validacion = 'Aprobado'
+            estado_validacion = 'APROBADO'
+            motivo_correccion = None
         else:
-            estado_validacion = 'Corregido'
+            estado_validacion = 'CORREGIDO'
+            if not motivo_correccion:
+                raise Exception("Debe registrar el motivo de corrección cuando el diagnóstico final cambia el resultado de la IA.")
 
         detalle.resultado_final_id = diagnostico_final
         detalle.estado_validacion = estado_validacion
         detalle.comentario_medico = comentario_medico
+        detalle.motivo_correccion = motivo_correccion
         detalle.validado_por = usuario_id
         detalle.fecha_validacion = datetime.utcnow()
 
         diagnostico = Diagnostico.query.get(detalle.diagnostico_retinopatia_id)
-        if diagnostico and all(d.estado_validacion != 'Pendiente' for d in diagnostico.detalles):
+        if diagnostico and all(d.estado_validacion != 'PENDIENTE' for d in diagnostico.detalles):
             diagnostico.estado = 'VALIDADO'
         
         db.session.commit()

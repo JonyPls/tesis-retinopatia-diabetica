@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -93,6 +93,12 @@ export default function Diagnosis() {
   const StepIcon = currentStep.icon;
   const selectedPatient = diagnosisHook.selectedPatient;
   const processedEyes = Object.values(diagnosisHook.results).filter(Boolean).length;
+
+  useEffect(() => {
+    if (step === 3) {
+      setStepperLayout("top");
+    }
+  }, [step]);
 
   const handleDismissError = () => {
     setModalClosing(true);
@@ -233,6 +239,8 @@ export default function Diagnosis() {
                 setFinalSelection={diagnosisHook.setFinalSelection}
                 comments={diagnosisHook.comments}
                 setComment={diagnosisHook.setComment}
+                correctionReasons={diagnosisHook.correctionReasons}
+                setCorrectionReason={diagnosisHook.setCorrectionReason}
                 validateDiagnosis={diagnosisHook.validateDiagnosis}
                 isValidating={diagnosisHook.isValidating}
               />

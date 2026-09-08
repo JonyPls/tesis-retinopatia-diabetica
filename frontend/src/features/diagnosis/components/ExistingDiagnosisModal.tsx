@@ -17,6 +17,12 @@ const RD_TEXT: Record<number, string> = {
   4: "RD Proliferativa",
 };
 
+const VALIDATION_STATUS_TEXT = {
+  PENDIENTE: "Pendiente",
+  APROBADO: "Aprobado",
+  CORREGIDO: "Corregido",
+} as const;
+
 interface ExistingDiagnosisModalProps {
   open: boolean;
   detalles: DetalleDiagnosticoExistente[];
@@ -73,7 +79,7 @@ export function ExistingDiagnosisModal({
                       {d.estado_validacion && (
                         <span className="flex items-center gap-1">
                           <MessageSquare className="h-3 w-3" />
-                          {d.estado_validacion}
+                          {VALIDATION_STATUS_TEXT[d.estado_validacion]}
                         </span>
                       )}
                     </div>

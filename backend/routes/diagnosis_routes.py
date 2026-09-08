@@ -121,10 +121,11 @@ def confirmar_validacion(detalle_id):
         detalle_id=detalle_id,
         diagnostico_final=datos['diagnostico_final'],
         comentario_medico=datos.get('comentario_medico'),
+        motivo_correccion=datos.get('motivo_correccion'),
         usuario_id=request.current_user.get('user_id'),
     )
     
     if resultado.get("success"):
         return jsonify(resultado), 200
     else:
-        return jsonify(resultado), 500
+        return jsonify(resultado), 400

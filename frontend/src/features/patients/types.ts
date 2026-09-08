@@ -36,6 +36,43 @@ export interface Diagnosis {
   resultado_ia?: string;
   probabilidad_ia?: number;
   comentario_medico?: string;
+  diagnostico_ia?: PatientDiagnosisIA | null;
+  informes?: PatientVisitReport[];
+}
+
+export interface PatientDiagnosisIA {
+  id: number;
+  estado: "PENDIENTE" | "PROCESADO" | "VALIDADO" | "ANULADO";
+  modelo_nombre?: string | null;
+  modelo_version?: string | null;
+  detalles: PatientDiagnosisEyeDetail[];
+}
+
+export interface PatientDiagnosisEyeDetail {
+  detalle_id: number;
+  ojo_evaluado: "Derecho" | "Izquierdo";
+  resultado_ia_id: number | null;
+  resultado_ia_nombre?: string | null;
+  resultado_final_id: number | null;
+  resultado_final_nombre?: string | null;
+  probabilidad_ia?: number | null;
+  estado_validacion: "PENDIENTE" | "APROBADO" | "CORREGIDO";
+  comentario_medico?: string | null;
+  motivo_correccion?: string | null;
+  imagen_original_url?: string | null;
+  imagen_gradcam_url?: string | null;
+  nombre_archivo_original?: string | null;
+  fecha_validacion?: string | null;
+}
+
+export interface PatientVisitReport {
+  id: number;
+  tipo_informe_id: number;
+  tipo_informe_nombre: string;
+  conclusion?: string | null;
+  estado: "ACTIVO" | "INACTIVO" | "ANULADO";
+  fecha_creado: string;
+  fecha_actualizado: string;
 }
 
 export interface PatientFormData {
