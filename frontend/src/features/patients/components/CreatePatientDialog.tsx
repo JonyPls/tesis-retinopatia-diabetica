@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import {
+  AppAlertModalBody,
+  AppAlertModalContent,
+  AppAlertModalFooter,
+  AppAlertModalHeader,
+} from "@/components/ui/app-alert-modal";
+import {
   AppModalBody,
   AppModalContent,
   AppModalFooter,
@@ -21,8 +32,7 @@ import {
 import {
   ChevronDown,
   ClipboardPlus,
-  Mail,
-  MapPin,
+  AlertTriangle,
   Phone,
   ShieldCheck,
   UserPlus,
@@ -39,7 +49,6 @@ interface CreatePatientDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   formData: PatientFormData;
-  formError: string;
   isSubmitting: boolean;
   consent: boolean;
   onConsentChange: (checked: boolean) => void;
@@ -48,6 +57,8 @@ interface CreatePatientDialogProps {
   onFieldChange: (field: string, value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   onTipoDocChange: (value: string) => void;
+  hasUnsavedChanges: boolean;
+  onDiscard: () => void;
   triggerLabel?: string;
 }
 
@@ -55,7 +66,6 @@ export function CreatePatientDialog({
   open,
   onOpenChange,
   formData,
-  formError,
   isSubmitting,
   consent,
   onConsentChange,
@@ -64,23 +74,56 @@ export function CreatePatientDialog({
   onFieldChange,
   onSubmit,
   onTipoDocChange,
+  hasUnsavedChanges,
+  onDiscard,
   triggerLabel = "Nuevo Paciente",
 }: CreatePatientDialogProps) {
   const [identificationOpen, setIdentificationOpen] = useState(true);
   const [contactOpen, setContactOpen] = useState(false);
   const [clinicalOpen, setClinicalOpen] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const requestClose = () => {
+    if (isSubmitting) return;
+    if (hasUnsavedChanges) {
+      setDiscardOpen(true);
+      return;
+    }
+    onOpenChange(false);
+  };
+
+  const confirmDiscard = () => {
+    onDiscard();
+    setDiscardOpen(false);
+    onOpenChange(false);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button className="bg-gradient-primary hover:opacity-90">
-          <UserPlus className="h-4 w-4" />
-          {triggerLabel}
-        </Button>
-      </DialogTrigger>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) {
+            onOpenChange(true);
+            return;
+          }
+          requestClose();
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button className="bg-gradient-primary hover:opacity-90">
+            <UserPlus className="h-4 w-4" />
+            {triggerLabel}
+          </Button>
+        </DialogTrigger>
 
-      <AppModalContent className="sm:max-w-[680px]">
+      <AppModalContent
+        className="sm:max-w-[680px]"
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <AppModalHeader
           icon={<UserPlus className="h-6 w-6" />}
           title="Registrar Nuevo Paciente"
@@ -89,12 +132,6 @@ export function CreatePatientDialog({
 
         <AppModalBody>
           <form id="patient-form" onSubmit={onSubmit} noValidate className="space-y-3">
-            {formError && (
-              <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm border border-red-200">
-                {formError}
-              </div>
-            )}
-
             <FormSection
               title="Identificación"
               open={identificationOpen}
@@ -127,6 +164,9 @@ export function CreatePatientDialog({
                   id="nro_documento"
                   value={formData.nro_documento}
                   onChange={(e) => onDocumentChange(e.target.value)}
+                  required
+                  inputMode={formData.tipo_doc === "DNI" ? "numeric" : "text"}
+                  autoComplete="off"
                   placeholder={
                     formData.tipo_doc === "DNI"
                       ? "8 dígitos"
@@ -169,6 +209,9 @@ export function CreatePatientDialog({
                   id="nombres"
                   value={formData.nombres}
                   onChange={(e) => onFieldChange("nombres", e.target.value)}
+                  required
+                  maxLength={80}
+                  autoComplete="given-name"
                   className="border-slate-300 dark:border-slate-600"
                 />
               </div>
@@ -178,6 +221,9 @@ export function CreatePatientDialog({
                   id="apellidos"
                   value={formData.apellidos}
                   onChange={(e) => onFieldChange("apellidos", e.target.value)}
+                  required
+                  maxLength={100}
+                  autoComplete="family-name"
                   className="border-slate-300 dark:border-slate-600"
                 />
               </div>
@@ -191,10 +237,9 @@ export function CreatePatientDialog({
             summary={
               formData.telefono || formData.correo
                 ? [formData.telefono, formData.correo].filter(Boolean).join(" · ")
-                : "Nacimiento, teléfono, correo y dirección"
+                : "Nacimiento, teléfono y correo"
             }
-            required
-            icon={<Phone className="h-3.5 w-3.5" />}
+            icon={<Phone className="h-4 w-4" />}
           >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -204,6 +249,8 @@ export function CreatePatientDialog({
                   type="date"
                   value={formData.fecha_nacimiento}
                   onChange={(e) => onFieldChange("fecha_nacimiento", e.target.value)}
+                  required
+                  max={today}
                   className="border-slate-300 dark:border-slate-600"
                 />
               </div>
@@ -214,35 +261,26 @@ export function CreatePatientDialog({
                   type="tel"
                   value={formData.telefono}
                   onChange={(e) => onPhoneChange(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={11}
+                  autoComplete="tel-national"
                   placeholder="999 999 999"
                   className="border-slate-300 dark:border-slate-600"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="correo" className="inline-flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5" /> Correo
-                </Label>
+                <Label htmlFor="correo">Correo</Label>
                 <Input
                   id="correo"
                   type="email"
                   value={formData.correo}
                   onChange={(e) => onFieldChange("correo", e.target.value)}
+                  maxLength={150}
+                  autoComplete="email"
                   placeholder="correo@ejemplo.com"
-                  className="border-slate-300 dark:border-slate-600"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="direccion" className="inline-flex items-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5" /> Dirección
-                </Label>
-                <Input
-                  id="direccion"
-                  value={formData.direccion}
-                  onChange={(e) => onFieldChange("direccion", e.target.value)}
-                  placeholder="Dirección del paciente"
                   className="border-slate-300 dark:border-slate-600"
                 />
               </div>
@@ -254,7 +292,7 @@ export function CreatePatientDialog({
             open={clinicalOpen}
             onOpenChange={setClinicalOpen}
             summary="Antecedentes y alergias"
-            icon={<ClipboardPlus className="h-3.5 w-3.5" />}
+            icon={<ClipboardPlus className="h-4 w-4" />}
           >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -265,6 +303,7 @@ export function CreatePatientDialog({
                   onChange={(e) =>
                     onFieldChange("antecedentes_clinicos", e.target.value)
                   }
+                  maxLength={2000}
                   placeholder="Diabetes, hipertensión, cirugías previas..."
                   className="min-h-[92px] resize-none border-slate-300 dark:border-slate-600"
                 />
@@ -275,6 +314,7 @@ export function CreatePatientDialog({
                   id="alergias"
                   value={formData.alergias}
                   onChange={(e) => onFieldChange("alergias", e.target.value)}
+                  maxLength={1000}
                   placeholder="Medicamentos, anestésicos u otras alergias..."
                   className="min-h-[92px] resize-none border-slate-300 dark:border-slate-600"
                 />
@@ -334,7 +374,8 @@ export function CreatePatientDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={requestClose}
+            disabled={isSubmitting}
           >
             Cancelar
           </Button>
@@ -348,7 +389,32 @@ export function CreatePatientDialog({
           </Button>
         </AppModalFooter>
       </AppModalContent>
-    </Dialog>
+      </Dialog>
+
+      <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+        <AppAlertModalContent>
+          <AppAlertModalHeader
+            icon={<AlertTriangle className="h-6 w-6" />}
+            title="Descartar registro"
+            subtitle="Hay datos ingresados que aún no se han guardado."
+            iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+          />
+          <AppAlertModalBody>
+            Si descartas el registro, se limpiará toda la información escrita en
+            este formulario. ¿Deseas continuar?
+          </AppAlertModalBody>
+          <AppAlertModalFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              className="bg-amber-600 text-white hover:bg-amber-700"
+            >
+              Descartar
+            </AlertDialogAction>
+          </AppAlertModalFooter>
+        </AppAlertModalContent>
+      </AlertDialog>
+    </>
   );
 }
 

@@ -18,11 +18,16 @@ const EYE_LABEL: Record<EyeKey, { short: string; full: string }> = {
   OI: { short: "OI", full: "Ojo Izquierdo" },
 };
 
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/tiff"];
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/tiff", "image/x-tiff"];
+const ACCEPTED_EXTENSIONS = /\.(jpe?g|png|tiff?)$/i;
 const MAX_SIZE_MB = 30;
 
 function validateFile(file: File): string | null {
-  if (!ACCEPTED_TYPES.includes(file.type)) {
+  const fileType = file.type.toLowerCase();
+  const hasAcceptedType = fileType ? ACCEPTED_TYPES.includes(fileType) : false;
+  const hasAcceptedExtension = ACCEPTED_EXTENSIONS.test(file.name);
+
+  if (!hasAcceptedType && !hasAcceptedExtension) {
     return "Formato no admitido. Use JPG, PNG o TIFF.";
   }
   if (file.size > MAX_SIZE_MB * 1024 * 1024) {

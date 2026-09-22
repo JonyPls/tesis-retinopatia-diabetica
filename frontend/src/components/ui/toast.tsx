@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as ToastPrimitives from "@radix-ui/react-toast";
 import { cva, type VariantProps } from "class-variance-authority";
-import { X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -28,6 +28,10 @@ const toastVariants = cva(
     variants: {
       variant: {
         default: "border bg-background text-foreground",
+        info: "border-cyan-200 bg-cyan-50 text-cyan-950",
+        success: "border-emerald-200 bg-emerald-50 text-emerald-950",
+        warning: "border-amber-200 bg-amber-50 text-amber-950",
+        error: "border-red-200 bg-red-50 text-red-950",
         destructive: "destructive group border-destructive bg-destructive text-destructive-foreground",
       },
     },
@@ -35,12 +39,33 @@ const toastVariants = cva(
       variant: "default",
     },
   },
-);
+  );
+
+const toastIconVariants = {
+  default: Info,
+  info: Info,
+  success: CheckCircle2,
+  warning: AlertTriangle,
+  error: XCircle,
+  destructive: XCircle,
+};
+
+const toastIconClasses = {
+  default: "text-primary",
+  info: "text-cyan-600",
+  success: "text-emerald-600",
+  warning: "text-amber-600",
+  error: "text-red-600",
+  destructive: "text-destructive-foreground",
+};
 
 const Toast = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> & VariantProps<typeof toastVariants>
 >(({ className, variant, duration, children, ...props }, ref) => {
+  const visualVariant = variant ?? "default";
+  const Icon = toastIconVariants[visualVariant];
+
   return (
     <ToastPrimitives.Root
       ref={ref}
@@ -48,7 +73,8 @@ const Toast = React.forwardRef<
       duration={duration}
       {...props}
     >
-      <div className="flex items-center justify-between space-x-4 p-6 pr-8">
+      <div className="flex items-start gap-3 p-4 pr-8">
+        <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", toastIconClasses[visualVariant])} />
         {children}
       </div>
       <ToastProgress duration={duration ?? 4000} variant={variant} />
@@ -75,7 +101,14 @@ function ToastProgress({ duration, variant }: { duration: number; variant?: stri
     <div className="h-[3px] bg-muted/30">
       <div
         ref={barRef}
-        className={cn("h-full", variant === "destructive" ? "bg-white/80" : "bg-primary/60")}
+        className={cn(
+          "h-full",
+          variant === "success" && "bg-emerald-500/70",
+          variant === "info" && "bg-cyan-500/70",
+          variant === "warning" && "bg-amber-500/80",
+          (variant === "error" || variant === "destructive") && "bg-red-500/80",
+          (!variant || variant === "default") && "bg-primary/60",
+        )}
         style={{ transform: "scaleX(1)", transformOrigin: "left" }}
       />
     </div>

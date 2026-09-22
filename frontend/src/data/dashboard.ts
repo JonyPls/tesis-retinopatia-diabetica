@@ -1,6 +1,6 @@
 export const dashboardKPIs = {
-  totalPatients: 183,
-  diagnosesToday: 6,
+  totalPatients: 20,
+  diagnosesToday: 2,
   criticalCases: 1,
   pendingReview: 0,
 };

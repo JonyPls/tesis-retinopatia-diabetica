@@ -17,6 +17,153 @@ const INITIAL_FORM: PatientFormData = {
   alergias: "",
 };
 
+function hasFormChanges(formData: PatientFormData, consent: boolean) {
+  return (
+    consent ||
+    Object.entries(INITIAL_FORM).some(
+      ([field, initialValue]) =>
+        formData[field as keyof PatientFormData] !== initialValue,
+    )
+  );
+}
+
+const DOC_RULES: Record<
+  string,
+  { pattern: RegExp; message: string; maxLength: number }
+> = {
+  DNI: {
+    pattern: /^\d{8}$/,
+    message: "El DNI debe tener exactamente 8 dígitos.",
+    maxLength: 8,
+  },
+  CE: {
+    pattern: /^[A-Z0-9]{8,12}$/,
+    message: "El CE debe tener entre 8 y 12 caracteres alfanuméricos.",
+    maxLength: 12,
+  },
+  PAS: {
+    pattern: /^[A-Z0-9]{3,9}$/,
+    message: "El Pasaporte debe tener entre 3 y 9 caracteres alfanuméricos.",
+    maxLength: 9,
+  },
+};
+
+const NAME_PATTERN = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_PATIENT_AGE = 120;
+
+function normalizeSpaces(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeDocument(value: string, tipoDoc: string) {
+  if (tipoDoc === "DNI") {
+    return value.replace(/\D/g, "");
+  }
+  return value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function parseLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function calculateAge(birthDate: Date, today = new Date()) {
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age--;
+  }
+  return age;
+}
+
+function validatePatientForm(formData: PatientFormData, consent: boolean) {
+  const tipoDoc = formData.tipo_doc;
+  const docRule = DOC_RULES[tipoDoc];
+  const documento = normalizeDocument(formData.nro_documento, tipoDoc);
+  const nombres = normalizeSpaces(formData.nombres);
+  const apellidos = normalizeSpaces(formData.apellidos);
+  const telefono = formData.telefono.replace(/\D/g, "");
+  const correo = formData.correo.trim();
+
+  if (!docRule) return "Debe seleccionar un tipo de documento válido.";
+  if (!docRule.pattern.test(documento)) return docRule.message;
+
+  if (!nombres || !apellidos) return "Debe ingresar nombres y apellidos.";
+  if (nombres.length < 2 || nombres.length > 80) {
+    return "Los nombres deben tener entre 2 y 80 caracteres.";
+  }
+  if (apellidos.length < 2 || apellidos.length > 100) {
+    return "Los apellidos deben tener entre 2 y 100 caracteres.";
+  }
+  if (!NAME_PATTERN.test(nombres)) {
+    return "Los nombres solo deben contener letras, espacios, guiones o apóstrofes.";
+  }
+  if (!NAME_PATTERN.test(apellidos)) {
+    return "Los apellidos solo deben contener letras, espacios, guiones o apóstrofes.";
+  }
+
+  if (!["Masculino", "Femenino"].includes(formData.sexo)) {
+    return "Debe seleccionar un sexo válido.";
+  }
+
+  if (!formData.fecha_nacimiento) {
+    return "Debe ingresar la fecha de nacimiento.";
+  }
+
+  const birthDate = parseLocalDate(formData.fecha_nacimiento);
+  if (!birthDate) return "La fecha de nacimiento no es válida.";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  birthDate.setHours(0, 0, 0, 0);
+
+  if (birthDate > today) {
+    return "La fecha de nacimiento no puede ser futura.";
+  }
+  if (calculateAge(birthDate, today) > MAX_PATIENT_AGE) {
+    return `La edad del paciente no puede superar ${MAX_PATIENT_AGE} años.`;
+  }
+
+  if (telefono && !/^9\d{8}$/.test(telefono)) {
+    return "El teléfono debe tener 9 dígitos y empezar con 9.";
+  }
+
+  if (correo && (!EMAIL_PATTERN.test(correo) || correo.length > 150)) {
+    return "Ingrese un correo electrónico válido de máximo 150 caracteres.";
+  }
+
+  if (formData.direccion.trim().length > 255) {
+    return "La dirección no puede superar 255 caracteres.";
+  }
+  if (formData.antecedentes_clinicos.trim().length > 2000) {
+    return "Los antecedentes clínicos no pueden superar 2000 caracteres.";
+  }
+  if (formData.alergias.trim().length > 1000) {
+    return "Las alergias no pueden superar 1000 caracteres.";
+  }
+
+  if (!consent) {
+    return "Debe confirmar el archivo físico del consentimiento informado.";
+  }
+
+  return null;
+}
+
 interface UsePatientsOptions {
   autoFetch?: boolean;
   onCreated?: (patient: Patient) => void;
@@ -39,7 +186,6 @@ export function usePatients({
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
   const [formData, setFormData] = useState<PatientFormData>(INITIAL_FORM);
-  const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchPatients = async () => {
@@ -83,15 +229,8 @@ export function usePatients({
   const currentData = filtered.slice(startIndex, endIndex);
 
   const handleDocumentChange = (value: string, tipoDoc: string) => {
-    let rawValue = value;
-    if (tipoDoc === "DNI") {
-      rawValue = rawValue.replace(/\D/g, "");
-    } else if (tipoDoc === "PAS") {
-      rawValue = rawValue.replace(/[^A-Za-z0-9]/g, "").replace(/Ñ/g, "").toUpperCase();
-    } else {
-      rawValue = rawValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    }
-    const maxLength = tipoDoc === "DNI" ? 8 : tipoDoc === "PAS" ? 9 : 12;
+    const rawValue = normalizeDocument(value, tipoDoc);
+    const maxLength = DOC_RULES[tipoDoc]?.maxLength ?? 25;
     setFormData((prev) => ({
       ...prev,
       nro_documento: rawValue.slice(0, maxLength),
@@ -108,45 +247,21 @@ export function usePatients({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const resetPatientForm = () => {
+    setConsent(false);
+    setFormData(INITIAL_FORM);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError("");
 
-    if (formData.tipo_doc === "DNI" && formData.nro_documento.length !== 8) {
-      setFormError("El DNI debe tener exactamente 8 dígitos.");
-      return;
-    }
-    if (formData.tipo_doc === "CE" && (formData.nro_documento.length < 8 || formData.nro_documento.length > 12)) {
-      setFormError("El CE debe tener entre 8 y 12 caracteres.");
-      return;
-    }
-    if (formData.tipo_doc === "PAS" && (formData.nro_documento.length < 3 || formData.nro_documento.length > 9)) {
-      setFormError("El Pasaporte debe tener entre 3 y 9 caracteres.");
-      return;
-    }
-
-    if (!consent) {
+    const validationMessage = validatePatientForm(formData, consent);
+    if (validationMessage) {
       toast({
-        title: "Consentimiento requerido",
-        description:
-          "Debe confirmar el archivo físico del consentimiento informado.",
-        variant: "destructive",
+        title: "Revise los datos del paciente",
+        description: validationMessage,
+        variant: "warning",
       });
-      return;
-    }
-
-    if (!formData.nombres.trim() || !formData.apellidos.trim()) {
-      setFormError("Debe ingresar nombres y apellidos.");
-      return;
-    }
-
-    if (!formData.sexo) {
-      setFormError("Debe seleccionar un sexo.");
-      return;
-    }
-
-    if (!formData.fecha_nacimiento) {
-      setFormError("Debe ingresar la fecha de nacimiento.");
       return;
     }
 
@@ -154,14 +269,14 @@ export function usePatients({
     try {
       const payload = {
         tipo_doc: formData.tipo_doc,
-        nro_documento: formData.nro_documento,
-        nombres: formData.nombres.trim(),
-        apellidos: formData.apellidos.trim(),
+        nro_documento: normalizeDocument(formData.nro_documento, formData.tipo_doc),
+        nombres: normalizeSpaces(formData.nombres),
+        apellidos: normalizeSpaces(formData.apellidos),
         sexo: formData.sexo,
         fecha_nacimiento: formData.fecha_nacimiento,
         telefono: formData.telefono.replace(/\D/g, "") || null,
-        correo: formData.correo.trim() || null,
-        direccion: formData.direccion.trim() || null,
+        correo: formData.correo.trim().toLowerCase() || null,
+        direccion: normalizeSpaces(formData.direccion) || null,
         antecedentes_clinicos: formData.antecedentes_clinicos.trim() || null,
         alergias: formData.alergias.trim() || null,
         consentimiento_informado: consent,
@@ -172,17 +287,21 @@ export function usePatients({
       toast({
         title: "Paciente registrado",
         description: "Los datos se han guardado correctamente.",
+        variant: "success",
       });
       if (res.data?.data) {
         onCreated?.(res.data.data);
       }
       setOpen(false);
-      setConsent(false);
-      setFormData(INITIAL_FORM);
+      resetPatientForm();
       if (autoFetch) fetchPatients();
     } catch (error: any) {
       const msg = error.response?.data?.message;
-      setFormError(msg || "Error de conexión con el servidor.");
+      toast({
+        title: "No se pudo registrar el paciente",
+        description: msg || "Error de conexión con el servidor.",
+        variant: "error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -211,8 +330,9 @@ export function usePatients({
     setConsent,
     formData,
     setFormData,
-    formError,
+    hasPatientFormChanges: hasFormChanges(formData, consent),
     isSubmitting,
+    resetPatientForm,
     handleDocumentChange,
     handlePhoneChange,
     handleChange,

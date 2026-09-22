@@ -55,7 +55,6 @@ export default function Patients() {
           open={hook.open}
           onOpenChange={hook.setOpen}
           formData={hook.formData}
-          formError={hook.formError}
           isSubmitting={hook.isSubmitting}
           consent={hook.consent}
           onConsentChange={hook.setConsent}
@@ -64,6 +63,8 @@ export default function Patients() {
           onFieldChange={handleFieldChange}
           onSubmit={hook.handleSubmit}
           onTipoDocChange={handleTipoDocChange}
+          hasUnsavedChanges={hook.hasPatientFormChanges}
+          onDiscard={hook.resetPatientForm}
         />
       }
     >

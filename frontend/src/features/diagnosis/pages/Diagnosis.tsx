@@ -121,7 +121,6 @@ export default function Diagnosis() {
       open={patientRegistration.open}
       onOpenChange={patientRegistration.setOpen}
       formData={patientRegistration.formData}
-      formError={patientRegistration.formError}
       isSubmitting={patientRegistration.isSubmitting}
       consent={patientRegistration.consent}
       onConsentChange={patientRegistration.setConsent}
@@ -135,6 +134,8 @@ export default function Diagnosis() {
       onFieldChange={patientRegistration.handleChange}
       onSubmit={patientRegistration.handleSubmit}
       onTipoDocChange={handleTipoDocChange}
+      hasUnsavedChanges={patientRegistration.hasPatientFormChanges}
+      onDiscard={patientRegistration.resetPatientForm}
       triggerLabel="Nuevo paciente"
     />
   );

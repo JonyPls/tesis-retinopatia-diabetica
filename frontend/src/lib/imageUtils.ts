@@ -1,6 +1,25 @@
 import UTIF from "utif2";
 
+function isTiffFile(file: File) {
+  const type = file.type.toLowerCase();
+  return (
+    type === "image/tiff" ||
+    type === "image/x-tiff" ||
+    /\.(tif|tiff)$/i.test(file.name)
+  );
+}
+
+export function revokePreviewUrl(preview?: string | null) {
+  if (preview?.startsWith("blob:")) {
+    URL.revokeObjectURL(preview);
+  }
+}
+
 export const convertToPreviewUrl = (file: File): Promise<string> => {
+  if (!isTiffFile(file)) {
+    return Promise.resolve(URL.createObjectURL(file));
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -10,6 +29,10 @@ export const convertToPreviewUrl = (file: File): Promise<string> => {
 
         // Decodificar el TIFF
         const ifds = UTIF.decode(buffer);
+        if (!ifds.length) {
+          reject(new Error("No se pudo decodificar el archivo TIFF"));
+          return;
+        }
         UTIF.decodeImage(buffer, ifds[0]);
         const rgba = UTIF.toRGBA8(ifds[0]);
 

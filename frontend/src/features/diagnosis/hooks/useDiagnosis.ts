@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
-import { convertToPreviewUrl } from "@/lib/imageUtils";
+import { convertToPreviewUrl, revokePreviewUrl } from "@/lib/imageUtils";
 import {
   buscarPacientesPaginado,
   obtenerPacientesRecientes,
@@ -64,6 +64,7 @@ export function useDiagnosis(): DiagnosisHook {
     OD: { ...EMPTY_EYE },
     OI: { ...EMPTY_EYE },
   });
+  const eyesRef = useRef<Record<EyeKey, EyeState>>(eyes);
   const [isAutoSelectingImages, setIsAutoSelectingImages] = useState(false);
 
   // Paso 3
@@ -95,6 +96,27 @@ export function useDiagnosis(): DiagnosisHook {
       .then(setRecentPatients)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    eyesRef.current = eyes;
+  }, [eyes]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(eyesRef.current).forEach((eyeState) => {
+        revokePreviewUrl(eyeState.preview);
+      });
+    };
+  }, []);
+
+  const resetUploadedEyes = () => {
+    setEyes((prev) => {
+      Object.values(prev).forEach((eyeState) => {
+        revokePreviewUrl(eyeState.preview);
+      });
+      return { OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } };
+    });
+  };
 
   // ── Paso 1 ────────────────────────────────────────────────────────
   const handleQueryChange = (value: string) => {
@@ -162,7 +184,7 @@ export function useDiagnosis(): DiagnosisHook {
     setSearchResults([]);
     setSearchPage(1);
     setHasMoreSearchResults(false);
-    setEyes({ OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } });
+    resetUploadedEyes();
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
@@ -175,7 +197,7 @@ export function useDiagnosis(): DiagnosisHook {
     setSearchResults([]);
     setSearchPage(1);
     setHasMoreSearchResults(false);
-    setEyes({ OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } });
+    resetUploadedEyes();
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
@@ -187,9 +209,15 @@ export function useDiagnosis(): DiagnosisHook {
     if (!file) return;
     try {
       const preview = await convertToPreviewUrl(file);
-      setEyes((prev) => ({ ...prev, [eye]: { file, preview } }));
+      setEyes((prev) => {
+        revokePreviewUrl(prev[eye].preview);
+        return { ...prev, [eye]: { file, preview, isExistingImage: false } };
+      });
     } catch {
-      setEyes((prev) => ({ ...prev, [eye]: { file, preview: null } }));
+      setEyes((prev) => {
+        revokePreviewUrl(prev[eye].preview);
+        return { ...prev, [eye]: { file, preview: null, isExistingImage: false } };
+      });
       toast({
         title: "Vista previa no disponible",
         description: "El archivo se procesará correctamente al guardar.",
@@ -198,7 +226,10 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const clearEye = (eye: EyeKey) => {
-    setEyes((prev) => ({ ...prev, [eye]: { ...EMPTY_EYE } }));
+    setEyes((prev) => {
+      revokePreviewUrl(prev[eye].preview);
+      return { ...prev, [eye]: { ...EMPTY_EYE } };
+    });
   };
 
   const autoSelectRetinographImages = async () => {
@@ -255,6 +286,7 @@ export function useDiagnosis(): DiagnosisHook {
       setEyes((prev) => {
         const next = { ...prev };
         loadedEntries.forEach(([eye, state]) => {
+          revokePreviewUrl(prev[eye].preview);
           next[eye] = state;
         });
         return next;
@@ -284,8 +316,8 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   // ── Guardar y procesar ────────────────────────────────────────────
-  const MIN_VALIDATE_MS = 1500;
-  const MIN_ANALYZE_MS = 2000;
+  const MIN_VALIDATE_MS = 0;
+  const MIN_ANALYZE_MS = 500;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -566,7 +598,7 @@ export function useDiagnosis(): DiagnosisHook {
     setSearchResults([]);
     setSearchPage(1);
     setHasMoreSearchResults(false);
-    setEyes({ OD: { ...EMPTY_EYE }, OI: { ...EMPTY_EYE } });
+    resetUploadedEyes();
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
