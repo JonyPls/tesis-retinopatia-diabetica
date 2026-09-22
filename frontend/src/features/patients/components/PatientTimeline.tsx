@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Activity,
   ArrowUpDown,
@@ -9,6 +10,7 @@ import {
   Eye,
   FileText,
   Image as ImageIcon,
+  MoveRight,
   SlidersHorizontal,
   Stethoscope,
   User,
@@ -30,10 +32,13 @@ import {
   PatientDiagnosisEyeDetail,
   PatientVisitReport,
 } from "../types";
+import { PatientReportDetailModal } from "./PatientReportDetailModal";
 
 interface PatientTimelineProps {
   diagnoses: Diagnosis[];
   sortedDx: Diagnosis[];
+  patientName?: string;
+  patientId?: string | number;
   className?: string;
 }
 
@@ -371,7 +376,13 @@ function DiagnosisEyeCard({
   );
 }
 
-function ReportCard({ report }: { report: PatientVisitReport }) {
+function ReportCard({
+  report,
+  onView,
+}: {
+  report: PatientVisitReport;
+  onView: (reportId: number) => void;
+}) {
   return (
     <div className="rounded-md border border-border bg-background p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -405,6 +416,18 @@ function ReportCard({ report }: { report: PatientVisitReport }) {
           Este informe no tiene conclusión registrada.
         </p>
       )}
+
+      <div className="mt-4 flex justify-end border-t border-border pt-3">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onView(report.id)}
+        >
+          <Eye className="mr-1.5 h-3.5 w-3.5" />
+          Ver informe
+        </Button>
+      </div>
     </div>
   );
 }
@@ -412,6 +435,8 @@ function ReportCard({ report }: { report: PatientVisitReport }) {
 export function PatientTimeline({
   diagnoses,
   sortedDx,
+  patientName,
+  patientId,
   className,
 }: PatientTimelineProps) {
   const token = useAuthStore((state) => state.token);
@@ -427,6 +452,7 @@ export function PatientTimeline({
     subtitle?: string;
     alt: string;
   } | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     let list = [...sortedDx];
@@ -618,19 +644,21 @@ export function PatientTimeline({
                       : "border-border hover:border-primary/35 hover:bg-primary/[0.025] hover:shadow-card",
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedVisitId(isExpanded ? null : visit.visita_id)
-                    }
+                  <div
                     className={cn(
-                      "flex w-full flex-col gap-3 border-l-4 p-4 text-left transition-colors duration-200 lg:flex-row lg:items-start lg:justify-between",
+                      "flex w-full flex-col gap-3 border-l-4 p-4 transition-colors duration-200 lg:flex-row lg:items-start lg:justify-between",
                       isExpanded
                         ? "border-l-primary bg-primary/7"
                         : "border-l-muted bg-card group-hover:border-l-primary/80 group-hover:bg-primary/5",
                     )}
                   >
-                    <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedVisitId(isExpanded ? null : visit.visita_id)
+                      }
+                      className="min-w-0 flex-1 text-left"
+                    >
                       <div className="flex flex-wrap items-center gap-2">
                         <Calendar className="h-4 w-4 shrink-0 text-primary" />
                         <p className="text-base font-semibold">
@@ -653,7 +681,7 @@ export function PatientTimeline({
                           {visit.motivo_consulta}
                         </p>
                       )}
-                    </div>
+                    </button>
 
                     <div className="flex shrink-0 flex-wrap items-center gap-1.5 lg:justify-end">
                       {hasIa && (
@@ -670,14 +698,37 @@ export function PatientTimeline({
                       {!hasIa && !hasReports && (
                         <PillBadge icon={CircleDot}>Sin adjuntos</PillBadge>
                       )}
-                      <ChevronDown
-                        className={cn(
-                          "h-4 w-4 text-muted-foreground transition-transform",
-                          isExpanded && "rotate-180 text-primary",
-                        )}
-                      />
+                      {patientId && (
+                        <Button
+                          asChild
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs"
+                        >
+                          <Link to={`/pacientes/${patientId}/visitas/${visit.visita_id}`}>
+                            Ver detalle
+                            <MoveRight className="ml-1.5 h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedVisitId(isExpanded ? null : visit.visita_id)
+                        }
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
+                        aria-label={isExpanded ? "Contraer visita" : "Expandir visita"}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 transition-transform",
+                            isExpanded && "rotate-180 text-primary",
+                          )}
+                        />
+                      </button>
                     </div>
-                  </button>
+                  </div>
 
                   {isExpanded && (
                     <div className="border-t border-border bg-muted/15 p-6">
@@ -814,7 +865,11 @@ export function PatientTimeline({
 
                               <div className="grid gap-3 xl:grid-cols-2">
                                 {reports.map((report) => (
-                                  <ReportCard key={report.id} report={report} />
+                                  <ReportCard
+                                    key={report.id}
+                                    report={report}
+                                    onView={setSelectedReportId}
+                                  />
                                 ))}
                               </div>
                             </section>
@@ -856,6 +911,15 @@ export function PatientTimeline({
           onClose={() => setPreviewImage(null)}
         />
       )}
+
+      <PatientReportDetailModal
+        reportId={selectedReportId}
+        open={selectedReportId !== null}
+        patientName={patientName}
+        onOpenChange={(open) => {
+          if (!open) setSelectedReportId(null);
+        }}
+      />
     </Card>
   );
 }

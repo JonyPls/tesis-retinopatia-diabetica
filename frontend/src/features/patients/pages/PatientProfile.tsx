@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,6 @@ import { PatientTimeline } from "../components/PatientTimeline";
 export default function PatientProfile() {
   const { id } = useParams();
   const hook = usePatientProfile(id);
-  const [infoCollapsed, setInfoCollapsed] = useState(false);
 
   if (hook.isLoading) {
     return (
@@ -46,44 +44,54 @@ export default function PatientProfile() {
   const fullName =
     hook.patient.nombres_apellidos ||
     `${hook.patient.nombres} ${hook.patient.apellidos}`.trim();
+  const hasRdData = hook.diagnoses.some(
+    (diagnosis) =>
+      Number(diagnosis.tiene_diagnostico_ia) === 1 ||
+      diagnosis.maxima_gravedad !== null ||
+      Boolean(diagnosis.resultado_ia),
+  );
 
   return (
-    <AppLayout
-      title={fullName}
-      subtitle="Historia clínica"
-      actions={
-        <>
+    <AppLayout title={fullName}>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+        <aside className="space-y-3 lg:sticky lg:top-6 lg:self-start">
           <Button variant="outline" asChild>
             <Link to="/pacientes">
               <ArrowLeft className="h-4 w-4 mr-2" /> Volver
             </Link>
           </Button>
-          <Button
-            asChild
-            className="bg-gradient-primary hover:opacity-90 text-white"
-          >
-            <Link to="/diagnostico">
-              <Brain className="h-4 w-4 mr-2" /> Nueva Evaluación
-            </Link>
-          </Button>
-        </>
-      }
-    >
-      <div className={`grid gap-6 grid-cols-1 ${infoCollapsed ? "" : "lg:grid-cols-3"}`}>
-        <PatientInfoCard
-          patient={hook.patient}
-          calculateAge={hook.calculateAge}
-          getInitials={hook.getInitials}
-          status={hook.status}
-          lastVisit={hook.lastVisit}
-          collapsed={infoCollapsed}
-          onToggle={() => setInfoCollapsed((v) => !v)}
-        />
-        <PatientTimeline
-          className={infoCollapsed ? "lg:col-span-3" : "lg:col-span-2"}
-          diagnoses={hook.diagnoses}
-          sortedDx={hook.sortedDx}
-        />
+
+          <PatientInfoCard
+            patient={hook.patient}
+            calculateAge={hook.calculateAge}
+            getInitials={hook.getInitials}
+            status={hook.status}
+            lastVisit={hook.lastVisit}
+            visitCount={hook.diagnoses.length}
+            maxRdLevel={hook.maxLevel}
+            hasRdData={hasRdData}
+          />
+        </aside>
+
+        <section className="min-w-0 space-y-3">
+          <div className="flex justify-end">
+            <Button
+              asChild
+              className="bg-gradient-primary hover:opacity-90 text-white"
+            >
+              <Link to="/diagnostico">
+                <Brain className="h-4 w-4 mr-2" /> Nueva Evaluación
+              </Link>
+            </Button>
+          </div>
+
+          <PatientTimeline
+            diagnoses={hook.diagnoses}
+            sortedDx={hook.sortedDx}
+            patientName={fullName}
+            patientId={hook.patient.id}
+          />
+        </section>
       </div>
     </AppLayout>
   );

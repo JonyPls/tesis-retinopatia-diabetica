@@ -111,7 +111,7 @@ export function PatientTable({
               className="hover:bg-muted/30"
             >
               <TableCell>
-                <div className="font-mono text-sm">{p.nro_documento}</div>
+                <div className="text-sm font-medium">{p.nro_documento}</div>
                 <div className="text-[10px] text-muted-foreground uppercase mt-0.5">
                   {p.tipo_doc_abrev || p.tipo_doc}
                 </div>

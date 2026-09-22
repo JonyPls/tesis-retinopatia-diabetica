@@ -28,3 +28,14 @@ frontend/dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# ======================
+# ARCHIVOS TEMPORALES / SALIDAS
+# ======================
+
+output/
+tmp/
+
+# Si quieres conservar las carpetas vacías en Git:
+!output/.gitkeep
+!tmp/.gitkeep

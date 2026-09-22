@@ -42,7 +42,7 @@ def obtener_seleccion_automatica(paciente_id):
     if not os.path.isdir(RETINOGRAPH_EXPORT_DIR):
         return {
             "success": False,
-            "message": f"No se encontró la carpeta de imágenes: {RETINOGRAPH_EXPORT_DIR}",
+            "message": "Recurso no encontrado.",
         }, 404
 
     seleccion = {"OD": None, "OI": None}
@@ -87,7 +87,7 @@ def obtener_archivo_retinografo(paciente_id, filename):
     if parsed["documento"] != documento:
         return {
             "success": False,
-            "message": "La imagen no corresponde al paciente seleccionado",
+            "message": "No autorizado.",
         }, 403
 
     safe_name = os.path.basename(filename)

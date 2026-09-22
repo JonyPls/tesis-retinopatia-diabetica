@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import hashlib
+from flask import current_app
 from PIL import Image
 import io
 from werkzeug.datastructures import FileStorage
@@ -95,8 +96,9 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
         return {"success": True, "data": resultado_ia}
 
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+    except Exception:
+        current_app.logger.exception("Error al procesar diagnostico")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}
 
 
 def consultar_detalles_por_visita(visita_id: int) -> dict:
@@ -159,8 +161,9 @@ def _consultar_detalles(visita_id: int = None, diagnostico_id: int = None) -> di
                 "ojos": ojos
             }
         }
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+    except Exception:
+        current_app.logger.exception("Error al consultar detalles de diagnostico")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}
     
 
 def confirmar_validacion_detalle(
@@ -184,5 +187,6 @@ def confirmar_validacion_detalle(
             "data": {"estado_validacion": nuevo_estado},
             "message": "Diagnóstico validado y guardado exitosamente."
         }
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+    except Exception:
+        current_app.logger.exception("Error al confirmar validacion de diagnostico")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}

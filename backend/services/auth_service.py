@@ -1,6 +1,7 @@
 import os
 import jwt
 import datetime
+from flask import current_app
 from werkzeug.security import check_password_hash
 from src.repositories.auth_repository import AuthRepository
 
@@ -43,5 +44,6 @@ def autenticar_usuario(username, password):
 
         return {"success": False, "message": "Usuario o contraseña incorrectos."}, 401
     
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al autenticar usuario")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500

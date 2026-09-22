@@ -69,10 +69,38 @@ export interface PatientVisitReport {
   id: number;
   tipo_informe_id: number;
   tipo_informe_nombre: string;
+  datos_estructurados?: Record<string, any>;
   conclusion?: string | null;
   estado: "ACTIVO" | "INACTIVO" | "ANULADO";
   fecha_creado: string;
   fecha_actualizado: string;
+}
+
+export interface PatientReportDetail extends PatientVisitReport {
+  visita_id: number;
+  diagnostico_id?: number;
+  schema_version?: number;
+  datos_estructurados: Record<string, any>;
+  visita?: {
+    id: number;
+    fecha_visita: string;
+    motivo_consulta?: string | null;
+    observaciones?: string | null;
+    estado?: string;
+  };
+  paciente?: {
+    id: number;
+    nro_documento: string;
+    nombres: string;
+    apellidos: string;
+  };
+  profesional?: {
+    id: number;
+    nombres: string;
+    apellidos: string;
+    cmp?: string | null;
+    rne?: string | null;
+  };
 }
 
 export interface PatientFormData {

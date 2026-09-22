@@ -1,6 +1,27 @@
 from database import db
 from sqlalchemy import text
 from src.models.patient_entities import Paciente
+import json
+
+
+def _extract_report_conclusion(datos_estructurados):
+    datos = datos_estructurados
+    if isinstance(datos, str):
+        try:
+            datos = json.loads(datos)
+        except (TypeError, json.JSONDecodeError):
+            return None
+    if not isinstance(datos, dict):
+        return None
+
+    conclusion = datos.get("conclusion")
+    if isinstance(conclusion, list):
+        items = [str(item).strip() for item in conclusion if str(item).strip()]
+        return "\n".join(items) if items else None
+    if conclusion is None:
+        return None
+    texto = str(conclusion).strip()
+    return texto or None
 
 class PatientRepository:
     @staticmethod
@@ -182,6 +203,7 @@ class PatientRepository:
                 i.tipo_informe_id,
                 ti.nombre AS tipo_informe_nombre,
                 i.conclusion,
+                i.datos_estructurados,
                 i.estado,
                 i.fecha_creado,
                 i.fecha_actualizado
@@ -198,6 +220,10 @@ class PatientRepository:
         for row in informes_result:
             informe = dict(row._mapping)
             visita_id = informe.pop("visita_id")
+            if not informe.get("conclusion"):
+                informe["conclusion"] = _extract_report_conclusion(
+                    informe.get("datos_estructurados")
+                )
             informes_por_visita.setdefault(visita_id, []).append(informe)
 
         for visita in visitas:

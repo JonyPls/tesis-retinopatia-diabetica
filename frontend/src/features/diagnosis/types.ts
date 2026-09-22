@@ -1,5 +1,8 @@
 import { DiagnosisResult } from "@/features/diagnosis/api/diagnosisService";
-import { PatientSearchResult } from "@/features/patients/api/patientService";
+import {
+  DiagnosticoVisita,
+  PatientSearchResult,
+} from "@/features/patients/api/patientService";
 
 export type EyeKey = "OD" | "OI";
 
@@ -31,10 +34,14 @@ export interface DiagnosisHook {
   isSearching: boolean;
   isLoadingMorePatients: boolean;
   hasMoreSearchResults: boolean;
+  visitasRecientes: DiagnosticoVisita[];
+  selectedVisita: DiagnosticoVisita | null | undefined;
+  isLoadingVisitas: boolean;
   isAutoSelectingImages: boolean;
   handleQueryChange: (value: string) => void;
   loadMorePatients: () => Promise<void>;
   selectPatient: (p: PatientSearchResult) => void;
+  selectVisita: (visita: DiagnosticoVisita | null) => void;
   clearPatient: () => void;
 
   // Paso 2 — Imágenes

@@ -1,15 +1,50 @@
 from flask import Blueprint, send_from_directory, jsonify
 import os
-from utils.security import token_required
+from sqlalchemy import text
+from database import db
+from utils.security import (
+    GENERIC_NOT_FOUND_MESSAGE,
+    clinical_access_required,
+    token_required,
+)
 
 files_bp = Blueprint('files_bp', __name__)
 
-RETINAS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'uploads', 'retinas')
+RETINAS_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'uploads', 'retinas'))
+
+
+def _retina_file_is_registered(filename):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        return False
+
+    query = text("""
+        SELECT drd.id
+        FROM diagnosticos_retinopatia_detalle drd
+        JOIN diagnosticos_retinopatia dr
+          ON dr.id = drd.diagnostico_retinopatia_id
+        JOIN visitas_clinicas v
+          ON v.id = dr.visita_id
+        WHERE (drd.imagen_original_url = :filename OR drd.imagen_gradcam_url = :filename)
+          AND dr.estado <> 'ANULADO'
+          AND v.estado <> 'ANULADA'
+        LIMIT 1
+    """)
+    return db.session.execute(query, {"filename": safe_name}).first() is not None
 
 @files_bp.route('/uploads/retinas/<path:filename>', methods=['GET'])
 @token_required
+@clinical_access_required('imagenes.ver', 'diagnosticos.ver')
 def serve_retina_image(filename):
-    if not os.path.exists(os.path.join(RETINAS_FOLDER, filename)):
-        return jsonify({"success": False, "message": "Imagen no encontrada."}), 404
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not _retina_file_is_registered(safe_name):
+        return jsonify({"success": False, "message": GENERIC_NOT_FOUND_MESSAGE}), 404
+
+    full_path = os.path.abspath(os.path.join(RETINAS_FOLDER, safe_name))
+    if os.path.commonpath([RETINAS_FOLDER, full_path]) != RETINAS_FOLDER:
+        return jsonify({"success": False, "message": GENERIC_NOT_FOUND_MESSAGE}), 404
+
+    if not os.path.exists(full_path):
+        return jsonify({"success": False, "message": GENERIC_NOT_FOUND_MESSAGE}), 404
     
-    return send_from_directory(RETINAS_FOLDER, filename)
+    return send_from_directory(RETINAS_FOLDER, safe_name)

@@ -10,6 +10,7 @@ import Dashboard from "./features/dashboard/pages/Dashboard";
 import NotFound from "./pages/NotFound.tsx";
 import Patients from "./features/patients/pages/Patients";
 import PatientProfile from "./features/patients/pages/PatientProfile";
+import PatientVisitDetail from "./features/patients/pages/PatientVisitDetail";
 import Diagnosis from "./features/diagnosis/pages/Diagnosis";
 import Placeholder from "./pages/Placeholder";
 import ClinicalReports from "./features/reports/pages/ClinicalReports";
@@ -54,6 +55,7 @@ const App = () => (
           <Route path="/dashboard"     element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/pacientes"     element={<PrivateRoute><Patients /></PrivateRoute>} />
           <Route path="/pacientes/:id" element={<PrivateRoute><PatientProfile /></PrivateRoute>} />
+          <Route path="/pacientes/:pacienteId/visitas/:visitaId" element={<PrivateRoute><PatientVisitDetail /></PrivateRoute>} />
           <Route path="/diagnostico"   element={<PrivateRoute><Diagnosis /></PrivateRoute>} />
           <Route path="/informes"      element={<PrivateRoute><ClinicalReports /></PrivateRoute>} />
 

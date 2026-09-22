@@ -11,6 +11,7 @@ PyMySQL==1.1.2
 cryptography==43.0.3
 python-dotenv==1.2.2
 Werkzeug==3.1.8
+setuptools==80.9.0
 
 # ── Inteligencia Artificial (PyTorch) ──
 torch==2.3.0
@@ -26,3 +27,6 @@ numpy==1.26.4
 Pillow==10.3.0
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy==2.0.30
+reportlab==4.2.2
+pypdf==5.1.0
+tzdata==2025.2

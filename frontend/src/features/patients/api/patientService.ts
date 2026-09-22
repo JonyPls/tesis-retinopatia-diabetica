@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import type { PatientReportDetail } from "../types";
 
 export interface PatientSearchResult {
   id: number;
@@ -102,6 +103,7 @@ export interface VisitaClinica {
     id: number;
     tipo_informe_id: number;
     tipo_informe_nombre: string;
+    datos_estructurados?: Record<string, any>;
     conclusion?: string | null;
     estado: "ACTIVO" | "INACTIVO" | "ANULADO";
     fecha_creado: string;
@@ -117,3 +119,33 @@ export const obtenerVisitasPaciente = async (pacienteId: number): Promise<Visita
 };
 
 export const obtenerDiagnosticosPaciente = obtenerVisitasPaciente;
+
+export const obtenerInformeClinico = async (
+  informeId: number,
+): Promise<PatientReportDetail> => {
+  const response = await api.get(`/informes/${informeId}`);
+  return response.data.data;
+};
+
+function filenameFromDisposition(disposition?: string) {
+  if (!disposition) return null;
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1].trim());
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1]?.trim() ?? null;
+}
+
+export const descargarReporteDiagnostico = async (
+  visitaId: number,
+): Promise<{ blob: Blob; filename: string }> => {
+  const response = await api.get(`/visitas/${visitaId}/reporte-diagnostico`, {
+    responseType: "blob",
+  });
+
+  return {
+    blob: response.data,
+    filename:
+      filenameFromDisposition(response.headers["content-disposition"]) ??
+      `reporte_RD_visita_${visitaId}.pdf`,
+  };
+};

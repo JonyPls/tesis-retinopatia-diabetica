@@ -114,7 +114,7 @@ export function ImageUploader({
           <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground leading-relaxed">
             Las imágenes serán preprocesadas automáticamente antes del análisis
-            (filtro de mejora de contraste, recorte y normalización). <b>No es recomendable subir una imagen procesada.</b> 
+            (filtro de mejora de contraste, recorte y normalización). <b>No subir una imagen ya procesada.</b> 
           </p>
         </div>
       </CardContent>

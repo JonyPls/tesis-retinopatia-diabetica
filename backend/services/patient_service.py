@@ -1,6 +1,7 @@
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.document_repository import DocumentRepository
 from src.models.patient_entities import Paciente
+from flask import current_app
 from datetime import date, datetime
 import re
 
@@ -106,8 +107,9 @@ def obtener_todos_pacientes():
             "success": True,
             "data": pacientes
         }, 200
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al obtener pacientes")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 def registrar_nuevo_paciente(datos_paciente_dict):
     tipo_doc_codigo = _clean_text(datos_paciente_dict.get('tipo_doc'))
@@ -184,8 +186,9 @@ def registrar_nuevo_paciente(datos_paciente_dict):
             "message": "Paciente registrado correctamente",
             "data": paciente_creado,
         }, 201
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al registrar paciente")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 def obtener_detalle_paciente(paciente_id):
     try:
@@ -197,8 +200,9 @@ def obtener_detalle_paciente(paciente_id):
             }, 200
         else:
             return {"success": False, "message": "Paciente no encontrado"}, 404
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al obtener detalle de paciente")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
 def obtener_historial_diagnosticos(paciente_id):
@@ -208,8 +212,9 @@ def obtener_historial_diagnosticos(paciente_id):
             "success": True,
             "data": historial
         }, 200
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al obtener historial de diagnosticos")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
 def buscar_pacientes_dinamico(query_text, page=1, per_page=5):
@@ -229,13 +234,15 @@ def buscar_pacientes_dinamico(query_text, page=1, per_page=5):
                 "has_more": page * per_page < total
             }
         }, 200
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al buscar pacientes")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
 def obtener_recientes(limit=6):
     try:
         pacientes = PatientRepository.obtener_pacientes_recientes(limit)
         return {"success": True, "data": pacientes}, 200
-    except Exception as e:
-        return {"success": False, "message": str(e)}, 500
+    except Exception:
+        current_app.logger.exception("Error al obtener pacientes recientes")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500

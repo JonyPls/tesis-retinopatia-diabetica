@@ -211,10 +211,14 @@ export default function Diagnosis() {
                 isSearching={diagnosisHook.isSearching}
                 isLoadingMore={diagnosisHook.isLoadingMorePatients}
                 hasMoreSearchResults={diagnosisHook.hasMoreSearchResults}
+                visitasRecientes={diagnosisHook.visitasRecientes}
+                selectedVisita={diagnosisHook.selectedVisita}
+                isLoadingVisitas={diagnosisHook.isLoadingVisitas}
                 registrationDialog={registrationDialog}
                 onQueryChange={diagnosisHook.handleQueryChange}
                 onLoadMore={diagnosisHook.loadMorePatients}
                 onSelect={diagnosisHook.selectPatient}
+                onSelectVisita={diagnosisHook.selectVisita}
                 onClear={diagnosisHook.clearPatient}
               />
             )}

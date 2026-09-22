@@ -4,7 +4,9 @@ import { toast } from "@/hooks/use-toast";
 import { convertToPreviewUrl, revokePreviewUrl } from "@/lib/imageUtils";
 import {
   buscarPacientesPaginado,
+  DiagnosticoVisita,
   obtenerPacientesRecientes,
+  obtenerVisitasPaciente,
   PatientSearchResult,
 } from "@/features/patients/api/patientService";
 import {
@@ -19,6 +21,7 @@ import { EyeKey, EyeState, DiagnosisHook } from "../types";
 
 const EMPTY_EYE: EyeState = { file: null, preview: null, isExistingImage: false };
 const PATIENT_SEARCH_PAGE_SIZE = 10;
+const RECENT_VISIT_HOURS = 24;
 
 function inferMimeType(filename: string) {
   const extension = filename.split(".").pop()?.toLowerCase();
@@ -58,6 +61,10 @@ export function useDiagnosis(): DiagnosisHook {
   const [searchPage, setSearchPage] = useState(1);
   const [hasMoreSearchResults, setHasMoreSearchResults] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [visitasRecientes, setVisitasRecientes] = useState<DiagnosticoVisita[]>([]);
+  const [selectedVisita, setSelectedVisita] =
+    useState<DiagnosticoVisita | null | undefined>(undefined);
+  const [isLoadingVisitas, setIsLoadingVisitas] = useState(false);
 
   // Paso 2
   const [eyes, setEyes] = useState<Record<EyeKey, EyeState>>({
@@ -119,9 +126,46 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   // ── Paso 1 ────────────────────────────────────────────────────────
+  const loadRecentVisits = async (pacienteId: number) => {
+    setIsLoadingVisitas(true);
+    setVisitasRecientes([]);
+    try {
+      const data = await obtenerVisitasPaciente(pacienteId);
+      const now = Date.now();
+      const recent = (data || [])
+        .filter((visit) => {
+          if (visit.estado === "ANULADA") return false;
+          if (Number(visit.tiene_diagnostico_ia) === 1) return false;
+          const visitTime = new Date(visit.fecha_visita).getTime();
+          if (Number.isNaN(visitTime)) return false;
+          const diffHours = (now - visitTime) / (1000 * 60 * 60);
+          return diffHours >= 0 && diffHours <= RECENT_VISIT_HOURS;
+        })
+        .sort(
+          (a, b) =>
+            new Date(b.fecha_visita).getTime() -
+            new Date(a.fecha_visita).getTime(),
+        );
+      setVisitasRecientes(recent);
+    } catch {
+      setVisitasRecientes([]);
+      toast({
+        title: "No se pudieron cargar las visitas",
+        description: "Puede crear una nueva visita para continuar.",
+        variant: "warning",
+      });
+    } finally {
+      setIsLoadingVisitas(false);
+    }
+  };
+
   const handleQueryChange = (value: string) => {
     setQuery(value);
-    if (selectedPatient) setSelectedPatient(null);
+    if (selectedPatient) {
+      setSelectedPatient(null);
+      setSelectedVisita(undefined);
+      setVisitasRecientes([]);
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (value.trim().length < 2) {
@@ -184,11 +228,14 @@ export function useDiagnosis(): DiagnosisHook {
     setSearchResults([]);
     setSearchPage(1);
     setHasMoreSearchResults(false);
+    setSelectedVisita(undefined);
+    setVisitasRecientes([]);
     resetUploadedEyes();
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
     setCorrectionReasons({ OD: "", OI: "" });
+    loadRecentVisits(p.id);
   };
 
   const clearPatient = () => {
@@ -197,6 +244,17 @@ export function useDiagnosis(): DiagnosisHook {
     setSearchResults([]);
     setSearchPage(1);
     setHasMoreSearchResults(false);
+    setSelectedVisita(undefined);
+    setVisitasRecientes([]);
+    resetUploadedEyes();
+    setResults({});
+    setFinalSelectionState({ OD: 0, OI: 0 });
+    setComments({ OD: "", OI: "" });
+    setCorrectionReasons({ OD: "", OI: "" });
+  };
+
+  const selectVisita = (visita: DiagnosticoVisita | null) => {
+    setSelectedVisita(visita);
     resetUploadedEyes();
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
@@ -322,7 +380,7 @@ export function useDiagnosis(): DiagnosisHook {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   const handleSave = async () => {
-    if (!selectedPatient) return;
+    if (!selectedPatient || selectedVisita === undefined) return;
 
     const eyesToProcess = (["OD", "OI"] as EyeKey[]).filter((eye) => eyes[eye].file !== null);
 
@@ -337,7 +395,7 @@ export function useDiagnosis(): DiagnosisHook {
     setModalProgress(0);
 
     // ── Loop 1: Validación (1 segmento por ojo) ──────────────────────
-    let sharedVisitaId: number | undefined;
+    let sharedVisitaId: number | undefined = selectedVisita?.visita_id;
 
     for (let i = 0; i < N; i++) {
       const eye = eyesToProcess[i];
@@ -578,7 +636,7 @@ export function useDiagnosis(): DiagnosisHook {
 
   // ── Navegación ────────────────────────────────────────────────────
   const canNext =
-    (step === 1 && selectedPatient !== null) ||
+    (step === 1 && selectedPatient !== null && selectedVisita !== undefined) ||
     (step === 2 && (eyes.OD.file !== null || eyes.OI.file !== null));
 
   const goNext = () => {
@@ -598,6 +656,8 @@ export function useDiagnosis(): DiagnosisHook {
     setSearchResults([]);
     setSearchPage(1);
     setHasMoreSearchResults(false);
+    setSelectedVisita(undefined);
+    setVisitasRecientes([]);
     resetUploadedEyes();
     setResults({});
     setFinalSelectionState({ OD: 0, OI: 0 });
@@ -634,10 +694,14 @@ export function useDiagnosis(): DiagnosisHook {
     isSearching,
     isLoadingMorePatients,
     hasMoreSearchResults,
+    visitasRecientes,
+    selectedVisita,
+    isLoadingVisitas,
     isAutoSelectingImages,
     handleQueryChange,
     loadMorePatients,
     selectPatient,
+    selectVisita,
     clearPatient,
     eyes,
     handleFile,

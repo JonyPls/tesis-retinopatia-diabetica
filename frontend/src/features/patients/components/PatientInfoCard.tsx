@@ -1,29 +1,24 @@
-import { useState } from "react";
 import {
   AlertCircle,
+  Activity,
   Cake,
   Calendar,
-  ChevronDown,
-  ChevronUp,
+  CalendarClock,
   FileText,
   IdCard,
   Mail,
-  MapPin,
   Phone,
   ShieldCheck,
   User,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge, type Status } from "@/components/medical/StatusBadge";
-import { cn } from "@/lib/utils";
+import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
+import type { RDLevel } from "@/data/rdLevels";
 import { Patient } from "../types";
 
 interface PatientInfoCardProps {
@@ -32,18 +27,10 @@ interface PatientInfoCardProps {
   getInitials: (nombres?: string, apellidos?: string) => string;
   status: Status;
   lastVisit: string;
-  collapsed: boolean;
-  onToggle: () => void;
+  visitCount: number;
+  maxRdLevel: number;
+  hasRdData: boolean;
 }
-
-type SectionKey = "identificacion" | "contacto" | "seguimiento" | "clinica";
-
-const SECTION_DEFAULTS: Record<SectionKey, boolean> = {
-  identificacion: true,
-  contacto: false,
-  seguimiento: true,
-  clinica: false,
-};
 
 function formatDate(date?: string | null) {
   if (!date) return "No registrado";
@@ -61,28 +48,28 @@ function getFullName(patient: Patient) {
   );
 }
 
+function formatPhone(phone?: string | null) {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length !== 9) return phone;
+  return digits.replace(/(\d{3})(?=\d)/g, "$1 ");
+}
+
 function InfoRow({
   icon: Icon,
   label,
   value,
-  mono,
 }: {
   icon: LucideIcon;
   label: string;
   value?: string | number | null;
-  mono?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-3 py-2.5">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+    <div className="flex items-start gap-2.5 py-1.5">
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div
-          className={cn(
-            "mt-0.5 break-words text-sm font-medium text-foreground",
-            mono && "font-mono",
-          )}
-        >
+        <div className="mt-0.5 break-words text-sm font-medium text-foreground">
           {value || "No registrado"}
         </div>
       </div>
@@ -90,41 +77,54 @@ function InfoRow({
   );
 }
 
-function PatientInfoSection({
+function InfoGrid({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+      {children}
+    </div>
+  );
+}
+
+function InfoSection({
   title,
-  open,
-  onOpenChange,
   children,
 }: {
   title: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
-      <div className="border-t border-border first:border-t-0">
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 py-3 text-left transition-colors hover:text-primary"
-          >
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {title}
-            </span>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                open && "rotate-180 text-primary",
-              )}
-            />
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="pb-3">{children}</div>
-        </CollapsibleContent>
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-border" />
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </h3>
+        <div className="h-px flex-1 bg-border" />
       </div>
-    </Collapsible>
+      {children}
+    </section>
+  );
+}
+
+function KpiCard({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/25 p-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </div>
+      <div className="mt-2 text-sm font-semibold text-foreground">
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -134,96 +134,31 @@ export function PatientInfoCard({
   getInitials,
   status,
   lastVisit,
-  collapsed,
-  onToggle,
+  visitCount,
+  maxRdLevel,
+  hasRdData,
 }: PatientInfoCardProps) {
-  const [sectionsOpen, setSectionsOpen] =
-    useState<Record<SectionKey, boolean>>(SECTION_DEFAULTS);
-
   const fullName = getFullName(patient);
   const age = calculateAge(patient.fecha_nacimiento);
   const docType = patient.tipo_doc_abrev || patient.tipo_doc || "Doc.";
-  const docLabel = `${docType} ${patient.nro_documento}`;
-  const hasClinicalSummary =
-    Boolean(patient.antecedentes_clinicos) || Boolean(patient.alergias);
-
-  const setSectionOpen = (section: SectionKey, open: boolean) => {
-    setSectionsOpen((current) => ({ ...current, [section]: open }));
-  };
-
-  if (collapsed) {
-    return (
-      <div className="rounded-md border border-border bg-card shadow-card">
-        <div className="flex flex-col gap-3 border-l-4 border-l-primary p-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-primary text-sm font-semibold text-white shadow-elevated">
-              {getInitials(patient.nombres, patient.apellidos)}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-semibold leading-tight">
-                  {fullName}
-                </p>
-                <StatusBadge status={status} />
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <IdCard className="h-3.5 w-3.5" />
-                  {docLabel}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Cake className="h-3.5 w-3.5" />
-                  {age} años
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {lastVisit}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onToggle}
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Expandir datos del paciente"
-            >
-              <ChevronDown className="h-4 w-4" />
-              Ver ficha
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <Card className="h-fit overflow-hidden shadow-card">
-      <CardHeader className="pb-4">
-        <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-primary text-lg font-semibold text-white shadow-elevated">
+      <CardHeader className="pb-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-primary text-base font-semibold text-white shadow-elevated">
             {getInitials(patient.nombres, patient.apellidos)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <CardTitle className="text-base leading-tight">
-                  {fullName}
-                </CardTitle>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <CardTitle className="min-w-0 max-w-full break-words text-base leading-tight">
+                    {fullName}
+                  </CardTitle>
+                  <StatusBadge status={status} />
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={onToggle}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Mostrar resumen horizontal"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-1">
-              <StatusBadge status={status} />
             </div>
           </div>
         </div>
@@ -231,75 +166,63 @@ export function PatientInfoCard({
 
       <Separator />
 
-      <CardContent className="p-4">
-        <PatientInfoSection
-          title="Identificación"
-          open={sectionsOpen.identificacion}
-          onOpenChange={(open) => setSectionOpen("identificacion", open)}
-        >
-          <InfoRow icon={IdCard} label={docType} value={patient.nro_documento} mono />
-          <InfoRow icon={User} label="Sexo" value={patient.sexo} />
-          <InfoRow
-            icon={Cake}
-            label="Nacimiento"
-            value={formatDate(patient.fecha_nacimiento)}
-          />
-          <InfoRow icon={User} label="Edad" value={`${age} años`} />
-        </PatientInfoSection>
+      <CardContent className="space-y-5 p-4 pt-3">
+        <InfoSection title="Datos personales">
+          <InfoGrid>
+            <InfoRow icon={IdCard} label={docType} value={patient.nro_documento} />
+            <InfoRow icon={Users} label="Sexo" value={patient.sexo} />
+            <InfoRow
+              icon={Cake}
+              label="Nacimiento"
+              value={formatDate(patient.fecha_nacimiento)}
+            />
+            <InfoRow icon={CalendarClock} label="Edad" value={`${age} años`} />
+            <InfoRow icon={Phone} label="Teléfono" value={formatPhone(patient.telefono)} />
+            <InfoRow icon={Mail} label="Correo" value={patient.correo} />
+          </InfoGrid>
+        </InfoSection>
 
-        <PatientInfoSection
-          title="Contacto"
-          open={sectionsOpen.contacto}
-          onOpenChange={(open) => setSectionOpen("contacto", open)}
-        >
-          <InfoRow icon={Phone} label="Teléfono" value={patient.telefono} />
-          <InfoRow icon={Mail} label="Correo" value={patient.correo} />
-          <InfoRow icon={MapPin} label="Dirección" value={patient.direccion} />
-        </PatientInfoSection>
+        <InfoSection title="Información clínica">
+          <InfoGrid>
+            <InfoRow
+              icon={ShieldCheck}
+              label="Consentimiento"
+              value={
+                patient.consentimiento_informado
+                  ? patient.fecha_consentimiento
+                    ? `Archivado · ${formatDate(patient.fecha_consentimiento)}`
+                    : "Archivado"
+                  : "No registrado"
+              }
+            />
+            <InfoRow icon={Calendar} label="Última visita" value={lastVisit} />
+            <InfoRow
+              icon={FileText}
+              label="Antecedentes"
+              value={patient.antecedentes_clinicos}
+            />
+            <InfoRow
+              icon={AlertCircle}
+              label="Alergias"
+              value={patient.alergias}
+            />
+          </InfoGrid>
+        </InfoSection>
 
-        <PatientInfoSection
-          title="Seguimiento"
-          open={sectionsOpen.seguimiento}
-          onOpenChange={(open) => setSectionOpen("seguimiento", open)}
-        >
-          <InfoRow icon={Calendar} label="Última visita" value={lastVisit} />
-          <InfoRow
-            icon={ShieldCheck}
-            label="Consentimiento"
-            value={
-              patient.consentimiento_informado
-                ? patient.fecha_consentimiento
-                  ? `Archivado · ${formatDate(patient.fecha_consentimiento)}`
-                  : "Archivado"
-                : "No registrado"
-            }
-          />
-        </PatientInfoSection>
-
-        <PatientInfoSection
-          title="Información clínica"
-          open={sectionsOpen.clinica}
-          onOpenChange={(open) => setSectionOpen("clinica", open)}
-        >
-          {hasClinicalSummary ? (
-            <>
-              <InfoRow
-                icon={FileText}
-                label="Antecedentes"
-                value={patient.antecedentes_clinicos}
-              />
-              <InfoRow
-                icon={AlertCircle}
-                label="Alergias"
-                value={patient.alergias}
-              />
-            </>
-          ) : (
-            <p className="py-2 text-sm text-muted-foreground">
-              Sin antecedentes o alergias registrados.
-            </p>
-          )}
-        </PatientInfoSection>
+        <InfoSection title="Resumen clínico">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+            <KpiCard icon={Calendar} label="Visitas clínicas">
+              <span className="text-lg tabular-nums">{visitCount}</span>
+            </KpiCard>
+            <KpiCard icon={Activity} label="Máximo grado RD">
+              {hasRdData ? (
+                <RDLevelBadge level={maxRdLevel as RDLevel} size="sm" />
+              ) : (
+                <span className="text-muted-foreground">Sin registro IA</span>
+              )}
+            </KpiCard>
+          </div>
+        </InfoSection>
       </CardContent>
     </Card>
   );

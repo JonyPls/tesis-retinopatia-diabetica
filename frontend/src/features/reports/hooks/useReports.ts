@@ -10,6 +10,7 @@ import {
   PatientSearchResult,
 } from "@/features/patients/api/patientService";
 import { TipoInforme, Informe, ReportFormHandle } from "../types";
+import { SUPPORTED_REPORT_TYPE_IDS } from "../supportedTypes";
 
 function withMinDuration<T>(promise: Promise<T>, ms = 400): Promise<T> {
   const delay = new Promise<void>((r) => setTimeout(r, ms));
@@ -58,7 +59,7 @@ export function useReports() {
   useEffect(() => {
     api.get("/tipos-informe").then((res) => {
       const todos = res.data.data || [];
-      setTipos(todos.filter((t: any) => [2, 3, 4].includes(t.id)));
+      setTipos(todos.filter((t: any) => SUPPORTED_REPORT_TYPE_IDS.includes(t.id)));
     }).catch(() => {});
   }, []);
 

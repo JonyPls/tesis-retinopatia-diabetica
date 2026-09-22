@@ -14,9 +14,15 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Habilitar CORS para permitir peticiones desde el puerto de React (5173)
-CORS(app)
+# Habilitar CORS solo para los origenes autorizados del frontend.
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv('FRONTEND_ORIGIN', 'http://localhost:5173').split(',')
+    if origin.strip()
+]
+CORS(app, resources={r"/*": {"origins": frontend_origins}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes', 'on')
 
 # Configurar SQLAlchemy ORM
 from database import init_db
@@ -48,4 +54,4 @@ with app.app_context():
         print(f"[WARN] CLIP model failed to load: {e}")
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=app.config['DEBUG'], port=int(os.getenv('FLASK_PORT', 5000)))

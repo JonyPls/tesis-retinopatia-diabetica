@@ -1,6 +1,7 @@
 from database import db
+from src.models.auth_entities import Usuario
 from src.models.informe_entities import Informe, TipoInforme
-from src.models.patient_entities import VisitaClinica
+from src.models.patient_entities import Paciente, VisitaClinica
 
 class InformeRepository:
     @staticmethod
@@ -53,7 +54,7 @@ class InformeRepository:
         return visita
 
     @staticmethod
-    def crear_informe(visita_id: int, tipo_informe_id: int, usuario_id: int, datos_estructurados, schema_version: int = 1):
+    def crear_informe(visita_id: int, tipo_informe_id: int, usuario_id: int, datos_estructurados, conclusion=None, schema_version: int = 1):
         existente = Informe.query.filter_by(
             visita_id=visita_id,
             tipo_informe_id=tipo_informe_id,
@@ -68,6 +69,7 @@ class InformeRepository:
             usuario_id=usuario_id,
             schema_version=schema_version,
             datos_estructurados=datos_estructurados,
+            conclusion=conclusion,
         )
         db.session.add(informe)
         db.session.commit()
@@ -75,28 +77,38 @@ class InformeRepository:
 
     @staticmethod
     def obtener_informe_por_id(informe_id: int):
-        informe = Informe.query.filter_by(id=informe_id, estado='ACTIVO').first()
-        if informe:
-            return {
-                "id": informe.id,
-                "visita_id": informe.visita_id,
-                "diagnostico_id": informe.visita_id,
-                "tipo_informe_id": informe.tipo_informe_id,
-                "tipo_informe_nombre": informe.tipo_informe.nombre,
-                "schema_version": informe.schema_version,
-                "datos_estructurados": informe.datos_estructurados,
-                "conclusion": informe.conclusion,
-                "estado": informe.estado,
-                "fecha_creado": informe.fecha_creado,
-                "fecha_actualizado": informe.fecha_actualizado
-            }
+        row = db.session.query(
+            Informe,
+            TipoInforme,
+            VisitaClinica,
+            Paciente,
+            Usuario,
+        ).join(
+            TipoInforme, Informe.tipo_informe_id == TipoInforme.id
+        ).join(
+            VisitaClinica, Informe.visita_id == VisitaClinica.id
+        ).join(
+            Paciente, VisitaClinica.paciente_id == Paciente.id
+        ).join(
+            Usuario, Informe.usuario_id == Usuario.id
+        ).filter(
+            Informe.id == informe_id,
+            Informe.estado == 'ACTIVO',
+            VisitaClinica.estado != 'ANULADA',
+            Paciente.estado == 'ACTIVO',
+        ).first()
+
+        if row:
+            inf, ti, visita, paciente, usuario = row
+            return InformeRepository._to_dict(inf, ti, visita, paciente, usuario)
         return None
 
     @staticmethod
-    def actualizar_informe(informe_id: int, datos_estructurados):
+    def actualizar_informe(informe_id: int, datos_estructurados, conclusion=None):
         informe = Informe.query.filter_by(id=informe_id, estado='ACTIVO').first()
         if informe:
             informe.datos_estructurados = datos_estructurados
+            informe.conclusion = conclusion
             db.session.commit()
             return 1
         return 0
@@ -122,19 +134,7 @@ class InformeRepository:
         ).order_by(Informe.fecha_creado.desc()).all()
 
         return [
-            {
-                "id": inf.id,
-                "visita_id": inf.visita_id,
-                "diagnostico_id": inf.visita_id,
-                "tipo_informe_id": inf.tipo_informe_id,
-                "tipo_informe_nombre": ti.nombre,
-                "schema_version": inf.schema_version,
-                "datos_estructurados": inf.datos_estructurados,
-                "conclusion": inf.conclusion,
-                "estado": inf.estado,
-                "fecha_creado": inf.fecha_creado,
-                "fecha_actualizado": inf.fecha_actualizado
-            }
+            InformeRepository._to_dict(inf, ti)
             for inf, ti in informes
         ]
 
@@ -148,22 +148,51 @@ class InformeRepository:
         ).order_by(TipoInforme.nombre).all()
 
         return [
-            {
-                "id": inf.id,
-                "visita_id": inf.visita_id,
-                "diagnostico_id": inf.visita_id,
-                "tipo_informe_id": inf.tipo_informe_id,
-                "tipo_informe_nombre": ti.nombre,
-                "schema_version": inf.schema_version,
-                "datos_estructurados": inf.datos_estructurados,
-                "conclusion": inf.conclusion,
-                "estado": inf.estado,
-                "fecha_creado": inf.fecha_creado,
-                "fecha_actualizado": inf.fecha_actualizado
-            }
+            InformeRepository._to_dict(inf, ti)
             for inf, ti in informes
         ]
 
     @staticmethod
     def obtener_informes_por_diagnostico(diagnostico_id: int):
         return InformeRepository.obtener_informes_por_visita(diagnostico_id)
+
+    @staticmethod
+    def _to_dict(inf, ti, visita=None, paciente=None, usuario=None):
+        data = {
+            "id": inf.id,
+            "visita_id": inf.visita_id,
+            # Compatibilidad con el contrato existente: este valor representa visita_id.
+            "diagnostico_id": inf.visita_id,
+            "tipo_informe_id": inf.tipo_informe_id,
+            "tipo_informe_nombre": ti.nombre,
+            "schema_version": inf.schema_version,
+            "datos_estructurados": inf.datos_estructurados,
+            "conclusion": inf.conclusion,
+            "estado": inf.estado,
+            "fecha_creado": inf.fecha_creado,
+            "fecha_actualizado": inf.fecha_actualizado,
+        }
+        if visita:
+            data["visita"] = {
+                "id": visita.id,
+                "fecha_visita": visita.fecha_visita,
+                "motivo_consulta": visita.motivo_consulta,
+                "observaciones": visita.observaciones,
+                "estado": visita.estado,
+            }
+        if paciente:
+            data["paciente"] = {
+                "id": paciente.id,
+                "nro_documento": paciente.nro_documento,
+                "nombres": paciente.nombres,
+                "apellidos": paciente.apellidos,
+            }
+        if usuario:
+            data["profesional"] = {
+                "id": usuario.id,
+                "nombres": usuario.nombres,
+                "apellidos": usuario.apellidos,
+                "cmp": usuario.cmp,
+                "rne": usuario.rne,
+            }
+        return data

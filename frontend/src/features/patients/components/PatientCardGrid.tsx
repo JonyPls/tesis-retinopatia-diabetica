@@ -92,7 +92,7 @@ export function PatientCardGrid({
                   >
                     {fullName}
                   </Link>
-                  <div className="text-xs text-muted-foreground mt-0.5 font-mono">
+                  <div className="text-xs text-muted-foreground mt-0.5">
                     {p.tipo_doc_abrev || p.tipo_doc} {p.nro_documento}
                   </div>
                 </div>

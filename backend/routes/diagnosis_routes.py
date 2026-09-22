@@ -1,4 +1,6 @@
-from flask import Blueprint, request, jsonify, send_from_directory
+from io import BytesIO
+
+from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from services.diagnosis_service import (
     procesar_diagnostico,
     confirmar_validacion_detalle,
@@ -9,12 +11,18 @@ from services.retinograph_import_service import (
     obtener_archivo_retinografo,
     obtener_seleccion_automatica,
 )
-from utils.security import token_required
+from services.report_service import (
+    ReportNotFoundError,
+    ReportTemplateError,
+    generar_reporte_diagnostico_pdf,
+)
+from utils.security import clinical_access_required, token_required
 
 diagnosis_bp = Blueprint('diagnosis', __name__)
 
 @diagnosis_bp.route('/api/diagnosticar', methods=['POST'])
 @token_required
+@clinical_access_required('diagnosticos.crear', 'diagnosticos.gestionar')
 def diagnosticar_retina():
     # 1. Verifica el archivo
     if 'imagen' not in request.files:
@@ -53,6 +61,7 @@ def diagnosticar_retina():
 
 @diagnosis_bp.route('/api/diagnosticar/visita/<int:visita_id>/detalles', methods=['GET'])
 @token_required
+@clinical_access_required('diagnosticos.ver')
 def obtener_detalles_por_visita(visita_id):
     resultado = consultar_detalles_por_visita(visita_id)
     if resultado.get("success"):
@@ -62,6 +71,7 @@ def obtener_detalles_por_visita(visita_id):
 
 @diagnosis_bp.route('/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles', methods=['GET'])
 @token_required
+@clinical_access_required('diagnosticos.ver')
 def obtener_detalles(diagnostico_id):
     resultado = consultar_detalles_existentes(diagnostico_id)
     if resultado.get("success"):
@@ -69,8 +79,31 @@ def obtener_detalles(diagnostico_id):
     return jsonify(resultado), 404
 
 
+@diagnosis_bp.route('/api/visitas/<int:visita_id>/reporte-diagnostico', methods=['GET'])
+@token_required
+@clinical_access_required('diagnosticos.ver')
+def descargar_reporte_diagnostico(visita_id):
+    try:
+        pdf_bytes, filename = generar_reporte_diagnostico_pdf(visita_id)
+    except ReportNotFoundError as exc:
+        return jsonify({"success": False, "message": str(exc)}), 404
+    except ReportTemplateError as exc:
+        return jsonify({"success": False, "message": str(exc)}), 500
+
+    response = send_file(
+        BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename,
+        max_age=0,
+    )
+    response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
+    return response
+
+
 @diagnosis_bp.route('/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>', methods=['GET'])
 @token_required
+@clinical_access_required('imagenes.ver', 'diagnosticos.crear')
 def auto_seleccion_retinografo(paciente_id):
     resultado, status_code = obtener_seleccion_automatica(paciente_id)
     return jsonify(resultado), status_code
@@ -78,6 +111,7 @@ def auto_seleccion_retinografo(paciente_id):
 
 @diagnosis_bp.route('/api/diagnosticar/retinografo/imagen', methods=['GET'])
 @token_required
+@clinical_access_required('imagenes.ver', 'diagnosticos.crear')
 def descargar_imagen_retinografo():
     paciente_id = request.args.get('paciente_id')
     filename = request.args.get('filename', '')
@@ -110,6 +144,7 @@ def descargar_imagen_retinografo():
 
 @diagnosis_bp.route('/api/diagnosticar/detalle/<int:detalle_id>/validar', methods=['PUT'])
 @token_required
+@clinical_access_required('diagnosticos.validar', 'diagnosticos.gestionar')
 def confirmar_validacion(detalle_id):
     datos = request.get_json()
     
