@@ -3,6 +3,8 @@ import { Eye, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { getReportTypePresentation } from "@/features/reports/reportTypePresentation";
 import type { Diagnosis, PatientVisitReport } from "../../types";
 import { PatientReportDetailModal } from "../PatientReportDetailModal";
 
@@ -21,19 +23,27 @@ function ReportCard({
   report: PatientVisitReport;
   onView: (reportId: number) => void;
 }) {
+  const typePresentation = getReportTypePresentation(report.tipo_informe_id);
+
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <FileText className="h-5 w-5" />
+    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <CardContent className="p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <div
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                typePresentation.bg,
+                typePresentation.color,
+              )}
+            >
+              {typePresentation.icon}
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-base font-semibold text-foreground">
+              <h3 className="truncate text-base font-medium tracking-tight text-slate-900">
                 {report.tipo_informe_nombre}
               </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-slate-500">
                 Registrado el {shortDate(report.fecha_creado)}
               </p>
             </div>
@@ -41,24 +51,30 @@ function ReportCard({
 
           <Badge
             variant="outline"
-            className="w-fit rounded-md border-success/30 bg-success/10 px-2 py-1 text-xs font-medium text-success"
+            className="w-fit rounded-full border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success shadow-none"
           >
             {report.estado === "ACTIVO" ? "Activo" : report.estado}
           </Badge>
         </div>
 
         {report.conclusion && (
-          <div className="mt-4 rounded-md border border-primary/15 bg-primary/5 p-3">
-            <p className="text-xs font-semibold text-primary">Conclusión</p>
-            <p className="mt-1 line-clamp-4 text-sm leading-relaxed text-foreground">
+          <div className="mt-5 rounded-lg border border-warning/30 bg-warning/5 p-4">
+            <p className="text-[11px] font-medium uppercase tracking-widest text-amber-600">Conclusión</p>
+            <p className="mt-1.5 line-clamp-4 text-sm leading-relaxed text-slate-700">
               {report.conclusion}
             </p>
           </div>
         )}
 
-        <div className="mt-4 flex justify-end border-t border-border pt-3">
-          <Button type="button" size="sm" variant="outline" onClick={() => onView(report.id)}>
-            <Eye className="mr-1.5 h-3.5 w-3.5" />
+        <div className="mt-5 flex justify-end border-t border-slate-100 pt-4">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="border-slate-200 bg-white text-slate-600 shadow-none hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+            onClick={() => onView(report.id)}
+          >
+            <Eye className="mr-1.5 h-3.5 w-3.5 text-primary" />
             Ver informe
           </Button>
         </div>
@@ -68,9 +84,11 @@ function ReportCard({
 }
 
 export function VisitReportsTab({
+  patientDocument,
   patientName,
   visit,
 }: {
+  patientDocument?: string | null;
   patientName?: string;
   visit: Diagnosis;
 }) {
@@ -79,12 +97,12 @@ export function VisitReportsTab({
 
   if (reports.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-muted/20 p-8 text-center">
-        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-muted">
-          <FileText className="h-5 w-5 text-muted-foreground" />
+      <div className="rounded-xl border border-dashed border-slate-200 bg-white p-12 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-info/10">
+          <FileText className="h-5 w-5 text-info" />
         </div>
-        <p className="mt-3 text-sm font-semibold text-foreground">Sin informes clínicos</p>
-        <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-4 text-sm font-medium text-slate-900">Sin informes clínicos</p>
+        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-slate-500">
           No se registraron informes clínicos en esta visita.
         </p>
       </div>
@@ -93,7 +111,7 @@ export function VisitReportsTab({
 
   return (
     <>
-      <div className="grid gap-3 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {reports.map((report) => (
           <ReportCard key={report.id} report={report} onView={setSelectedReportId} />
         ))}
@@ -102,6 +120,7 @@ export function VisitReportsTab({
       <PatientReportDetailModal
         reportId={selectedReportId}
         open={selectedReportId !== null}
+        patientDocument={patientDocument}
         patientName={patientName}
         onOpenChange={(open) => {
           if (!open) setSelectedReportId(null);

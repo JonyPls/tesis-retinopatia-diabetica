@@ -3,7 +3,7 @@ import {
   Activity,
   Brain,
   CalendarCheck,
-  Download,
+  ChevronDown,
   Eye,
   Image as ImageIcon,
   Info,
@@ -11,14 +11,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { RDLevel, RD_LEVELS } from "@/data/rdLevels";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { ImagePreviewLightbox } from "@/features/diagnosis/components/ImagePreviewLightbox";
-import { toast } from "@/hooks/use-toast";
-import { descargarReporteDiagnostico } from "../../api/patientService";
 import type { DetalleDiagnosticoExistente } from "@/features/diagnosis/api/diagnosisService";
 import type { Diagnosis, PatientDiagnosisEyeDetail } from "../../types";
 
@@ -67,6 +66,20 @@ function levelLabel(level?: number | null, fallback?: string | null) {
   return RD_LEVELS[level as RDLevel]?.label ?? fallback ?? `Nivel ${level}`;
 }
 
+function rdHeaderTone(level?: number | null) {
+  const tones: Record<RDLevel, string> = {
+    0: "border-l-[hsl(var(--rd-0))] hover:border-[hsl(var(--rd-0)/0.45)] hover:bg-[hsl(var(--rd-0)/0.06)]",
+    1: "border-l-[hsl(var(--rd-1))] hover:border-[hsl(var(--rd-1)/0.45)] hover:bg-[hsl(var(--rd-1)/0.06)]",
+    2: "border-l-[hsl(var(--rd-2))] hover:border-[hsl(var(--rd-2)/0.45)] hover:bg-[hsl(var(--rd-2)/0.06)]",
+    3: "border-l-[hsl(var(--rd-3))] hover:border-[hsl(var(--rd-3)/0.45)] hover:bg-[hsl(var(--rd-3)/0.06)]",
+    4: "border-l-[hsl(var(--rd-4))] hover:border-[hsl(var(--rd-4)/0.45)] hover:bg-[hsl(var(--rd-4)/0.06)]",
+  };
+  if (level === null || level === undefined || !(level in tones)) {
+    return "border-l-slate-300 hover:border-slate-300 hover:bg-slate-50/80";
+  }
+  return tones[level as RDLevel];
+}
+
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return null;
   return new Date(dateStr).toLocaleDateString("es-PE", {
@@ -86,9 +99,9 @@ function buildRetinaImageUrl(filename?: string | null, token?: string | null) {
 }
 
 function validationTone(status: PatientDiagnosisEyeDetail["estado_validacion"]) {
-  if (status === "APROBADO") return "border-success/30 bg-success/10 text-success";
-  if (status === "CORREGIDO") return "border-warning/30 bg-warning/10 text-warning";
-  return "border-border bg-muted/35 text-muted-foreground";
+  if (status === "APROBADO") return "border-emerald-200/60 bg-emerald-50/50 text-emerald-700";
+  if (status === "CORREGIDO") return "border-amber-200/60 bg-amber-50/50 text-amber-700";
+  return "border-slate-200 bg-slate-50 text-slate-500";
 }
 
 function ProbabilityBars({
@@ -107,14 +120,14 @@ function ProbabilityBars({
 
   if (!probabilities || availableValues.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm leading-relaxed text-slate-500">
         La distribución de probabilidades no está disponible para este ojo.
       </p>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {rows.map((row) => {
         const value = numericPercent(row.value) ?? 0;
         const isMax = maxValue !== null && value === maxValue;
@@ -123,15 +136,15 @@ function ProbabilityBars({
           <div
             key={row.key}
             className={cn(
-              "grid grid-cols-[92px_52px_minmax(0,1fr)] items-center gap-2 text-xs",
-              isMax ? "text-foreground" : "text-muted-foreground",
+              "grid grid-cols-[92px_52px_minmax(0,1fr)] items-center gap-3 text-xs",
+              isMax ? "text-primary" : "text-slate-500",
             )}
           >
-            <span className="font-medium">{row.label}</span>
+            <span className={cn(isMax ? "font-medium" : "font-normal")}>{row.label}</span>
             <span className="text-right tabular-nums">{value.toFixed(1)}%</span>
             <Progress
               value={value}
-              className={cn("h-2 bg-muted", isMax && "ring-1 ring-primary/25")}
+              className="h-1.5 bg-slate-100"
             />
           </div>
         );
@@ -152,14 +165,14 @@ function ImageReviewCard({
   src: string | null;
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-3">
-      <p className="text-xs font-semibold text-foreground">{label}</p>
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+      <p className="text-[13px] font-medium text-slate-900">{label}</p>
       {src ? (
         <>
           <button
             type="button"
             onClick={onPreview}
-            className="mt-2 block aspect-[4/3] w-full overflow-hidden rounded-md border border-border bg-background"
+            className="mt-3 block aspect-[4/3] w-full overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50"
           >
             <img src={src} alt={alt} className="h-full w-full object-contain" />
           </button>
@@ -167,15 +180,15 @@ function ImageReviewCard({
             type="button"
             variant="outline"
             size="sm"
-            className="mt-3 w-full border-cyan-200 bg-cyan-50 text-xs text-cyan-700 hover:bg-cyan-100 hover:text-cyan-800"
+            className="mt-3 w-full border-slate-200 bg-white text-xs text-slate-600 shadow-none hover:bg-slate-50 hover:text-slate-900"
             onClick={onPreview}
           >
-            <ImageIcon className="mr-1.5 h-3.5 w-3.5" />
+            <ImageIcon className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
             {label === "Grad-CAM" ? "Ver Grad-CAM" : "Ver imagen"}
           </Button>
         </>
       ) : (
-        <div className="mt-2 flex aspect-[4/3] items-center justify-center rounded-md border border-dashed border-border bg-background text-center text-xs text-muted-foreground">
+        <div className="mt-3 flex aspect-[4/3] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center text-xs text-slate-400">
           No disponible
         </div>
       )}
@@ -186,14 +199,16 @@ function ImageReviewCard({
 function Section({
   children,
   title,
+  withDivider = true,
 }: {
   children: React.ReactNode;
   title: string;
+  withDivider?: boolean;
 }) {
   return (
-    <section className="border-t border-border pt-4">
-      <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-      <div className="mt-3">{children}</div>
+    <section className={cn("mt-8", withDivider ? "border-t border-slate-100 pt-6" : "pt-2")}>
+      <h4 className="text-sm font-medium text-slate-900">{title}</h4>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -247,78 +262,103 @@ function EyeDiagnosisBlock({
     detail.nombre_archivo_original ?? detail.imagen_original_url ?? extra?.imagen_url ?? undefined;
 
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="space-y-4 p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+    <Collapsible
+      defaultOpen
+      className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full flex-col gap-4 border-l-4 px-5 py-5 text-left transition-all hover:shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 [&[data-state=open]_.chevron]:rotate-180",
+            rdHeaderTone(finalLevel),
+          )}
+        >
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Eye className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-base font-semibold text-foreground">
+              <h3 className="text-base font-medium tracking-tight text-slate-900">
                 {eyeLabel(detail.ojo_evaluado)}
               </h3>
-              <span
-                className={cn(
-                  "mt-1 inline-flex rounded-md border px-2 py-0.5 text-xs font-medium",
-                  validationTone(detail.estado_validacion),
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex rounded-full border px-3 py-0.5 text-xs font-medium shadow-none",
+                    validationTone(detail.estado_validacion),
+                  )}
+                >
+                  {VALIDATION_STATUS_TEXT[detail.estado_validacion] ?? detail.estado_validacion}
+                </span>
+                {confidence !== null && (
+                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-0.5 text-xs font-medium text-slate-600 shadow-none">
+                    Confianza {confidence.toFixed(1)}%
+                  </span>
                 )}
-              >
-                {VALIDATION_STATUS_TEXT[detail.estado_validacion] ?? detail.estado_validacion}
-              </span>
+              </div>
             </div>
           </div>
 
-          {finalLevel !== null && <RDLevelBadge level={finalLevel as RDLevel} size="sm" />}
-        </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {finalLevel !== null && <RDLevelBadge level={finalLevel as RDLevel} size="sm" />}
+            <ChevronDown className="chevron h-4 w-4 shrink-0 text-slate-400 transition-transform" />
+          </div>
+        </button>
+      </CollapsibleTrigger>
 
-        <Section title="Resultado">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-md border border-border bg-muted/20 p-3">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Brain className="h-3.5 w-3.5 text-primary" />
+      <CollapsibleContent>
+        <CardContent className="border-t border-slate-100 px-5 pb-6 pt-0 sm:px-6 lg:px-8">
+          <Section title="Resultado" withDivider={false}>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-amber-200/60 bg-amber-50/40 p-4">
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-amber-600">
+                <Brain className="h-3.5 w-3.5 text-amber-600" />
                 Predicción IA
               </div>
-              <p className="mt-2 text-sm font-semibold text-foreground">{iaLabel}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-2 text-sm font-medium text-slate-900">{iaLabel}</p>
+              <p className="mt-1 text-xs text-slate-500">
                 Grado: {iaLevel ?? "No disponible"}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-slate-500">
                 Confianza: {confidence === null ? "No disponible" : `${confidence.toFixed(1)}%`}
               </p>
             </div>
 
-            <div
-              className={cn(
-                "rounded-md border p-3",
-                isCorrected
-                  ? "border-warning/30 bg-warning/10"
-                  : "border-success/25 bg-success/5",
-              )}
-            >
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Stethoscope className="h-3.5 w-3.5 text-primary" />
+              <div
+                className={cn(
+                  "rounded-lg border p-4",
+                  isCorrected
+                    ? "border-amber-200/60 bg-amber-50/40"
+                    : "border-success/30 bg-success/5",
+                )}
+              >
+              <div className={cn(
+                "flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest",
+                isCorrected ? "text-amber-600" : "text-success",
+              )}>
+                <Stethoscope className="h-3.5 w-3.5" />
                 Resultado final
               </div>
-              <p className="mt-2 text-sm font-semibold text-foreground">{finalLabel}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-2 text-sm font-medium text-slate-900">{finalLabel}</p>
+              <p className="mt-1 text-xs text-slate-500">
                 Grado: {finalLevel ?? "No disponible"}
               </p>
-              <p className="mt-2 text-xs font-medium text-foreground">
+              <p className="mt-2 text-xs font-medium text-slate-600">
                 {isCorrected
                   ? "Predicción corregida por el especialista"
                   : "IA y resultado final coinciden"}
               </p>
+              </div>
             </div>
-          </div>
-        </Section>
+          </Section>
 
-        <Section title="Probabilidades">
-          <ProbabilityBars probabilities={extra?.probabilidades_detalle} />
-        </Section>
+          <Section title="Probabilidades">
+            <ProbabilityBars probabilities={extra?.probabilidades_detalle} />
+          </Section>
 
-        <Section title="Imágenes">
-          <div className="grid gap-3 md:grid-cols-2">
+          <Section title="Imágenes">
+            <div className="grid gap-4 lg:grid-cols-2">
             <ImageReviewCard
               alt={`Imagen original ${eyeLabel(detail.ojo_evaluado)}`}
               label="Imagen evaluada"
@@ -347,44 +387,44 @@ function EyeDiagnosisBlock({
                 });
               }}
             />
-          </div>
-          <div className="mt-3 flex gap-2 rounded-md border border-primary/15 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            </div>
+            <div className="mt-4 flex gap-2.5 rounded-lg border border-info/30 bg-info/5 p-4 text-xs leading-relaxed text-slate-600">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
             <p>
               El mapa Grad-CAM resalta regiones que influyeron en la clasificación del
               modelo. Es una herramienta de interpretabilidad y no constituye por sí
               sola un diagnóstico médico.
             </p>
-          </div>
-        </Section>
+            </div>
+          </Section>
 
-        <Section title="Validación médica">
-          <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+          <Section title="Validación médica">
+            <div className="space-y-4 rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
-                  "inline-flex rounded-md border px-2 py-0.5 text-xs font-medium",
+                  "inline-flex rounded-full border px-3 py-0.5 text-xs font-medium shadow-none",
                   validationTone(detail.estado_validacion),
                 )}
               >
                 {VALIDATION_STATUS_TEXT[detail.estado_validacion] ?? detail.estado_validacion}
               </span>
               {validatedAt && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <CalendarCheck className="h-3.5 w-3.5" />
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                  <CalendarCheck className="h-3.5 w-3.5 text-slate-400" />
                   {validatedAt}
                 </span>
               )}
             </div>
 
             {detail.estado_validacion === "CORREGIDO" && (
-              <div className="rounded-md border border-warning/25 bg-warning/10 p-3">
-                <p className="text-xs font-semibold text-warning">Corrección registrada</p>
-                <p className="mt-1 text-sm leading-relaxed text-foreground">
+              <div className="rounded-lg border border-warning/30 border-l-4 border-l-warning bg-warning/5 p-4">
+                <p className="text-xs font-medium uppercase tracking-widest text-amber-600">Corrección registrada</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-900">
                   IA: {iaLabel} · Resultado final: {finalLabel}
                 </p>
                 {detail.motivo_correccion && (
-                  <p className="mt-2 text-sm leading-relaxed text-foreground">
+                  <p className="mt-2 text-sm leading-relaxed text-slate-600">
                     {detail.motivo_correccion}
                   </p>
                 )}
@@ -392,41 +432,31 @@ function EyeDiagnosisBlock({
             )}
 
             {detail.estado_validacion === "PENDIENTE" && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm leading-relaxed text-slate-500">
                 La evaluación médica de este ojo todavía está pendiente.
               </p>
             )}
 
             {detail.estado_validacion === "APROBADO" && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm leading-relaxed text-slate-500">
                 El especialista aprobó el resultado para este ojo.
               </p>
             )}
 
             {detail.comentario_medico && (
-              <div className="rounded-md border border-primary/15 bg-primary/5 p-3">
-                <p className="text-xs font-semibold text-primary">Comentario médico</p>
-                <p className="mt-1 text-sm leading-relaxed text-foreground">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <p className="text-xs font-medium uppercase tracking-widest text-primary">Comentario médico</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-900">
                   {detail.comentario_medico}
                 </p>
               </div>
             )}
-          </div>
-        </Section>
-      </CardContent>
-    </Card>
+            </div>
+          </Section>
+        </CardContent>
+      </CollapsibleContent>
+    </Collapsible>
   );
-}
-
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 export function VisitDiagnosisTab({
@@ -437,7 +467,6 @@ export function VisitDiagnosisTab({
   visit: Diagnosis;
 }) {
   const token = useAuthStore((state) => state.token);
-  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
   const [previewImage, setPreviewImage] = useState<{
     alt: string;
     src: string;
@@ -445,28 +474,6 @@ export function VisitDiagnosisTab({
     title: string;
   } | null>(null);
   const diagnosis = visit.diagnostico_ia;
-
-  const handleDownloadReport = async () => {
-    if (isDownloadingReport) return;
-    setIsDownloadingReport(true);
-    try {
-      const { blob, filename } = await descargarReporteDiagnostico(visit.visita_id);
-      triggerBlobDownload(blob, filename);
-      toast({
-        title: "Reporte generado",
-        description: "La descarga del PDF se inició correctamente.",
-      });
-    } catch (error) {
-      console.error("Error descargando reporte de diagnóstico", error);
-      toast({
-        title: "No se pudo generar el reporte",
-        description: "Intenta nuevamente o verifica que la visita tenga diagnóstico IA.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDownloadingReport(false);
-    }
-  };
 
   const details = useMemo(
     () =>
@@ -478,12 +485,12 @@ export function VisitDiagnosisTab({
 
   if (!diagnosis) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-muted/20 p-8 text-center">
-        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-muted">
-          <Brain className="h-5 w-5 text-muted-foreground" />
+      <div className="rounded-xl border border-dashed border-slate-200 bg-white p-12 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+          <Brain className="h-5 w-5 text-primary" />
         </div>
-        <p className="mt-3 text-sm font-semibold text-foreground">Sin diagnóstico IA</p>
-        <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-4 text-sm font-medium text-slate-900">Sin diagnóstico IA</p>
+        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-slate-500">
           Esta visita no cuenta con una evaluación de retinopatía diabética.
         </p>
       </div>
@@ -491,52 +498,39 @@ export function VisitDiagnosisTab({
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="border-border bg-muted/25 shadow-card">
-        <CardContent className="p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="space-y-6">
+      <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+        <CardContent className="p-6 sm:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-                <Brain className="h-4 w-4 text-primary" />
+              <h2 className="flex items-center gap-2 text-base font-medium tracking-tight text-slate-900">
+                <Brain className="h-4 w-4 text-amber-600" />
                 Diagnóstico de retinopatía diabética
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Resumen de la evaluación IA asociada a esta visita.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isDownloadingReport}
-                onClick={handleDownloadReport}
-              >
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                {isDownloadingReport ? "Generando reporte..." : "Descargar reporte PDF"}
-              </Button>
-              <span className="inline-flex w-fit items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+              <span className="inline-flex w-fit items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
                 {DIAGNOSIS_STATUS_TEXT[diagnosis.estado] ?? diagnosis.estado}
               </span>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Modelo</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+              <p className="text-[11px] font-medium uppercase tracking-widest text-slate-400">Modelo</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
                 {diagnosis.modelo_nombre || "Modelo IA"}
               </p>
             </div>
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Versión</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">
+            <div className="rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+              <p className="text-[11px] font-medium uppercase tracking-widest text-slate-400">Versión</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
                 {diagnosis.modelo_version || "No registrada"}
               </p>
             </div>
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Ojos evaluados</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">
+            <div className="rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+              <p className="text-[11px] font-medium uppercase tracking-widest text-slate-400">Ojos evaluados</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
                 {details.length}
               </p>
             </div>
@@ -544,7 +538,7 @@ export function VisitDiagnosisTab({
         </CardContent>
       </Card>
 
-      <div className="space-y-4">
+      <div className="space-y-6">
         {details.map((detail) => (
           <EyeDiagnosisBlock
             key={detail.detalle_id}

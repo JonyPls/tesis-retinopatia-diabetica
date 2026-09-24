@@ -47,40 +47,47 @@ function sourceLabel(source: string) {
   return "No registrado";
 }
 
-function VisitSnapshot({ label, visit }: { label: string; visit: Diagnosis }) {
+function VisitSnapshot({ label, visit, variant = "previous" }: { label: string; visit: Diagnosis; variant?: "previous" | "later" }) {
   const reportsCount = visit.informes?.length ?? Number(visit.tiene_informes ?? 0);
+  const isLater = variant === "later";
 
   return (
-    <div className="rounded-md border border-border bg-background p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</p>
-      <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-        <Calendar className="h-4 w-4 text-primary" />
+    <div className={isLater
+      ? "rounded-lg border border-primary/20 bg-primary/5 p-5"
+      : "rounded-lg border border-slate-200/80 bg-slate-50/60 p-5"}>
+      <p className={isLater
+        ? "text-[11px] font-medium uppercase tracking-widest text-primary"
+        : "text-[11px] font-medium uppercase tracking-widest text-slate-400"}>{label}</p>
+      <p className="mt-2.5 flex items-center gap-2 text-sm font-medium text-slate-900">
+        <Calendar className={isLater ? "h-4 w-4 text-primary" : "h-4 w-4 text-slate-400"} />
         {formatDate(visit.fecha_visita)}
       </p>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-sm leading-relaxed text-slate-600">
         {visit.motivo_consulta || "Motivo no registrado"}
       </p>
-      <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <Stethoscope className="h-3.5 w-3.5" />
+      <p className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+        <Stethoscope className={isLater ? "h-3.5 w-3.5 text-primary" : "h-3.5 w-3.5 text-slate-400"} />
         {visit.medico_tratante || "Profesional no registrado"}
       </p>
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Badge
           variant="outline"
           className={
             hasDiagnosis(visit)
-              ? "rounded-md border-amber-200 bg-amber-50 text-amber-700"
-              : "rounded-md border-border bg-muted/35 text-muted-foreground"
+              ? "rounded-full border-amber-200 bg-amber-50 text-amber-700 shadow-none"
+              : "rounded-full border-slate-200 bg-transparent text-slate-500 shadow-none"
           }
         >
-          <Brain className="mr-1 h-3.5 w-3.5" />
+          <Brain className="mr-1.5 h-3.5 w-3.5 text-amber-600" />
           {hasDiagnosis(visit) ? "Diagnóstico IA" : "Sin IA"}
         </Badge>
         <Badge
           variant="outline"
-          className="rounded-md border-primary/20 bg-primary/10 text-primary"
+          className={isLater
+            ? "rounded-full border-primary/20 bg-white text-primary shadow-none"
+            : "rounded-full border-slate-200 bg-white text-slate-600 shadow-none"}
         >
-          <FileText className="mr-1 h-3.5 w-3.5" />
+          <FileText className={isLater ? "mr-1.5 h-3.5 w-3.5 text-primary" : "mr-1.5 h-3.5 w-3.5 text-slate-400"} />
           {reportsCount} informe{reportsCount === 1 ? "" : "s"}
         </Badge>
       </div>
@@ -96,24 +103,24 @@ function InitialComparisonState({
   onSelectVisit: () => void;
 }) {
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary">
+    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <CardContent className="p-10 text-center sm:p-12">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
           <GitCompareArrows className="h-6 w-6" />
         </div>
-        <h2 className="mt-4 text-lg font-semibold text-foreground">
+        <h2 className="mt-5 text-lg font-medium tracking-tight text-slate-900">
           Comparar evolución clínica
         </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">
           Seleccione otra visita del paciente para comparar los resultados registrados
           entre ambas evaluaciones.
         </p>
         {hasCandidates ? (
-          <Button type="button" className="mt-5" onClick={onSelectVisit}>
+          <Button type="button" className="mt-6 rounded-lg" onClick={onSelectVisit}>
             Seleccionar visita
           </Button>
         ) : (
-          <p className="mt-5 rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+          <p className="mx-auto mt-6 max-w-md rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
             Aún no existen otras visitas disponibles para comparar.
           </p>
         )}
@@ -132,33 +139,30 @@ function ChronologyHeader({
   const days = daysBetweenVisits(previous, later);
 
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <CardContent className="p-6 sm:p-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-foreground">
+            <h2 className="text-base font-medium tracking-tight text-slate-900">
               Comparación de visitas
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Lectura cronológica descriptiva entre dos evaluaciones del mismo paciente.
-            </p>
           </div>
           {days !== null && (
             <Badge
               variant="outline"
-              className="w-fit rounded-md border-primary/20 bg-primary/10 text-primary"
+              className="w-fit rounded-full border-primary/20 bg-primary/10 text-primary shadow-none"
             >
               {days} día{days === 1 ? "" : "s"} entre evaluaciones
             </Badge>
           )}
         </div>
 
-        <div className="mt-5 grid items-stretch gap-3 lg:grid-cols-[1fr_auto_1fr]">
-          <VisitSnapshot label="Visita anterior" visit={previous} />
+        <div className="mt-6 grid items-stretch gap-4 lg:grid-cols-[1fr_auto_1fr]">
+          <VisitSnapshot label="Visita anterior · A" variant="previous" visit={previous} />
           <div className="hidden items-center justify-center text-primary lg:flex">
             <ArrowRight className="h-6 w-6" />
           </div>
-          <VisitSnapshot label="Visita posterior" visit={later} />
+          <VisitSnapshot label="Visita posterior · B" variant="later" visit={later} />
         </div>
       </CardContent>
     </Card>
@@ -203,12 +207,15 @@ function SummaryChanges({
   previousDetails: DetalleDiagnosticoExistente[];
 }) {
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="p-5">
-        <h3 className="text-base font-semibold text-foreground">
+    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <CardContent className="p-6 sm:p-8">
+        <h3 className="text-base font-medium tracking-tight text-slate-900">
           Resumen de cambios registrados
         </h3>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <p className="mt-1.5 text-sm text-slate-500">
+          <span className="font-medium text-slate-500">A</span> visita anterior en gris · <span className="font-medium text-primary">B</span> visita posterior en verde
+        </p>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {(["OD", "OI"] as EyeKey[]).map((eye) => {
             const comparison = getEyeComparison(
               previous,
@@ -219,22 +226,25 @@ function SummaryChanges({
             );
 
             return (
-              <div key={eye} className="rounded-md border border-border bg-background p-4">
-                <p className="text-sm font-semibold text-foreground">
+              <div key={eye} className={eye === "OD"
+                ? "rounded-lg border border-secondary/20 bg-secondary/5 p-5"
+                : "rounded-lg border border-primary/20 bg-primary/5 p-5"}>
+                <p className="text-sm font-medium text-slate-900">
                   {eyeDisplayName(eye)}
                 </p>
                 {comparison.previousEffective.level === null ||
                 comparison.laterEffective.level === null ? (
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-sm leading-relaxed text-slate-500">
                     Sin evaluación suficiente para calcular diferencia.
                   </p>
                 ) : (
                   <>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Grado {comparison.previousEffective.level} → Grado{" "}
-                      {comparison.laterEffective.level}
+                    <p className="mt-2 text-sm text-slate-600">
+                      <span className="rounded bg-slate-200/70 px-1.5 py-0.5 font-medium text-slate-600">A · Grado {comparison.previousEffective.level}</span>
+                      {" → "}
+                      <span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">B · Grado {comparison.laterEffective.level}</span>
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">
+                    <p className="mt-2 inline-flex rounded-full border border-primary/20 bg-white px-3 py-1 text-xs font-medium text-primary">
                       Cambio registrado: {comparison.change.shortLabel}
                     </p>
                   </>
@@ -256,7 +266,7 @@ function GradeScale({
   previousLevel?: number | null;
 }) {
   return (
-    <div className="mt-3 grid grid-cols-5 gap-1">
+    <div className="mt-4 grid grid-cols-5 gap-1">
       {RETINOPATHY_SCALE.map((item) => {
         const isPrevious = previousLevel === item.level;
         const isLater = laterLevel === item.level;
@@ -265,17 +275,25 @@ function GradeScale({
           <div key={item.level} className="min-w-0 text-center">
             <div
               className={[
-                "mx-auto flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold",
-                isPrevious || isLater
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-muted text-muted-foreground",
+                "mx-auto flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium",
+                isPrevious && isLater
+                  ? "border-primary bg-primary text-white"
+                  : isLater
+                    ? "border-primary bg-primary text-white"
+                    : isPrevious
+                      ? "border-secondary bg-secondary text-white"
+                      : "border-slate-200 bg-white text-slate-400",
               ].join(" ")}
             >
               {item.level}
             </div>
-            <p className="mt-1 truncate text-[10px] text-muted-foreground">{item.label}</p>
+            <p className="mt-1.5 truncate text-[10px] text-slate-400">{item.label}</p>
             {(isPrevious || isLater) && (
-              <p className="text-[10px] font-medium text-primary">
+              <p className={isLater && !isPrevious
+                ? "mt-0.5 text-[10px] font-medium text-primary"
+                : isPrevious && !isLater
+                  ? "mt-0.5 text-[10px] font-medium text-secondary"
+                  : "mt-0.5 text-[10px] font-medium text-primary"}>
                 {isPrevious && isLater ? "A/B" : isPrevious ? "A" : "B"}
               </p>
             )}
@@ -298,8 +316,8 @@ function EvolutionByEye({
   previousDetails: DetalleDiagnosticoExistente[];
 }) {
   return (
-    <section className="space-y-3">
-      <h3 className="text-base font-semibold text-foreground">Evolución por ojo</h3>
+    <section className="space-y-4">
+      <h3 className="text-sm font-medium text-slate-900">Evolución por ojo</h3>
       <div className="grid gap-4 xl:grid-cols-2">
         {(["OD", "OI"] as EyeKey[]).map((eye) => {
           const comparison = getEyeComparison(
@@ -311,24 +329,28 @@ function EvolutionByEye({
           );
 
           return (
-            <Card key={eye} className="border-border shadow-card">
-              <CardContent className="p-5">
-                <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Activity className="h-4 w-4 text-primary" />
+            <Card key={eye} className={eye === "OD"
+              ? "rounded-xl border border-secondary/20 bg-white shadow-sm"
+              : "rounded-xl border border-primary/20 bg-white shadow-sm"}>
+              <CardContent className="p-6">
+                <h4 className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                  <Activity className={eye === "OD" ? "h-4 w-4 text-secondary" : "h-4 w-4 text-primary"} />
                   {eyeDisplayName(eye)}
                 </h4>
 
-                <div className="mt-4 grid items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
+                <div className="mt-5 grid items-center gap-4 sm:grid-cols-[1fr_auto_1fr]">
                   <GradePoint
-                    label="Visita anterior"
+                    label="Visita anterior · A"
                     source={comparison.previousEffective.source}
                     value={comparison.previousEffective.level}
+                    tone="slate"
                   />
                   <ArrowRight className="mx-auto hidden h-5 w-5 text-primary sm:block" />
                   <GradePoint
-                    label="Visita posterior"
+                    label="Visita posterior · B"
                     source={comparison.laterEffective.source}
                     value={comparison.laterEffective.level}
+                    tone="primary"
                   />
                 </div>
 
@@ -337,7 +359,7 @@ function EvolutionByEye({
                   previousLevel={comparison.previousEffective.level}
                 />
 
-                <p className="mt-4 rounded-md border border-primary/15 bg-primary/5 p-3 text-sm font-medium text-foreground">
+                <p className="mt-5 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm font-medium text-slate-700">
                   {comparison.change.label}
                 </p>
               </CardContent>
@@ -353,23 +375,30 @@ function GradePoint({
   label,
   source,
   value,
+  tone = "slate",
 }: {
   label: string;
   source: string;
   value?: number | null;
+  tone?: "slate" | "primary";
 }) {
+  const isPrimary = tone === "primary";
   return (
-    <div className="rounded-md border border-border bg-background p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</p>
+    <div className={isPrimary
+      ? "rounded-lg border border-primary/20 bg-primary/5 p-4"
+      : "rounded-lg border border-slate-200/80 bg-slate-50/60 p-4"}>
+      <p className={isPrimary
+        ? "text-[11px] font-medium uppercase tracking-widest text-primary"
+        : "text-[11px] font-medium uppercase tracking-widest text-slate-400"}>{label}</p>
       {value === null || value === undefined ? (
-        <p className="mt-2 text-sm text-muted-foreground">Sin evaluación en esta visita</p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-500">Sin evaluación en esta visita</p>
       ) : (
         <>
-          <p className="mt-2 text-xl font-semibold text-foreground">Grado {value}</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-2 text-2xl font-medium tracking-tight text-slate-900">Grado {value}</p>
+          <p className="mt-0.5 text-sm text-slate-500">
             {getShortRetinopathyGradeLabel(value)}
           </p>
-          <p className="mt-2 text-xs text-muted-foreground">{sourceLabel(source)}</p>
+          <p className="mt-2 text-xs text-slate-400">{sourceLabel(source)}</p>
         </>
       )}
     </div>
@@ -388,12 +417,13 @@ function IaValidationByEye({
   previousDetails: DetalleDiagnosticoExistente[];
 }) {
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="p-5">
-        <h3 className="text-base font-semibold text-foreground">
+    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <CardContent className="p-6 sm:p-8">
+        <h3 className="flex items-center gap-2 text-base font-medium tracking-tight text-slate-900">
+          <Brain className="h-4 w-4 text-amber-600" />
           IA y validación médica
         </h3>
-        <div className="mt-4 space-y-4">
+        <div className="mt-5 space-y-4">
           {(["OD", "OI"] as EyeKey[]).map((eye) => {
             const comparison = getEyeComparison(
               previous,
@@ -404,18 +434,19 @@ function IaValidationByEye({
             );
 
             return (
-              <div key={eye} className="rounded-md border border-border bg-background p-4">
-                <p className="text-sm font-semibold text-foreground">{eyeDisplayName(eye)}</p>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div key={eye} className="rounded-lg border border-slate-200/80 bg-slate-50/60 p-5">
+                <p className="text-sm font-medium text-slate-900">{eyeDisplayName(eye)}</p>
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <IaValidationColumn
-                    label="Visita anterior"
+                    label="Visita anterior · A"
                     confidence={comparison.previousEffective.confidence}
                     finalLevel={comparison.previousEffective.finalLevel}
                     iaLevel={comparison.previousEffective.iaLevel}
                     validation={comparison.previousEffective.validation}
                   />
                   <IaValidationColumn
-                    label="Visita posterior"
+                    highlight
+                    label="Visita posterior · B"
                     confidence={comparison.laterEffective.confidence}
                     finalLevel={comparison.laterEffective.finalLevel}
                     iaLevel={comparison.laterEffective.iaLevel}
@@ -434,47 +465,53 @@ function IaValidationByEye({
 function IaValidationColumn({
   confidence,
   finalLevel,
+  highlight = false,
   iaLevel,
   label,
   validation,
 }: {
   confidence?: number | null;
   finalLevel?: number | null;
+  highlight?: boolean;
   iaLevel?: number | null;
   label: string;
   validation?: string | null;
 }) {
   if (iaLevel === null || iaLevel === undefined) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-400">
         {label}: sin evaluación de RD
       </div>
     );
   }
 
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-3">
-      <p className="text-xs font-semibold uppercase text-primary">{label}</p>
-      <dl className="mt-2 space-y-1 text-sm">
+    <div className={highlight
+      ? "rounded-lg border border-primary/20 bg-primary/5 p-4"
+      : "rounded-lg border border-slate-200/80 bg-white p-4"}>
+      <p className={highlight
+        ? "text-[11px] font-medium uppercase tracking-widest text-primary"
+        : "text-[11px] font-medium uppercase tracking-widest text-slate-400"}>{label}</p>
+      <dl className="mt-3 space-y-1.5 text-sm">
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Predicción IA</dt>
-          <dd className="font-medium text-foreground">{getShortRetinopathyGradeLabel(iaLevel)}</dd>
+          <dt className="text-slate-500">Predicción IA</dt>
+          <dd className="font-medium text-slate-900">{getShortRetinopathyGradeLabel(iaLevel)}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Resultado final</dt>
-          <dd className="font-medium text-foreground">
+          <dt className="text-slate-500">Resultado final</dt>
+          <dd className="font-medium text-slate-900">
             {finalLevel === null || finalLevel === undefined
               ? "Pendiente"
               : getShortRetinopathyGradeLabel(finalLevel)}
           </dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Estado</dt>
-          <dd className="font-medium text-foreground">{validation ?? "Pendiente"}</dd>
+          <dt className="text-slate-500">Estado</dt>
+          <dd className="font-medium text-slate-900">{validation ?? "Pendiente"}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Confianza IA</dt>
-          <dd className="font-medium text-foreground">{percent(confidence)}</dd>
+          <dt className="text-slate-500">Confianza IA</dt>
+          <dd className="font-medium text-slate-900">{percent(confidence)}</dd>
         </div>
       </dl>
     </div>
@@ -497,15 +534,15 @@ function ReportsComparison({
   const laterCount = later.informes?.length ?? Number(later.tiene_informes ?? 0);
 
   return (
-    <Card className="border-border shadow-card">
-      <CardContent className="p-5">
+    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <CardContent className="p-6 sm:p-8">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <FileText className="h-4 w-4 text-primary" />
+            <h3 className="flex items-center gap-2 text-base font-medium tracking-tight text-slate-900">
+              <FileText className="h-4 w-4 text-info" />
               Informes clínicos
             </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1.5 text-sm text-slate-500">
               Visita anterior: {previousCount} informe{previousCount === 1 ? "" : "s"} ·
               Visita posterior: {laterCount} informe{laterCount === 1 ? "" : "s"}
             </p>
@@ -513,17 +550,17 @@ function ReportsComparison({
         </div>
 
         {reportTypes.length === 0 ? (
-          <p className="mt-4 rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+          <p className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
             No hay informes clínicos registrados en ninguna de las visitas comparadas.
           </p>
         ) : (
-          <div className="mt-4 space-y-3">
+          <div className="mt-5 space-y-4">
             {reportTypes.map((type) => (
-              <div key={type} className="rounded-md border border-border bg-background p-4">
-                <p className="text-sm font-semibold text-foreground">{type}</p>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <ReportPresence label="Visita anterior" reports={previousReports[type]} />
-                  <ReportPresence label="Visita posterior" reports={laterReports[type]} />
+              <div key={type} className="rounded-lg border border-info/20 bg-white p-5">
+                <p className="text-sm font-medium text-slate-900">{type}</p>
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <ReportPresence label="Visita anterior · A" reports={previousReports[type]} />
+                  <ReportPresence highlight label="Visita posterior · B" reports={laterReports[type]} />
                 </div>
               </div>
             ))}
@@ -535,17 +572,21 @@ function ReportsComparison({
 }
 
 function ReportPresence({
+  highlight = false,
   label,
   reports,
 }: {
+  highlight?: boolean;
   label: string;
   reports?: PatientVisitReport[];
 }) {
   if (!reports || reports.length === 0) {
     return (
-      <div>
-        <p className="text-xs font-semibold uppercase text-primary">{label}</p>
-        <p className="mt-1 text-sm text-muted-foreground">No registrado</p>
+      <div className={highlight ? "rounded-lg bg-primary/5 p-3" : undefined}>
+        <p className={highlight
+          ? "text-[11px] font-medium uppercase tracking-widest text-primary"
+          : "text-[11px] font-medium uppercase tracking-widest text-slate-400"}>{label}</p>
+        <p className="mt-1.5 text-sm text-slate-500">No registrado</p>
       </div>
     );
   }
@@ -555,16 +596,18 @@ function ReportPresence({
   )[0];
 
   return (
-    <div>
-      <p className="text-xs font-semibold uppercase text-primary">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-foreground">
+    <div className={highlight ? "rounded-lg border border-primary/20 bg-primary/5 p-3" : undefined}>
+      <p className={highlight
+        ? "text-[11px] font-medium uppercase tracking-widest text-primary"
+        : "text-[11px] font-medium uppercase tracking-widest text-slate-400"}>{label}</p>
+      <p className="mt-1.5 text-sm font-medium text-slate-900">
         Disponible · {reports.length} registro{reports.length === 1 ? "" : "s"}
       </p>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 text-xs text-slate-500">
         Último: {shortDate(latest.fecha_creado)}
       </p>
       {latest.conclusion && (
-        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-slate-600">
           {latest.conclusion}
         </p>
       )}
@@ -603,12 +646,12 @@ export function VisitComparisonTab({
 
   if (comparisonError || !comparisonVisit) {
     return (
-      <Card className="border-warning/30 bg-warning/10 shadow-card">
-        <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-foreground">
+      <Card className="rounded-xl border-slate-200 bg-slate-50 shadow-none">
+        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-relaxed text-slate-600">
             No se encontró la visita seleccionada para comparar con este paciente.
           </p>
-          <Button type="button" variant="outline" size="sm" onClick={onExit}>
+          <Button type="button" variant="outline" size="sm" className="border-slate-200 bg-white text-slate-600 shadow-none hover:bg-white hover:text-slate-900" onClick={onExit}>
             Quitar comparación
           </Button>
         </CardContent>
@@ -624,19 +667,31 @@ export function VisitComparisonTab({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={onChangeVisit}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="border-slate-200 bg-white text-slate-600 shadow-none hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+          onClick={onChangeVisit}
+        >
           Cambiar visita
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onExit}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-slate-500 hover:bg-red-50 hover:text-red-600"
+          onClick={onExit}
+        >
           <X className="mr-1.5 h-4 w-4" />
           Quitar comparación
         </Button>
       </div>
 
       {isLoading && (
-        <p className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+        <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           Cargando detalles de la visita seleccionada...
         </p>
       )}

@@ -90,6 +90,8 @@ export interface PatientReportDetail extends PatientVisitReport {
   };
   paciente?: {
     id: number;
+    tipo_doc_abrev?: string | null;
+    tipo_doc?: string | null;
     nro_documento: string;
     nombres: string;
     apellidos: string;

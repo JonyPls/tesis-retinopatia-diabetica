@@ -1,12 +1,7 @@
-import { FileText, Eye, Ruler, ScanEye, Check } from "lucide-react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TipoInforme } from "../types";
-
-const TIPO_CONFIG: Record<number, { icon: React.ReactNode; bg: string; color: string }> = {
-  2: { icon: <ScanEye className="h-6 w-6" />, bg: "bg-sky-100", color: "text-sky-700" },
-  3: { icon: <Eye className="h-6 w-6" />, bg: "bg-purple-100", color: "text-purple-700" },
-  4: { icon: <Ruler className="h-6 w-6" />, bg: "bg-amber-100", color: "text-amber-700" },
-};
+import { getReportTypePresentation } from "../reportTypePresentation";
 
 interface TypeSelectorProps {
   tipos: TipoInforme[];
@@ -19,7 +14,7 @@ export function TypeSelector({ tipos, selectedIds, onToggle }: TypeSelectorProps
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {tipos.map((tipo) => {
         const selected = selectedIds.includes(tipo.id);
-        const cfg = TIPO_CONFIG[tipo.id];
+        const cfg = getReportTypePresentation(tipo.id);
         return (
           <button
             key={tipo.id}
@@ -50,7 +45,7 @@ export function TypeSelector({ tipos, selectedIds, onToggle }: TypeSelectorProps
                 cfg?.color || "text-muted-foreground",
               )}
             >
-              {cfg?.icon || <FileText className="h-6 w-6" />}
+              {cfg.icon}
             </div>
 
             {/* Title */}

@@ -183,6 +183,7 @@ class InformeRepository:
         if paciente:
             data["paciente"] = {
                 "id": paciente.id,
+                "tipo_doc_abrev": paciente.tipo_documento.codigo if paciente.tipo_documento else None,
                 "nro_documento": paciente.nro_documento,
                 "nombres": paciente.nombres,
                 "apellidos": paciente.apellidos,
