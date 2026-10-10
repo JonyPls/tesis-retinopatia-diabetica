@@ -1,18 +1,16 @@
-import { Sparkles, ImageIcon } from "lucide-react";
-
 interface ImagePanelProps {
   title: string;
   subtitle: string;
   src: string;
-  /** Si es true, muestra el badge "Grad-CAM activo" */
+  /** Si es true, muestra el badge discreto "Grad-CAM" */
   overlay?: boolean;
 }
 
 export function ImagePanel({ title, subtitle, src, overlay }: ImagePanelProps) {
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-muted/30">
+    <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
       {/* Imagen cuadrada */}
-      <div className="aspect-square relative bg-black">
+      <div className="relative aspect-square bg-black">
         <img
           src={src}
           alt={title}
@@ -20,25 +18,18 @@ export function ImagePanel({ title, subtitle, src, overlay }: ImagePanelProps) {
           loading="lazy"
         />
 
-        {/* Badge Grad-CAM — esquina superior izquierda */}
+        {/* Identificación discreta de Grad-CAM */}
         {overlay && (
-          <div className="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-md bg-black/60 backdrop-blur-sm px-2 py-1 text-[10px] font-medium text-white">
-            <Sparkles className="h-3 w-3 text-amber-400" />
-            Grad-CAM activo
+          <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+            Grad-CAM
           </div>
         )}
-
-        {/* Badge de resolución — esquina superior derecha */}
-        <div className="absolute top-2 right-2 inline-flex items-center gap-1.5 rounded-md bg-black/60 backdrop-blur-sm px-2 py-1 text-[10px] font-medium text-white">
-          <ImageIcon className="h-3 w-3" />
-          224 × 224
-        </div>
       </div>
 
       {/* Pie de imagen */}
       <div className="px-3 py-2.5">
         <div className="text-sm font-medium leading-none">{title}</div>
-        <div className="text-xs text-muted-foreground mt-1">{subtitle}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
       </div>
     </div>
   );

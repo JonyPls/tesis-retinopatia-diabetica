@@ -3,11 +3,17 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  ChevronDown,
   Eye,
+  Info,
   Stethoscope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
@@ -73,7 +79,7 @@ function EyeTabs({
             className={cn(
               "flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
               isActive
-                ? "border-primary bg-primary/10 text-primary shadow-card"
+                ? "border-primary bg-primary/10 text-primary"
                 : "border-border bg-muted/35 text-muted-foreground hover:bg-muted",
             )}
           >
@@ -91,7 +97,7 @@ function EyeTabs({
   );
 }
 
-function ProbabilityBars({ detail }: { detail: Record<string, number> }) {
+export function ProbabilityBars({ detail }: { detail: Record<string, number> }) {
   const entries = Object.entries(detail ?? {});
 
   if (entries.length === 0) {
@@ -107,7 +113,7 @@ function ProbabilityBars({ detail }: { detail: Record<string, number> }) {
       {entries.map(([key, val]) => (
         <div key={key} className="space-y-1">
           <div className="flex justify-between gap-3 text-xs">
-            <span className="truncate text-muted-foreground capitalize">
+            <span className="truncate capitalize text-muted-foreground">
               {key.replace(/_/g, " ")}
             </span>
             <span className="font-mono font-medium tabular-nums">
@@ -116,7 +122,7 @@ function ProbabilityBars({ detail }: { detail: Record<string, number> }) {
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-gradient-primary transition-all duration-500"
+              className="h-full rounded-full bg-primary transition-all duration-500"
               style={{ width: `${val}%` }}
             />
           </div>
@@ -134,70 +140,68 @@ function ResultSummary({ result }: { result: DiagnosisResult }) {
   const isHighConfidence = confianza >= 70;
 
   return (
-    <div className="space-y-3">
-      <div
-        className="rounded-md border bg-background p-3"
-        style={{ borderLeft: `4px solid hsl(var(--rd-${codigo}))` }}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase text-muted-foreground">
-              Resultado IA
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span
-                className="text-2xl font-semibold tabular-nums"
-                style={{ color: `hsl(var(--rd-${codigo}))` }}
-              >
-                {codigo}
-              </span>
-              <RDLevelBadge level={codigo} size="sm" />
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {rdInfo?.description}
-            </p>
-          </div>
-          {isHighConfidence ? (
-            <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-success" />
-          ) : (
-            <AlertTriangle className="mt-1 h-5 w-5 shrink-0 text-amber-500" />
-          )}
-        </div>
-
-        <div className="mt-3 space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Activity className="h-3.5 w-3.5" />
-              Confianza
-            </span>
+    <section
+      className="rounded-lg border border-border bg-background p-4"
+      style={{ borderLeft: `4px solid hsl(var(--rd-${codigo}))` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Resultado IA · Predicción del modelo
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
             <span
-              className={cn(
-                "font-semibold tabular-nums",
-                isHighConfidence ? "text-success" : "text-amber-500",
-              )}
+              className="text-4xl font-semibold leading-none tabular-nums"
+              style={{ color: `hsl(var(--rd-${codigo}))` }}
             >
-              {confianza.toFixed(1)}%
+              {codigo}
             </span>
+            <RDLevelBadge level={codigo} />
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all duration-500",
-                isHighConfidence ? "bg-gradient-primary" : "bg-amber-400",
-              )}
-              style={{ width: `${confianza}%` }}
-            />
-          </div>
-          {!isHighConfidence && (
-            <p className="text-[11px] leading-relaxed text-amber-600">
-              Confianza menor al 70%. Revisión médica recomendada.
-            </p>
-          )}
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {rdInfo?.description}
+          </p>
         </div>
+        {isHighConfidence ? (
+          <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-success" />
+        ) : (
+          <AlertTriangle className="mt-1 h-5 w-5 shrink-0 text-warning" />
+        )}
+      </div>
+
+      <div className="mt-4 space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <Activity className="h-3.5 w-3.5" />
+            Confianza del modelo
+          </span>
+          <span
+            className={cn(
+              "font-semibold tabular-nums",
+              isHighConfidence ? "text-success" : "text-warning",
+            )}
+          >
+            {confianza.toFixed(1)}%
+          </span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all duration-500",
+              isHighConfidence ? "bg-success" : "bg-warning",
+            )}
+            style={{ width: `${confianza}%` }}
+          />
+        </div>
+        {!isHighConfidence && (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Confianza menor al 70%. Revisión médica recomendada.
+          </p>
+        )}
       </div>
 
       {isCritical && (
-        <div className="flex gap-2.5 rounded-md border border-destructive/25 bg-destructive/5 p-3">
+        <div className="mt-3 flex gap-2.5 rounded-md border border-destructive/25 bg-destructive/5 p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <div className="text-xs">
             <p className="font-semibold text-destructive">
@@ -209,7 +213,35 @@ function ResultSummary({ result }: { result: DiagnosisResult }) {
           </div>
         </div>
       )}
-    </div>
+
+      <p className="mt-3 text-[11px] text-muted-foreground/70">
+        Modelo: ResNet50
+      </p>
+    </section>
+  );
+}
+
+function ProbabilitySection({ detail }: { detail: Record<string, number> }) {
+  return (
+    <Collapsible className="rounded-lg border border-border">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/40 [&[data-state=open]_.chevron]:rotate-180"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            Probabilidades del modelo
+          </span>
+          <ChevronDown className="chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform" />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-t border-border px-4 py-3">
+          <ProbabilityBars detail={detail} />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -240,7 +272,7 @@ function GradeSelector({
             className={cn(
               "h-16 min-w-0 flex-col gap-1 rounded-md px-1 text-center transition-all",
               checked
-                ? "border-primary bg-primary/10 text-primary shadow-card"
+                ? "border-primary bg-primary/10 text-primary"
                 : "bg-background hover:bg-muted/60",
             )}
             style={{
@@ -302,7 +334,7 @@ export function DiagnosisResults(
   const finalInfo = RD_LEVELS[finalLevel as RDLevel];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <EyeTabs
         available={available}
         active={activeEye}
@@ -310,137 +342,119 @@ export function DiagnosisResults(
         onSelect={setActiveEye}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-        <Card className="shadow-card">
-          <CardHeader className="border-b border-border bg-muted/25 px-4 py-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Eye className="h-4 w-4 text-primary" />
-              Evidencia visual · {EYE_FULL[activeEye]} ({EYE_SHORT[activeEye]})
-            </CardTitle>
-            <p className="truncate text-xs text-muted-foreground">
-              {originalFileName}
-            </p>
-          </CardHeader>
-          <CardContent className="p-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <ImagePanel
-                title="Imagen original"
-                subtitle="Fondo de ojo sin procesar"
-                src={eyes[activeEye].preview!}
-              />
-              <ImagePanel
-                title="Grad-CAM"
-                subtitle="Regiones de mayor atención de la IA"
-                src={current.gradcam_url}
-                overlay
-              />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <div className="space-y-4">
+          <ResultSummary result={current} />
+          <ProbabilitySection detail={current.probabilidades_detalle} />
+        </div>
 
-        <Card className="shadow-card">
-          <CardHeader className="border-b border-border bg-muted/25 px-4 py-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Stethoscope className="h-4 w-4 text-primary" />
-              Validación médica
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Confirme o corrija el resultado antes de guardar el diagnóstico.
-            </p>
-          </CardHeader>
-
-          <CardContent className="space-y-4 p-4">
-            <ResultSummary result={current} />
-
-            <Separator />
-
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">Diagnóstico final</p>
-                  <p className="text-xs text-muted-foreground">
-                    Por defecto coincide con la predicción IA.
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium",
-                    isCorrected
-                      ? "border-amber-300 bg-amber-50 text-amber-700"
-                      : "border-success/30 bg-success/10 text-success",
-                  )}
-                >
-                  {isCorrected ? "Corregido" : "Aprobado"}
-                </span>
+        <section className="flex flex-col gap-4 rounded-lg border border-primary/20 bg-primary/[0.03] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <Stethoscope className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Decisión médica</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                  Seleccione el grado final. Por defecto coincide con la
+                  predicción IA.
+                </p>
               </div>
+            </div>
+            <span
+              className={cn(
+                "shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium",
+                isCorrected
+                  ? "border-warning/40 bg-warning/10 text-foreground"
+                  : "border-success/30 bg-success/10 text-success",
+              )}
+            >
+              {isCorrected ? "Corregido" : "Aprobado"}
+            </span>
+          </div>
 
-              <GradeSelector
-                activeEye={activeEye}
-                selected={finalLevel}
-                iaLevel={iaLevel}
-                onChange={setFinalSelection}
-              />
+          <GradeSelector
+            activeEye={activeEye}
+            selected={finalLevel}
+            iaLevel={iaLevel}
+            onChange={setFinalSelection}
+          />
 
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Seleccionado:{" "}
-                <span className="font-medium text-foreground">
-                  {finalLevel}: {finalInfo?.label}
-                </span>
-              </p>
-            </section>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Seleccionado:{" "}
+            <span className="font-medium text-foreground">
+              {finalLevel}: {finalInfo?.label}
+            </span>
+          </p>
 
-            {isCorrected && (
-              <section className="space-y-2 rounded-md border border-amber-200 bg-amber-50/70 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-amber-900">
-                    Motivo de corrección
-                  </p>
-                  <span className="text-[11px] font-medium uppercase text-amber-700">
-                    Requerido
-                  </span>
-                </div>
-                <Textarea
-                  value={correctionReasons?.[activeEye] ?? ""}
-                  onChange={(event) =>
-                    setCorrectionReason?.(activeEye, event.target.value)
-                  }
-                  className="min-h-[88px] resize-none bg-background"
-                  placeholder="Explique por qué el diagnóstico final difiere del resultado IA..."
-                />
-              </section>
-            )}
-
-            <section className="space-y-2">
+          {isCorrected && (
+            <section className="space-y-2 rounded-md border border-warning/30 bg-warning/5 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">Comentario médico</p>
-                <span className="text-[11px] text-muted-foreground">
-                  Opcional
+                <p className="text-sm font-medium">Motivo de corrección</p>
+                <span className="text-[11px] font-medium uppercase text-muted-foreground">
+                  Requerido
                 </span>
               </div>
               <Textarea
-                value={comments?.[activeEye] ?? ""}
-                onChange={(event) => setComment?.(activeEye, event.target.value)}
-                className="min-h-[92px] resize-none"
-                placeholder="Observaciones clínicas, conducta sugerida o notas para seguimiento..."
+                value={correctionReasons?.[activeEye] ?? ""}
+                onChange={(event) =>
+                  setCorrectionReason?.(activeEye, event.target.value)
+                }
+                className="min-h-[88px] resize-none bg-background"
+                placeholder="Explique por qué el diagnóstico final difiere del resultado IA..."
               />
             </section>
+          )}
 
-            <Separator />
-
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-primary" />
-                <p className="text-sm font-medium">Probabilidades</p>
-              </div>
-              <ProbabilityBars detail={current.probabilidades_detalle} />
-            </section>
-
-            <div className="border-t border-border pt-2 text-right text-[10px] text-muted-foreground/70">
-              Modelo: ResNet50
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">Comentario médico</p>
+              <span className="text-[11px] text-muted-foreground">
+                Opcional
+              </span>
             </div>
-          </CardContent>
-        </Card>
+            <Textarea
+              value={comments?.[activeEye] ?? ""}
+              onChange={(event) => setComment?.(activeEye, event.target.value)}
+              className="min-h-[92px] resize-none"
+              placeholder="Observaciones clínicas, conducta sugerida o notas para seguimiento..."
+            />
+          </section>
+        </section>
       </div>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <div>
+          <p className="text-sm font-medium">Evidencia visual (apoyo)</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Imagen evaluada del ojo {EYE_SHORT[activeEye]} y mapa de atención del
+            modelo.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ImagePanel
+            title="Imagen original"
+            subtitle={originalFileName}
+            src={eyes[activeEye].preview!}
+          />
+          <ImagePanel
+            title="Grad-CAM"
+            subtitle="Regiones de mayor atención del modelo"
+            src={current.gradcam_url}
+            overlay
+          />
+        </div>
+
+        <div className="flex items-start gap-2 rounded-md border border-info/30 bg-info/5 px-3 py-2.5">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            El mapa Grad-CAM es una ayuda de interpretabilidad y no constituye
+            por sí solo un diagnóstico médico.
+          </p>
+        </div>
+      </section>
     </div>
   );
 }

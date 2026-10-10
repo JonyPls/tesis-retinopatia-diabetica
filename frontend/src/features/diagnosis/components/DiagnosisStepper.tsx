@@ -3,13 +3,11 @@ import {
   Brain,
   CheckCircle2,
   Image,
-  PanelLeft,
-  PanelTop,
   Search,
   UploadCloud,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import type { PatientSearchResult } from "@/features/patients/api/patientService";
 import { cn } from "@/lib/utils";
 import type { EyeKey, EyeState } from "../types";
@@ -43,102 +41,75 @@ const EYE_LABELS: Record<EyeKey, string> = {
 
 interface DiagnosisStepperProps {
   step: number;
-  layout?: "side" | "top";
+  variant?: "full" | "compact";
   selectedPatient?: PatientSearchResult | null;
   eyes?: Record<EyeKey, EyeState>;
   processedEyes?: number;
-  onToggleLayout?: () => void;
 }
 
 export function DiagnosisStepper({
   step,
-  layout = "side",
+  variant = "full",
   selectedPatient,
   eyes,
   processedEyes = 0,
-  onToggleLayout,
 }: DiagnosisStepperProps) {
   const [previewImage, setPreviewImage] = useState<{
     eye: EyeKey;
     src: string;
     fileName?: string;
   } | null>(null);
-  const isHorizontal = layout === "top";
+
+  if (variant === "compact") {
+    const current = STEPS.find((s) => s.n === step) ?? STEPS[0];
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-xs text-muted-foreground">
+          Paso {step} de {STEPS.length} ·{" "}
+          <span className="font-medium text-foreground">{current.label}</span>
+        </p>
+        <Progress
+          value={(step / STEPS.length) * 100}
+          className="h-1.5 w-full max-w-[220px]"
+        />
+      </div>
+    );
+  }
 
   return (
     <>
       <Card className="shadow-card">
-        <CardContent className={cn(isHorizontal ? "p-5" : "p-5")}>
-          <div
-            className={cn(
-              "flex items-start justify-between gap-3",
-              isHorizontal ? "mb-3" : "mb-4",
-            )}
-          >
-            <div className="min-w-0">
-              <p className="text-base font-semibold leading-none">
-                Flujo de Diagnóstico
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Retinopatía Diabética
-              </p>
-            </div>
-            {onToggleLayout && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onToggleLayout}
-                className="h-8 shrink-0 px-2.5 text-xs"
-              >
-                {isHorizontal ? (
-                  <PanelLeft className="h-3.5 w-3.5" />
-                ) : (
-                  <PanelTop className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            )}
+        <CardContent className="p-5">
+          <div className="mb-4 min-w-0">
+            <p className="text-base font-semibold leading-none">
+              Flujo de Diagnóstico
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Retinopatía Diabética
+            </p>
           </div>
-          {!isHorizontal && (
-            <>
-              <hr />
-              <br />
-            </>
-          )}
-          <div
-            className={cn(
-              isHorizontal
-                ? "grid gap-4 lg:grid-cols-3"
-                : "space-y-0",
-            )}
-          >
+
+          <hr />
+          <br />
+
+          <div className="space-y-0">
             {STEPS.map((s, idx) => {
               const done = step > s.n;
               const active = step === s.n;
               return (
-                <div
-                  key={s.n}
-                  className={cn(
-                    "relative flex gap-3",
-                    isHorizontal
-                      ? "rounded-md border border-border bg-background p-3"
-                      : "pb-8 last:pb-0",
-                  )}
-                >
-                  {!isHorizontal && idx < STEPS.length - 1 && (
+                <div key={s.n} className="relative flex gap-3 pb-8 last:pb-0">
+                  {idx < STEPS.length - 1 && (
                     <div
                       className={cn(
                         "absolute bottom-2 left-5 top-12 w-[2px] rounded-full transition-colors",
-                        step > s.n
-                          ? "bg-primary/75"
-                          : "bg-muted-foreground/25",
+                        step > s.n ? "bg-primary/75" : "bg-muted-foreground/25",
                       )}
                     />
                   )}
 
                   <div
                     className={cn(
-                      "z-10 flex shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all",
-                      isHorizontal ? "h-8 w-8" : "h-10 w-10",
+                      "z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all",
                       done && "border-primary bg-primary text-primary-foreground",
                       active &&
                         "animate-pulse-ring border-primary bg-primary text-primary-foreground shadow-elevated",
@@ -148,9 +119,7 @@ export function DiagnosisStepper({
                     )}
                   >
                     {done ? (
-                      <CheckCircle2
-                        className={isHorizontal ? "h-4 w-4" : "h-5 w-5"}
-                      />
+                      <CheckCircle2 className="h-5 w-5" />
                     ) : (
                       <s.icon className="h-4 w-4" />
                     )}
@@ -171,7 +140,6 @@ export function DiagnosisStepper({
                     <StepProgress
                       stepNumber={s.n}
                       description={s.description}
-                      compact={isHorizontal}
                       selectedPatient={selectedPatient}
                       eyes={eyes}
                       processedEyes={processedEyes}
@@ -184,17 +152,14 @@ export function DiagnosisStepper({
               );
             })}
           </div>
-          {!isHorizontal && (
-            <>
-              <br />
-              <hr />
-              <div className="mt-5 rounded-md border border-border bg-muted/40 p-3">
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  La visita clínica se creará automáticamente al procesar las imágenes.
-                </p>
-              </div>
-            </>
-          )}
+
+          <br />
+          <hr />
+          <div className="mt-5 rounded-md border border-border bg-muted/40 p-3">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              La visita clínica se creará automáticamente al procesar las imágenes.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -214,7 +179,6 @@ export function DiagnosisStepper({
 function StepProgress({
   stepNumber,
   description,
-  compact,
   selectedPatient,
   eyes,
   processedEyes,
@@ -222,7 +186,6 @@ function StepProgress({
 }: {
   stepNumber: number;
   description: string;
-  compact: boolean;
   selectedPatient?: PatientSearchResult | null;
   eyes?: Record<EyeKey, EyeState>;
   processedEyes: number;
@@ -233,15 +196,6 @@ function StepProgress({
   );
 
   if (stepNumber === 1 && selectedPatient) {
-    if (compact) {
-      return (
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {selectedPatient.nombres} {selectedPatient.apellidos} ·{" "}
-          {selectedPatient.tipo_doc_abrev} {selectedPatient.nro_documento}
-        </p>
-      );
-    }
-
     return (
       <div className="mt-1.5 rounded-md border border-primary/20 bg-primary/[0.04] px-2.5 py-2">
         <p className="truncate text-xs font-medium text-foreground">
@@ -255,34 +209,6 @@ function StepProgress({
   }
 
   if (stepNumber === 2 && uploadedImages.length > 0) {
-    if (compact) {
-      return (
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {uploadedImages.map((eye) => {
-            const preview = eyes?.[eye]?.preview;
-            const fileName = eyes?.[eye]?.file?.name;
-            return (
-              <button
-                key={eye}
-                type="button"
-                onClick={() => preview && onPreview(eye, preview, fileName)}
-                disabled={!preview}
-                className={cn(
-                  "inline-flex h-6 items-center gap-1 rounded-md border border-primary/25 bg-primary/[0.05] px-2 text-[11px] font-medium text-primary transition-colors",
-                  preview
-                    ? "hover:border-primary/60 hover:bg-primary/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    : "cursor-not-allowed opacity-70",
-                )}
-              >
-                <Image className="h-3 w-3" />
-                {eye}
-              </button>
-            );
-          })}
-        </div>
-      );
-    }
-
     return (
       <div className="mt-1.5 space-y-1.5">
         {uploadedImages.map((eye) => {
@@ -322,17 +248,14 @@ function StepProgress({
 
   if (stepNumber === 3 && processedEyes > 0) {
     return (
-      <p
-        className={cn(
-          "text-xs font-medium text-primary",
-          compact ? "mt-0.5" : "mt-1.5",
-        )}
-      >
+      <p className="mt-1.5 text-xs font-medium text-primary">
         {processedEyes} resultado{processedEyes === 1 ? "" : "s"} generado
         {processedEyes === 1 ? "" : "s"}
       </p>
     );
   }
 
-  return <p className="mt-0.5 text-xs text-muted-foreground/80">{description}</p>;
+  return (
+    <p className="mt-0.5 text-xs text-muted-foreground/80">{description}</p>
+  );
 }

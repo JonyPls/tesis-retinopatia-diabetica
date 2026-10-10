@@ -8,7 +8,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Eye, Phone } from "lucide-react";
+import { Eye } from "lucide-react";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
 import { Patient } from "../types";
 
@@ -31,140 +31,120 @@ const getPatientStatus = (maxLevel?: number | null): Status => {
   return "Normal";
 };
 
+function TableHeaderRow() {
+  const headClass =
+    "text-xs font-medium uppercase tracking-wider text-muted-foreground";
+  return (
+    <TableRow className="bg-muted/40 hover:bg-muted/40">
+      <TableHead className={headClass}>Documento</TableHead>
+      <TableHead className={headClass}>Paciente</TableHead>
+      <TableHead className={headClass}>Edad</TableHead>
+      <TableHead className={headClass}>Teléfono</TableHead>
+      <TableHead className={headClass}>Última Visita</TableHead>
+      <TableHead className={headClass}>Estado</TableHead>
+      <TableHead className={`${headClass} text-right`}>Acciones</TableHead>
+    </TableRow>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableHeaderRow />
+      </TableHeader>
+      <TableBody>
+        <TableRow className="hover:bg-transparent">
+          <TableCell
+            colSpan={7}
+            className="py-12 text-center text-sm text-muted-foreground"
+          >
+            {message}
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  );
+}
+
 export function PatientTable({
   patients,
   isLoading,
   calculateAge,
 }: PatientTableProps) {
   if (isLoading) {
-    return (
-      <div className="rounded-md border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="text-xs uppercase tracking-wider">Documento</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Paciente</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Edad</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Teléfono</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Última Visita</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Estado</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
-                Cargando pacientes...
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
-    );
+    return <EmptyState message="Cargando pacientes..." />;
   }
 
   if (patients.length === 0) {
-    return (
-      <div className="rounded-md border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="text-xs uppercase tracking-wider">Documento</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Paciente</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Edad</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Teléfono</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Última Visita</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider">Estado</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
-                No se encontraron pacientes con ese criterio.
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
-    );
+    return <EmptyState message="No se encontraron pacientes con ese criterio." />;
   }
 
   return (
-    <div className="rounded-md border border-border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/40 hover:bg-muted/40">
-            <TableHead className="text-xs uppercase tracking-wider">Documento</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Paciente</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Edad</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Teléfono</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Última Visita</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Estado</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider text-right">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {patients.map((p) => (
-            <TableRow
-              key={p.id || p.nro_documento}
-              className="hover:bg-muted/30"
-            >
-              <TableCell>
-                <div className="text-sm font-medium">{p.nro_documento}</div>
-                <div className="text-[10px] text-muted-foreground uppercase mt-0.5">
-                  {p.tipo_doc_abrev || p.tipo_doc}
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="font-medium">
-                  {p.nombres_apellidos ||
-                    `${p.nombres || ""} ${p.apellidos || ""}`.trim()}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {p.sexo}
-                </div>
-              </TableCell>
-              <TableCell className="text-sm">
-                {calculateAge(p.fecha_nacimiento)}
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <Phone className="h-3 w-3" /> {formatPhone(p.telefono) || "Sin teléfono"}
+    <Table>
+      <TableHeader>
+        <TableHeaderRow />
+      </TableHeader>
+      <TableBody>
+        {patients.map((p) => (
+          <TableRow
+            key={p.id || p.nro_documento}
+            className="hover:bg-muted/30"
+          >
+            <TableCell>
+              <div className="font-mono text-sm font-medium">
+                {p.nro_documento}
+              </div>
+              <div className="mt-0.5 text-[10px] uppercase text-muted-foreground">
+                {p.tipo_doc_abrev || p.tipo_doc}
+              </div>
+            </TableCell>
+            <TableCell>
+              <div className="font-medium text-foreground">
+                {p.nombres_apellidos ||
+                  `${p.nombres || ""} ${p.apellidos || ""}`.trim()}
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {p.sexo}
+              </div>
+            </TableCell>
+            <TableCell className="text-sm">
+              {calculateAge(p.fecha_nacimiento)}
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {formatPhone(p.telefono) || "Sin teléfono"}
+            </TableCell>
+            <TableCell className="text-sm">
+              {p.ultima_visita ? (
+                new Date(p.ultima_visita).toLocaleDateString("es-PE", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              ) : (
+                <span className="text-xs italic text-muted-foreground opacity-70">
+                  Sin registros
                 </span>
-              </TableCell>
-              <TableCell className="text-sm">
-                {p.ultima_visita ? (
-                  new Date(p.ultima_visita).toLocaleDateString("es-PE", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                  })
-                ) : (
-                  <span className="text-muted-foreground text-xs italic opacity-70">
-                    Sin registros
-                  </span>
-                )}
-              </TableCell>
-              <TableCell>
-                <StatusBadge status={getPatientStatus(p.maxima_gravedad)} />
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary"
-                >
-                  <Link to={`/pacientes/${p.id || p.nro_documento}`}>
-                    <Eye className="h-3.5 w-3.5" /> Ver
-                  </Link>
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+              )}
+            </TableCell>
+            <TableCell>
+              <StatusBadge status={getPatientStatus(p.maxima_gravedad)} />
+            </TableCell>
+            <TableCell className="text-right">
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="text-primary"
+              >
+                <Link to={`/pacientes/${p.id || p.nro_documento}`}>
+                  <Eye className="h-3.5 w-3.5" /> Ver
+                </Link>
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

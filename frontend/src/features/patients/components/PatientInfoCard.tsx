@@ -1,35 +1,12 @@
-import {
-  AlertCircle,
-  Activity,
-  Cake,
-  Calendar,
-  CalendarClock,
-  FileText,
-  IdCard,
-  Mail,
-  Phone,
-  ShieldCheck,
-  User,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { Mail, Phone, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { StatusBadge, type Status } from "@/components/medical/StatusBadge";
-import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
-import type { RDLevel } from "@/data/rdLevels";
 import { Patient } from "../types";
 
 interface PatientInfoCardProps {
   patient: Patient;
   calculateAge: (date: string) => number;
   getInitials: (nombres?: string, apellidos?: string) => string;
-  status: Status;
-  lastVisit: string;
-  visitCount: number;
-  maxRdLevel: number;
-  hasRdData: boolean;
 }
 
 function formatDate(date?: string | null) {
@@ -55,37 +32,29 @@ function formatPhone(phone?: string | null) {
   return digits.replace(/(\d{3})(?=\d)/g, "$1 ");
 }
 
-function InfoRow({
+function Field({
   icon: Icon,
   label,
   value,
 }: {
-  icon: LucideIcon;
+  icon?: LucideIcon;
   label: string;
   value?: string | number | null;
 }) {
   return (
-    <div className="flex items-start gap-2.5 py-1.5">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 break-words text-sm font-medium text-foreground">
-          {value || "No registrado"}
-        </div>
+    <div className="min-w-0">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1.5 text-sm text-foreground">
+        {Icon && (
+          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <span className="break-words">{value || "No registrado"}</span>
       </div>
     </div>
   );
 }
 
-function InfoGrid({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
-      {children}
-    </div>
-  );
-}
-
-function InfoSection({
+function Section({
   title,
   children,
 }: {
@@ -93,38 +62,12 @@ function InfoSection({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="h-px flex-1 bg-border" />
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {title}
-        </h3>
-        <div className="h-px flex-1 bg-border" />
-      </div>
+    <section className="space-y-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </section>
-  );
-}
-
-function KpiCard({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: LucideIcon;
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-muted/25 p-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
-      </div>
-      <div className="mt-2 text-sm font-semibold text-foreground">
-        {children}
-      </div>
-    </div>
   );
 }
 
@@ -132,97 +75,64 @@ export function PatientInfoCard({
   patient,
   calculateAge,
   getInitials,
-  status,
-  lastVisit,
-  visitCount,
-  maxRdLevel,
-  hasRdData,
 }: PatientInfoCardProps) {
   const fullName = getFullName(patient);
   const age = calculateAge(patient.fecha_nacimiento);
   const docType = patient.tipo_doc_abrev || patient.tipo_doc || "Doc.";
 
+  const consent = patient.consentimiento_informado
+    ? patient.fecha_consentimiento
+      ? `Archivado · ${formatDate(patient.fecha_consentimiento)}`
+      : "Archivado"
+    : "No registrado";
+
   return (
     <Card className="h-fit overflow-hidden shadow-card">
-      <CardHeader className="pb-3">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-primary text-base font-semibold text-white shadow-elevated">
+      <CardHeader className="p-4 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">
             {getInitials(patient.nombres, patient.apellidos)}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  <CardTitle className="min-w-0 max-w-full break-words text-base leading-tight">
-                    {fullName}
-                  </CardTitle>
-                  <StatusBadge status={status} />
-                </div>
-              </div>
-            </div>
+          <div className="min-w-0">
+            <CardTitle className="break-words text-sm font-medium leading-tight">
+              {fullName}
+            </CardTitle>
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+              {docType} {patient.nro_documento}
+            </p>
           </div>
         </div>
       </CardHeader>
 
-      <Separator />
-
-      <CardContent className="space-y-5 p-4 pt-3">
-        <InfoSection title="Datos personales">
-          <InfoGrid>
-            <InfoRow icon={IdCard} label={docType} value={patient.nro_documento} />
-            <InfoRow icon={Users} label="Sexo" value={patient.sexo} />
-            <InfoRow
-              icon={Cake}
+      <CardContent className="space-y-5 px-4 pb-4 pt-2">
+        <Section title="Personal">
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+            <Field label={docType} value={patient.nro_documento} />
+            <Field label="Sexo" value={patient.sexo} />
+            <Field
               label="Nacimiento"
               value={formatDate(patient.fecha_nacimiento)}
             />
-            <InfoRow icon={CalendarClock} label="Edad" value={`${age} años`} />
-            <InfoRow icon={Phone} label="Teléfono" value={formatPhone(patient.telefono)} />
-            <InfoRow icon={Mail} label="Correo" value={patient.correo} />
-          </InfoGrid>
-        </InfoSection>
-
-        <InfoSection title="Información clínica">
-          <InfoGrid>
-            <InfoRow
-              icon={ShieldCheck}
-              label="Consentimiento"
-              value={
-                patient.consentimiento_informado
-                  ? patient.fecha_consentimiento
-                    ? `Archivado · ${formatDate(patient.fecha_consentimiento)}`
-                    : "Archivado"
-                  : "No registrado"
-              }
+            <Field label="Edad" value={`${age} años`} />
+            <Field
+              icon={Phone}
+              label="Teléfono"
+              value={formatPhone(patient.telefono)}
             />
-            <InfoRow icon={Calendar} label="Última visita" value={lastVisit} />
-            <InfoRow
-              icon={FileText}
+            <Field icon={Mail} label="Correo" value={patient.correo} />
+          </div>
+        </Section>
+
+        <Section title="Clínico">
+          <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+            <Field label="Consentimiento" value={consent} />
+            <Field
               label="Antecedentes"
               value={patient.antecedentes_clinicos}
             />
-            <InfoRow
-              icon={AlertCircle}
-              label="Alergias"
-              value={patient.alergias}
-            />
-          </InfoGrid>
-        </InfoSection>
-
-        <InfoSection title="Resumen clínico">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
-            <KpiCard icon={Calendar} label="Visitas clínicas">
-              <span className="text-lg tabular-nums">{visitCount}</span>
-            </KpiCard>
-            <KpiCard icon={Activity} label="Máximo grado RD">
-              {hasRdData ? (
-                <RDLevelBadge level={maxRdLevel as RDLevel} size="sm" />
-              ) : (
-                <span className="text-muted-foreground">Sin registro IA</span>
-              )}
-            </KpiCard>
+            <Field label="Alergias" value={patient.alergias} />
           </div>
-        </InfoSection>
+        </Section>
       </CardContent>
     </Card>
   );

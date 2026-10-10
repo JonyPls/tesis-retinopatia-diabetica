@@ -1,5 +1,4 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,28 +67,22 @@ export default function Patients() {
         />
       }
     >
-      <Card className="shadow-card">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
-            <div className="flex items-center gap-3 flex-1 min-w-[250px]">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por documento o nombres"
-                  value={hook.query}
-                  onChange={(e) => {
-                    hook.setQuery(e.target.value);
-                    hook.setCurrentPage(1);
-                  }}
-                  className="pl-9"
-                />
-              </div>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {hook.totalItems} resultado{hook.totalItems !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Mostrar:</span>
+      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-card">
+        <div className="flex flex-wrap items-center gap-3 p-4">
+          <div className="relative min-w-[220px] flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por documento o nombres"
+              value={hook.query}
+              onChange={(e) => {
+                hook.setQuery(e.target.value);
+                hook.setCurrentPage(1);
+              }}
+              className="pl-9"
+            />
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Mostrar:</span>
               <Select
                 value={hook.itemsPerPage.toString()}
                 onValueChange={(val) => {
@@ -134,6 +127,7 @@ export default function Patients() {
             </div>
           </div>
 
+        <div className="border-t border-border p-4">
           {hook.viewMode === "table" ? (
             <PatientTable
               patients={hook.currentData}
@@ -147,31 +141,31 @@ export default function Patients() {
               calculateAge={calculateAge}
             />
           )}
+        </div>
 
-          {hook.totalItems > 0 && (
-            <div className="flex items-center justify-between pt-5">
+        {hook.totalItems > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
               <div className="text-sm text-muted-foreground">
                 Mostrando{" "}
-                <span className="font-medium text-slate-900">
+                <span className="font-medium text-foreground">
                   {hook.startIndex + 1}
                 </span>{" "}
                 a{" "}
-                <span className="font-medium text-slate-900">
+                <span className="font-medium text-foreground">
                   {Math.min(hook.endIndex, hook.totalItems)}
                 </span>{" "}
                 de{" "}
-                <span className="font-medium text-slate-900">
+                <span className="font-medium text-foreground">
                   {hook.totalItems}
                 </span>{" "}
                 pacientes
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => hook.setCurrentPage(Math.max(1, hook.currentPage - 1))}
                   disabled={hook.currentPage === 1}
-                  className="hover:text-teal-600 hover:border-teal-600 transition-colors"
                 >
                   Anterior
                 </Button>
@@ -180,15 +174,13 @@ export default function Patients() {
                   size="sm"
                   onClick={() => hook.setCurrentPage(Math.min(hook.totalPages, hook.currentPage + 1))}
                   disabled={hook.currentPage === hook.totalPages}
-                  className="hover:text-teal-600 hover:border-teal-600 transition-colors"
                 >
                   Siguiente
                 </Button>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </AppLayout>
   );
 }

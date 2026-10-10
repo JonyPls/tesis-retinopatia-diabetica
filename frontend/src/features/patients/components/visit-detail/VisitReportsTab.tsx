@@ -26,7 +26,7 @@ function ReportCard({
   const typePresentation = getReportTypePresentation(report.tipo_informe_id);
 
   return (
-    <Card className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
+    <Card className="rounded-lg border border-border bg-card shadow-card">
       <CardContent className="p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-start gap-4">
@@ -40,10 +40,10 @@ function ReportCard({
               {typePresentation.icon}
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-base font-medium tracking-tight text-slate-900">
+              <h3 className="truncate text-base font-medium tracking-tight text-foreground">
                 {report.tipo_informe_nombre}
               </h3>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Registrado el {shortDate(report.fecha_creado)}
               </p>
             </div>
@@ -51,7 +51,7 @@ function ReportCard({
 
           <Badge
             variant="outline"
-            className="w-fit rounded-full border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success shadow-none"
+            className="w-fit rounded-md border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success"
           >
             {report.estado === "ACTIVO" ? "Activo" : report.estado}
           </Badge>
@@ -59,19 +59,18 @@ function ReportCard({
 
         {report.conclusion && (
           <div className="mt-5 rounded-lg border border-warning/30 bg-warning/5 p-4">
-            <p className="text-[11px] font-medium uppercase tracking-widest text-amber-600">Conclusión</p>
-            <p className="mt-1.5 line-clamp-4 text-sm leading-relaxed text-slate-700">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Conclusión</p>
+            <p className="mt-1.5 line-clamp-4 text-sm leading-relaxed text-foreground">
               {report.conclusion}
             </p>
           </div>
         )}
 
-        <div className="mt-5 flex justify-end border-t border-slate-100 pt-4">
+        <div className="mt-5 flex justify-end border-t border-border pt-4">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="border-slate-200 bg-white text-slate-600 shadow-none hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
             onClick={() => onView(report.id)}
           >
             <Eye className="mr-1.5 h-3.5 w-3.5 text-primary" />
@@ -97,12 +96,12 @@ export function VisitReportsTab({
 
   if (reports.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 bg-white p-12 text-center">
+      <div className="rounded-lg border border-dashed border-border bg-card p-12 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-info/10">
           <FileText className="h-5 w-5 text-info" />
         </div>
-        <p className="mt-4 text-sm font-medium text-slate-900">Sin informes clínicos</p>
-        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-slate-500">
+        <p className="mt-4 text-sm font-medium text-foreground">Sin informes clínicos</p>
+        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">
           No se registraron informes clínicos en esta visita.
         </p>
       </div>

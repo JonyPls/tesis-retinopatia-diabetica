@@ -113,7 +113,7 @@ export function CreatePatientDialog({
         }}
       >
         <DialogTrigger asChild>
-          <Button className="bg-gradient-primary hover:opacity-90">
+          <Button className="bg-primary hover:bg-primary/90">
             <UserPlus className="h-4 w-4" />
             {triggerLabel}
           </Button>
@@ -181,7 +181,7 @@ export function CreatePatientDialog({
                         ? 12
                         : 9
                   }
-                  className="border-slate-300 dark:border-slate-600"
+                  className="border-input"
                 />
               </div>
 
@@ -212,7 +212,7 @@ export function CreatePatientDialog({
                   required
                   maxLength={80}
                   autoComplete="given-name"
-                  className="border-slate-300 dark:border-slate-600"
+                  className="border-input"
                 />
               </div>
               <div className="space-y-2">
@@ -224,7 +224,7 @@ export function CreatePatientDialog({
                   required
                   maxLength={100}
                   autoComplete="family-name"
-                  className="border-slate-300 dark:border-slate-600"
+                  className="border-input"
                 />
               </div>
             </div>
@@ -251,7 +251,7 @@ export function CreatePatientDialog({
                   onChange={(e) => onFieldChange("fecha_nacimiento", e.target.value)}
                   required
                   max={today}
-                  className="border-slate-300 dark:border-slate-600"
+                  className="border-input"
                 />
               </div>
               <div className="space-y-2">
@@ -265,7 +265,7 @@ export function CreatePatientDialog({
                   maxLength={11}
                   autoComplete="tel-national"
                   placeholder="999 999 999"
-                  className="border-slate-300 dark:border-slate-600"
+                  className="border-input"
                 />
               </div>
             </div>
@@ -281,7 +281,7 @@ export function CreatePatientDialog({
                   maxLength={150}
                   autoComplete="email"
                   placeholder="correo@ejemplo.com"
-                  className="border-slate-300 dark:border-slate-600"
+                  className="border-input"
                 />
               </div>
             </div>
@@ -305,7 +305,7 @@ export function CreatePatientDialog({
                   }
                   maxLength={2000}
                   placeholder="Diabetes, hipertensión, cirugías previas..."
-                  className="min-h-[92px] resize-none border-slate-300 dark:border-slate-600"
+                  className="min-h-[92px] resize-none border-input"
                 />
               </div>
               <div className="space-y-2">
@@ -316,7 +316,7 @@ export function CreatePatientDialog({
                   onChange={(e) => onFieldChange("alergias", e.target.value)}
                   maxLength={1000}
                   placeholder="Medicamentos, anestésicos u otras alergias..."
-                  className="min-h-[92px] resize-none border-slate-300 dark:border-slate-600"
+                  className="min-h-[92px] resize-none border-input"
                 />
               </div>
             </div>
@@ -381,7 +381,7 @@ export function CreatePatientDialog({
           </Button>
           <Button
             type="submit"
-            className="bg-gradient-primary hover:opacity-90"
+            className="bg-primary hover:bg-primary/90"
             disabled={isSubmitting}
             form="patient-form"
           >

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -88,17 +88,10 @@ export default function Diagnosis() {
   });
 
   const [modalClosing, setModalClosing] = useState(false);
-  const [stepperLayout, setStepperLayout] = useState<"side" | "top">("side");
   const currentStep = STEP_COPY[step as keyof typeof STEP_COPY] ?? STEP_COPY[1];
   const StepIcon = currentStep.icon;
   const selectedPatient = diagnosisHook.selectedPatient;
   const processedEyes = Object.values(diagnosisHook.results).filter(Boolean).length;
-
-  useEffect(() => {
-    if (step === 3) {
-      setStepperLayout("top");
-    }
-  }, [step]);
 
   const handleDismissError = () => {
     setModalClosing(true);
@@ -147,42 +140,26 @@ export default function Diagnosis() {
     >
       <div
         className={
-          stepperLayout === "side"
-            ? "grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]"
-            : "grid gap-6"
+          step === 3
+            ? "grid gap-6"
+            : "grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]"
         }
       >
-        {stepperLayout === "side" ? (
+        {step === 3 ? (
+          <DiagnosisStepper step={step} variant="compact" />
+        ) : (
           <aside className="xl:sticky xl:top-6 xl:self-start">
             <DiagnosisStepper
               step={step}
-              layout={stepperLayout}
               selectedPatient={selectedPatient}
               eyes={diagnosisHook.eyes}
               processedEyes={processedEyes}
-              onToggleLayout={() =>
-                setStepperLayout((current) =>
-                  current === "side" ? "top" : "side",
-                )
-              }
             />
           </aside>
-        ) : (
-          <DiagnosisStepper
-            step={step}
-            layout={stepperLayout}
-            selectedPatient={selectedPatient}
-            eyes={diagnosisHook.eyes}
-            processedEyes={processedEyes}
-            onToggleLayout={() =>
-              setStepperLayout((current) =>
-                current === "side" ? "top" : "side",
-              )
-            }
-          />
         )}
 
         <Card className="overflow-hidden shadow-card">
+          {step !== 3 && (
           <CardHeader className="border-b border-border bg-muted/35 px-5 py-3.5 lg:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 items-start gap-3">
@@ -200,6 +177,7 @@ export default function Diagnosis() {
               </div>
             </div>
           </CardHeader>
+          )}
 
           <CardContent className="p-5 lg:p-6">
             {step === 1 && (
@@ -306,7 +284,7 @@ export default function Diagnosis() {
                 <AlertDialogTrigger asChild>
                   <Button
                     disabled={isValidating}
-                    className="bg-gradient-primary hover:opacity-90"
+                    className="bg-primary hover:bg-primary/90"
                   >
                     {isValidating ? (
                       <>

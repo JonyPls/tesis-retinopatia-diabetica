@@ -96,10 +96,10 @@ function SectionCard({
   }[tone];
 
   return (
-    <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-border bg-card p-5 shadow-card">
       <div className="mb-4 flex items-center gap-3">
         <span className={cn("h-6 w-1.5 rounded-full", toneClass)} aria-hidden="true" />
-        <h4 className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {title}
         </h4>
       </div>
@@ -115,17 +115,17 @@ function DetailRows({
 }) {
   const entries = Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== "");
   if (entries.length === 0) {
-    return <p className="text-sm leading-relaxed text-slate-500">Sin datos registrados.</p>;
+    return <p className="text-sm leading-relaxed text-muted-foreground">Sin datos registrados.</p>;
   }
 
   return (
-    <div className="divide-y divide-slate-100">
+    <div className="divide-y divide-border">
       {entries.map(([key, value]) => (
         <div key={key} className="grid gap-2 py-3 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] sm:items-start">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {FIELD_LABELS[key] ?? key.replace(/_/g, " ")}
           </p>
-          <p className="text-sm font-semibold leading-relaxed text-slate-800 sm:text-right">{String(value)}</p>
+          <p className="text-sm font-semibold leading-relaxed text-foreground sm:text-right">{String(value)}</p>
         </div>
       ))}
     </div>
@@ -137,7 +137,7 @@ function ConclusionBlock({ text }: { text: string | null }) {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   return (
     <SectionCard title="Conclusión" tone="warning">
-      <div className="mt-2 space-y-1 text-sm leading-relaxed text-slate-700">
+      <div className="mt-2 space-y-1 text-sm leading-relaxed text-foreground">
         {lines.map((line) => (
           <p key={line}>{line}</p>
         ))}
@@ -200,13 +200,13 @@ function PaquimetriaDetail({ data }: { data: Record<string, any> }) {
 function GenericReportDetail({ data }: { data: Record<string, any> }) {
   const entries = Object.entries(data).filter(([key]) => key !== "conclusion");
   if (entries.length === 0) {
-    return <p className="text-sm leading-relaxed text-slate-500">Sin datos estructurados registrados.</p>;
+    return <p className="text-sm leading-relaxed text-muted-foreground">Sin datos estructurados registrados.</p>;
   }
   return (
     <div className="space-y-4">
       {entries.map(([key, value]) => (
         <SectionCard key={key} title={key.replace(/_/g, " ")} tone="primary">
-          <div className="text-sm text-slate-700">
+          <div className="text-sm text-foreground">
             {typeof value === "object" ? (
               <DetailRows data={value as Record<string, any>} />
             ) : (
@@ -277,16 +277,16 @@ export function PatientReportDetailModal({
           title={report?.tipo_informe_nombre ?? "Informe clínico"}
           subtitle={patientDocument ? `${resolvedPatientName} · ${patientDocument}` : resolvedPatientName}
         />
-        <AppModalBody className="space-y-5 bg-slate-100/80">
+        <AppModalBody className="space-y-5 bg-muted/40">
           {isLoading && (
-            <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               Cargando informe...
             </div>
           )}
 
           {!isLoading && error && (
-            <div className="rounded-lg border border-red-200/60 bg-red-50/50 p-4 text-sm leading-relaxed text-red-600">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm leading-relaxed text-destructive">
               {error}
             </div>
           )}
@@ -294,24 +294,24 @@ export function PatientReportDetailModal({
           {!isLoading && report && (
             <>
               <SectionCard title="Responsable y fecha del informe" tone="primary">
-                <div className="grid gap-4 text-sm text-slate-700 sm:grid-cols-[minmax(0,0.9fr)_auto_minmax(0,1.1fr)] sm:items-center">
+                <div className="grid gap-4 text-sm text-foreground sm:grid-cols-[minmax(0,0.9fr)_auto_minmax(0,1.1fr)] sm:items-center">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                       <Calendar className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-xs text-slate-500">Fecha del informe</p>
-                      <p className="truncate font-semibold text-slate-800">{formatDate(report.fecha_creado)}</p>
+                      <p className="text-xs text-muted-foreground">Fecha del informe</p>
+                      <p className="truncate font-semibold text-foreground">{formatDate(report.fecha_creado)}</p>
                     </div>
                   </div>
-                  <span className="hidden h-8 w-px bg-slate-200 sm:block" aria-hidden="true" />
+                  <span className="hidden h-8 w-px bg-border sm:block" aria-hidden="true" />
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary/10 text-secondary">
                       <Stethoscope className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-xs text-slate-500">Profesional que atendió</p>
-                      <p className="truncate font-semibold text-slate-800">
+                      <p className="text-xs text-muted-foreground">Profesional que atendió</p>
+                      <p className="truncate font-semibold text-foreground">
                         {professionalName ?? "No registrado"}
                       </p>
                     </div>
@@ -321,8 +321,8 @@ export function PatientReportDetailModal({
 
               <section className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-medium text-slate-900">Datos del examen</h3>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <h3 className="text-sm font-medium text-foreground">Datos del examen</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Información estructurada registrada en el informe.
                   </p>
                 </div>
