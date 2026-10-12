@@ -122,8 +122,8 @@ export default function PatientVisitDetail() {
     );
   }
 
-  if (hook.requestError) {
-    return <AppLayout title="Detalle de visita"><PatientLookupError error={hook.requestError} /></AppLayout>;
+  if (hook.requestError || hook.comparisonRequestError) {
+    return <AppLayout title="Detalle de visita"><PatientLookupError error={hook.requestError ?? hook.comparisonRequestError!} /></AppLayout>;
   }
 
   if (hook.error === "patient_not_found") {

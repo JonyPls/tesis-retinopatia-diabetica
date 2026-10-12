@@ -149,6 +149,52 @@ describe("B1 listado y detalle", () => {
     authorized.unmount();
   });
 
+  it("el GET independiente distingue 401/403 de un 404 sin diagnóstico", async () => {
+    const visits = [{ visita_id: 13, tiene_diagnostico_ia: 1,
+      diagnostico_ia: { detalles: [] }, informes: [] }];
+    for (const status of [401, 403, 404]) {
+      get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+        .mockResolvedValueOnce({ data: { success: true, data: visits } })
+        .mockRejectedValueOnce({ response: { status } });
+      const { result, unmount } = renderHook(() => usePatientVisitDetail("7", "13"), { wrapper });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(get).toHaveBeenLastCalledWith("/diagnosticar/visita/13/detalles");
+      if (status === 404) {
+        expect(result.current.error).toBeNull();
+        expect(result.current.requestError).toBeNull();
+        expect(result.current.visit?.visita_id).toBe(13);
+        expect(result.current.diagnosisDetails).toEqual([]);
+      } else {
+        expect(result.current.error).toBe("load_error");
+        expect(result.current.requestError?.status).toBe(status);
+        expect(result.current.diagnosisDetails).toEqual([]);
+      }
+      unmount();
+    }
+  });
+
+  it("el detalle independiente autorizado conserva ambos ojos y un 403 de comparación no se oculta", async () => {
+    const visits = [13, 14].map((visita_id) => ({ visita_id, tiene_diagnostico_ia: 1,
+      diagnostico_ia: { detalles: [] }, informes: [] }));
+    const eyes = [{ detalle_id: 1, ojo: "OD", resultado_ia: 2, diagnostico_final: 3,
+      estado_validacion: "CORREGIDO", imagen_url: "synthetic-only.jpg" },
+    { detalle_id: 2, ojo: "OI", resultado_ia: 1, diagnostico_final: 1,
+      estado_validacion: "APROBADO", imagen_url: "synthetic-left.jpg" }];
+    get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+      .mockResolvedValueOnce({ data: { success: true, data: visits } })
+      .mockResolvedValueOnce({ data: { success: true, data: { ojos: eyes } } })
+      .mockRejectedValueOnce({ response: { status: 403 } });
+    const { result, unmount } = renderHook(() => usePatientVisitDetail("7", "13", "14"), { wrapper });
+    await waitFor(() => expect(result.current.comparisonRequestError?.status).toBe(403));
+    expect(result.current.diagnosisDetails).toEqual(eyes);
+    expect(result.current.comparisonDiagnosisDetails).toEqual([]);
+    expect(get.mock.calls.map(([url]) => url)).toEqual([
+      "/pacientes/7", "/pacientes/7/visitas", "/diagnosticar/visita/13/detalles",
+      "/diagnosticar/visita/14/detalles",
+    ]);
+    unmount();
+  });
+
   it("el perfil asistencial no carga un historial compuesto fuera de su alcance", async () => {
     get.mockResolvedValue({ data: { success: true, scope: "assistance", data: patient } });
     const { result } = renderHook(() => usePatientProfile("7"), { wrapper });

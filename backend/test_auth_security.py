@@ -39,6 +39,7 @@ for service_name in (
 # Importar rutas HTTP reales con sus servicios sustituidos antes de cargar
 # cualquier dependencia de IA, PDF o directorio clínico.
 fake_diagnosis_service = types.ModuleType("services.diagnosis_service")
+fake_diagnosis_service.DIAGNOSIS_NOT_FOUND_MESSAGE = "Diagnóstico no encontrado."
 for name in ("procesar_diagnostico", "confirmar_validacion_detalle",
              "consultar_detalles_existentes", "consultar_detalles_por_visita"):
     setattr(fake_diagnosis_service, name, Mock())
@@ -510,6 +511,8 @@ class AuthSecurityTests(unittest.TestCase):
         paths = (
             "/api/_isolated_read", "/api/_isolated_pdf",
             "/api/pacientes", "/api/pacientes/101/visitas",
+            "/api/diagnosticar/visita/301/detalles",
+            "/api/diagnosticar/diagnostico/401/detalles",
             "/uploads/retinas/synthetic-only.jpg",
         )
         for path in paths:
@@ -595,6 +598,72 @@ class AuthSecurityTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 401)
                 self.assertNotIn("synthetic-only.jpg", response.get_data(as_text=True))
             registered.assert_not_called()
+
+    def test_b1_real_diagnosis_read_requires_both_clinical_grants(self):
+        payload = {"success": True, "data": {"visita_id": 301, "diagnostico_id": 301,
+                   "ojos": [{"ojo": "OD", "resultado_ia": 2, "diagnostico_final": 3,
+                             "imagen_url": "synthetic-only.jpg"}]}}
+        paths = (("/api/diagnosticar/visita/301/detalles", "consultar_detalles_por_visita"),
+                 ("/api/diagnosticar/diagnostico/401/detalles", "consultar_detalles_existentes"))
+        token = self.token(roles=["Administrador del sistema"])
+        headers = self.headers(token)
+        for path, service_name in paths:
+            with self.subTest(path=path), patch.object(diagnosis_routes, service_name,
+                                                        return_value=payload) as service:
+                roles = self.set_role_grants({"OFTALMOLOGO": [
+                    "diagnostico_retinopatia.ver", "imagenes.ver",
+                ]})
+                allowed = self.client.get(path, headers=headers)
+                self.assertEqual(allowed.status_code, 200)
+                self.assertEqual(allowed.json, payload)
+                service.assert_called_once()
+                for grants in (
+                    {"OFTALMOLOGO": ["imagenes.ver"]},
+                    {"OFTALMOLOGO": ["diagnostico_retinopatia.ver"]},
+                    {"ADMINISTRADOR_SISTEMA": ["diagnostico_retinopatia.ver", "imagenes.ver"]},
+                    {"ASISTENTE_ADMINISTRATIVO": ["diagnostico_retinopatia.ver", "imagenes.ver"]},
+                    {"ENFERMERO": ["diagnostico_retinopatia.ver", "imagenes.ver"]},
+                    {"ADMINISTRADOR_SISTEMA": ["diagnostico_retinopatia.ver", "imagenes.ver"],
+                     "OFTALMOLOGO": []},
+                    {"ADMINISTRADOR_SISTEMA": ["imagenes.ver"],
+                     "OFTALMOLOGO": ["diagnostico_retinopatia.ver"]},
+                ):
+                    self.set_role_grants(grants)
+                    denied = self.client.get(path, headers=headers)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertNotIn("data", denied.json)
+                    service.assert_called_once()
+                roles = self.set_role_grants({"OFTALMOLOGO": [
+                    "diagnostico_retinopatia.ver", "imagenes.ver",
+                ]})
+                roles["OFTALMOLOGO"].permisos_rel[1].permiso.estado = "INACTIVO"
+                self.assertEqual(self.client.get(path, headers=headers).status_code, 403)
+                roles["OFTALMOLOGO"].permisos_rel[1].permiso.estado = "ACTIVO"
+                self.assertEqual(self.client.get(path, headers=headers).status_code, 200)
+                roles["OFTALMOLOGO"].estado = "INACTIVO"
+                self.assertEqual(self.client.get(path, headers=headers).status_code, 403)
+                service.assert_called_with(301 if "visita/" in path else 401)
+
+    def test_b1_real_diagnosis_read_auth_errors_not_found_and_service_failure(self):
+        self.set_role_grants({"OFTALMOLOGO": [
+            "diagnostico_retinopatia.ver", "imagenes.ver",
+        ]})
+        path = "/api/diagnosticar/visita/301/detalles"
+        with patch.object(diagnosis_routes, "consultar_detalles_por_visita") as service:
+            for token in (None, self.token(key="invalid-diagnosis-only-signing-key"),
+                          self.token(expires=False)):
+                denied = self.client.get(path, headers=self.headers(token) if token else None)
+                self.assertEqual(denied.status_code, 401)
+            self.active = False
+            self.assertEqual(self.client.get(path, headers=self.headers(self.token())).status_code, 401)
+            self.active = True
+            service.assert_not_called()
+            service.return_value = {"success": False, "message": "Diagnóstico no encontrado."}
+            missing = self.client.get(path, headers=self.headers(self.token()))
+            self.assertEqual(missing.status_code, 404)
+            self.assertEqual(missing.json["message"], "Diagnóstico no encontrado.")
+            service.return_value = {"success": False, "message": "No se pudo procesar la solicitud."}
+            self.assertEqual(self.client.get(path, headers=self.headers(self.token())).status_code, 500)
 
     def test_b1_real_image_route_role_and_resource_protection(self):
         approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")

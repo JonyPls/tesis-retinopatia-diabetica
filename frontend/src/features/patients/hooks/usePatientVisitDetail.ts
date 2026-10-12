@@ -26,6 +26,7 @@ export function usePatientVisitDetail(
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<VisitDetailError | null>(null);
   const [requestError, setRequestError] = useState<PatientRequestError | null>(null);
+  const [comparisonRequestError, setComparisonRequestError] = useState<PatientRequestError | null>(null);
 
   const pacienteId = Number(pacienteIdParam);
   const visitaId = Number(visitaIdParam);
@@ -49,6 +50,8 @@ export function usePatientVisitDetail(
       setRequestError(null);
       setPatient(null);
       setVisits([]);
+      setDiagnosisDetails([]);
+      setComparisonDiagnosisDetails([]);
 
       try {
         const patientResponse = await api.get(`/pacientes/${pacienteId}`);
@@ -114,7 +117,14 @@ export function usePatientVisitDetail(
           try {
             resolvedDiagnosisDetails = await obtenerDetallesVisita(visitaId);
           } catch (detailsError) {
-            console.error("Error obteniendo detalles del diagnóstico", detailsError);
+            const failure = patientRequestError(detailsError);
+            if (isMounted && failure.status !== 404) {
+              setError("load_error");
+              setRequestError(failure.status === 403
+                ? { ...failure, message: "No tiene autorización para consultar el diagnóstico." }
+                : failure);
+              return;
+            }
           }
         }
 
@@ -173,6 +183,7 @@ export function usePatientVisitDetail(
 
     const fetchComparisonDetails = async () => {
       setComparisonDiagnosisDetails([]);
+      setComparisonRequestError(null);
 
       if (!comparisonVisit || comparisonError) return;
 
@@ -187,8 +198,15 @@ export function usePatientVisitDetail(
         const details = await obtenerDetallesVisita(Number(comparisonVisit.visita_id));
         if (isMounted) setComparisonDiagnosisDetails(details);
       } catch (detailsError) {
-        console.error("Error obteniendo detalles de comparación", detailsError);
-        if (isMounted) setComparisonDiagnosisDetails([]);
+        if (isMounted) {
+          const failure = patientRequestError(detailsError);
+          if (failure.status !== 404) {
+            setComparisonRequestError(failure.status === 403
+              ? { ...failure, message: "No tiene autorización para consultar el diagnóstico." }
+              : failure);
+          }
+          setComparisonDiagnosisDetails([]);
+        }
       } finally {
         if (isMounted) setIsComparisonLoading(false);
       }
@@ -208,6 +226,7 @@ export function usePatientVisitDetail(
   return {
     compareVisitId,
     comparisonDiagnosisDetails,
+    comparisonRequestError,
     comparisonError,
     comparisonVisit,
     error,

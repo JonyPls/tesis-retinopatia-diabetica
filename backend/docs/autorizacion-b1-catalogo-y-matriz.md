@@ -89,8 +89,8 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/pacientes/recientes` | Recientes / pacientes | `pacientes.ver` | O, E, S | Activa B1; S recibe altas recientes, no visitas recientes ni fecha de visita. |
 | GET `/api/documentos` | Tipos de documento / catálogo | `pacientes.ver` | O, E, S | Catálogo para registro de pacientes; pendiente. |
 | POST `/api/diagnosticar` | Crear IA / diagnósticos | `diagnostico_retinopatia.crear` | O | No equivale a validación médica; pendiente. |
-| GET `/api/diagnosticar/visita/<int:visita_id>/detalles` | Leer IA / diagnósticos | `diagnostico_retinopatia.ver` [nuevo] | O | Datos por ojo; pendiente. |
-| GET `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` | Leer IA / diagnósticos | `diagnostico_retinopatia.ver` [nuevo] | O | Datos por ojo; pendiente. |
+| GET `/api/diagnosticar/visita/<int:visita_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: referencias de retinas y Grad-CAM; 404 si no hay diagnóstico, 200 con `ojos: []` si existe sin detalles. |
+| GET `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: conserva fallback histórico al ID de visita cuando no existe ID de diagnóstico; misma política para ambos. |
 | GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` [nuevo] + `imagenes.ver` [nuevo] | O | Incluye identidad, predicción, decisión e imágenes; pendiente de decisión contractual. |
 | GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` [nuevo] | O; E si autorizado | Consulta, no ejecuta la inferencia; pendiente. |
 | GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `imagenes.ver` [nuevo] | O; E si autorizado | Solo archivo correspondiente al paciente; pendiente. |
@@ -342,6 +342,45 @@ de autenticación. `A1-QUERY-TOKEN` se ejecuta como prueba ordinaria. El riesgo
 de **autorización legacy** (permisos de diagnósticos, PDF e informes) sigue
 pendiente y es independiente del transporte del JWT: no se amplió B1 ni se
 cambió esa política. **Ocho** rutas B1 continúan activas.
+
+## Lecturas independientes de detalles IA (Prompt 25)
+
+Inventario de `backend/routes/diagnosis_routes.py`: POST `/api/diagnosticar`
+crea IA (pendiente); los dos GET `/api/diagnosticar/visita/<int:visita_id>/detalles`
+y `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` devuelven
+predicción y validación por ojo; GET `/api/visitas/<int:visita_id>/reporte-diagnostico`
+devuelve PDF compuesto (pendiente); los dos GET `/api/diagnosticar/retinografo/*`
+seleccionan/descargan imágenes exportadas (pendientes); PUT
+`/api/diagnosticar/detalle/<int:detalle_id>/validar` es validación médica
+(pendiente). GET `/api/documentos` solo lista tipos documentales, no
+diagnósticos. GET `/api/diagnosticos/paciente/<int:id>` es historial B1 previo:
+**no** se modificó.
+
+Se activó `diagnosis.details_read` **solo en los dos GET de detalles**. Exige
+JWT Bearer y cuenta activa, rol servidor `OFTALMOLOGO` vigente, y **ambos**
+grants vigentes `diagnostico_retinopatia.ver` + `imagenes.ver` procedentes del
+rol oftalmológico. Sin `imagenes.ver` los nombres de archivos originales y
+Grad-CAM también son información protegida. No se exige `pacientes.ver`,
+`visitas.ver` ni `informes.ver`: la respuesta no incluye identidad de paciente,
+contenido de visita ni informes; `visita_id` es solo identificador. No se
+combinan grants de un rol administrativo con los del médico ni se exige
+propiedad individual del paciente.
+
+El contrato de éxito se conserva: `data.visita_id`, `data.diagnostico_id` y
+`data.ojos` (ID de detalle, OD/OI, predicción y probabilidad, grado final,
+estado y comentarios de validación, nombres de archivo y Grad-CAM). En el
+endpoint por visita, `diagnostico_id` **sigue siendo el ID de visita** por
+compatibilidad; en el de diagnóstico, el ID solicitado tiene precedencia y,
+si no existe, se prueba como ID de visita (fallback histórico ambiguo,
+conservado pero protegido igual). No se añade identidad del validador:
+`validado_por` no forma parte de este contrato actualmente. Ausencia de
+diagnóstico: 404 genérico sin campos clínicos; diagnóstico existente sin ojos:
+200 con `ojos: []`; fallo interno: 500 genérico. La lectura usa la misma
+consulta agrupada de detalles para uno o dos ojos, sin N+1. La vista de visita
+ahora muestra 401/403 del GET independiente como error de acceso, no como
+diagnóstico ausente, incluidos los detalles de comparación; 404 corresponde
+a la ausencia del diagnóstico y no al paciente. Mantiene Blob/Bearer para
+las imágenes. Hay **diez** rutas B1 tras esta activación.
 
 ## Dependencias antes de activar B1
 

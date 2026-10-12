@@ -15,6 +15,7 @@ import re
 import secrets
 import sys
 import tempfile
+from types import ModuleType
 import unittest
 from unittest.mock import patch
 
@@ -35,10 +36,30 @@ with patch("dotenv.load_dotenv", return_value=False):
                                           TipoDocumento, Usuario, UsuarioRol)
     from src.models.patient_entities import Paciente, VisitaClinica
     from src.repositories.patient_repository import PatientRepository
+    from src.repositories.diagnosis_repository import DiagnosisRepository
     from src.models import diagnosis_entities, informe_entities  # Registrar metadatos ORM.
     from src.repositories.auth_repository import AuthRepository
     from utils.security import clinical_access_required, token_required
     from utils.strict_authorization import evaluate_operation, strict_authorization_required
+
+    # Importar rutas y servicio de LECTURA reales sin cargar CLIP/ResNet50.
+    # La generación PDF no participa en esta prueba de diagnóstico.
+    fake_validator = ModuleType("dl_model.validator")
+    for name in ("validar_formato_y_dimensiones", "validar_region_circular",
+                 "validar_contenido_semantico"):
+        setattr(fake_validator, name, lambda *_: None)
+    fake_inference = ModuleType("dl_model.inference")
+    fake_inference.predecir_imagen_bytes = lambda *_: None
+    fake_pdf = ModuleType("services.report_service")
+    fake_pdf.ReportNotFoundError = type("ReportNotFoundError", (Exception,), {})
+    fake_pdf.ReportTemplateError = type("ReportTemplateError", (Exception,), {})
+    fake_pdf.generar_reporte_diagnostico_pdf = lambda *_: None
+    with patch.dict(sys.modules, {
+        "dl_model.validator": fake_validator,
+        "dl_model.inference": fake_inference,
+        "services.report_service": fake_pdf,
+    }):
+        from routes import diagnosis_routes
 
 
 TEST_KEY = "b1-only-disposable-orm-integration-signing-key"
@@ -71,6 +92,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         cls.app.register_blueprint(auth_bp)
         cls.app.register_blueprint(patient_bp)
         cls.app.register_blueprint(files_routes.files_bp)
+        cls.app.register_blueprint(diagnosis_routes.diagnosis_bp)
         cls.image_directory = tempfile.TemporaryDirectory(
             prefix="b1-orm-images-", dir=r"C:\Users\ricar\AppData\Local\Temp\opencode")
         cls.addClassCleanup(cls.image_directory.cleanup)
@@ -188,6 +210,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         stamp = secrets.token_hex(5)
         for index, (profile, role_codes) in enumerate((
             ("ophthalmologist", ("OFTALMOLOGO",)),
+            ("colleague", ("OFTALMOLOGO",)),
             ("nurse", ("ENFERMERO",)),
             ("assistant", ("ASISTENTE_ADMINISTRATIVO",)),
             ("administrator", ("ADMINISTRADOR_SISTEMA",)),
@@ -235,7 +258,18 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             ojo_evaluado="Derecho", imagen_original_url="synthetic-only.jpg",
             imagen_gradcam_url="synthetic-gradcam.jpg", resultado_ia_id=2,
             resultado_final_id=3, probabilidad_ia=0.8,
+            resultado_completo={"diagnostico_texto": "RD Moderado",
+                                "probabilidades_detalle": {"grado_2": 80}},
+            estado_validacion="CORREGIDO",
             comentario_medico="Conclusion sintetica",
+        ))
+        diagnosis.detalles.append(diagnosis_entities.DiagnosticoDetalle(
+            ojo_evaluado="Izquierdo", imagen_original_url="synthetic-left.jpg",
+            imagen_gradcam_url="synthetic-left-gradcam.jpg", resultado_ia_id=1,
+            resultado_final_id=1, probabilidad_ia=0.65,
+            resultado_completo={"diagnostico_texto": "RD Leve",
+                                "probabilidades_detalle": {"grado_1": 65}},
+            estado_validacion="APROBADO",
         ))
         db.session.add(diagnosis)
         db.session.flush()
@@ -882,6 +916,96 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertEqual(result.status_code, 500)
         self.assertNotIn("synthetic-only.jpg", result.get_data(as_text=True))
         logged.assert_called_once_with("Error al obtener historial de diagnosticos")
+
+    def test_b1_real_diagnosis_details_contract_and_fixed_queries(self):
+        paths = (
+            f"/api/diagnosticar/visita/{self.visit_ids[0]}/detalles",
+            f"/api/diagnosticar/diagnostico/{self.diagnosis_ids[0]}/detalles",
+        )
+        for path in paths:
+            for profile in ("ophthalmologist", "colleague", "dual", "assistant_dual"):
+                with self.subTest(path=path, profile=profile):
+                    response, sql = self.call(path, token=self.token(profile), measure=True)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(set(response.json), {"success", "data"})
+                    self.assertEqual(set(response.json["data"]),
+                                     {"visita_id", "diagnostico_id", "ojos"})
+                    by_eye = {row["ojo"]: row for row in response.json["data"]["ojos"]}
+                    self.assertEqual(set(by_eye), {"OD", "OI"})
+                    self.assertEqual((by_eye["OD"]["resultado_ia"],
+                                      by_eye["OD"]["diagnostico_final"],
+                                      by_eye["OD"]["estado_validacion"]), (2, 3, "CORREGIDO"))
+                    self.assertEqual((by_eye["OI"]["resultado_ia"],
+                                      by_eye["OI"]["diagnostico_final"],
+                                      by_eye["OI"]["estado_validacion"]), (1, 1, "APROBADO"))
+                    self.assertEqual(by_eye["OD"]["imagen_url"], "synthetic-only.jpg")
+                    self.assertEqual(by_eye["OD"]["gradcam_url"], "synthetic-gradcam.jpg")
+                    self.assertEqual(by_eye["OD"]["probabilidades_detalle"], {"grado_2": 80})
+                    for forbidden in ("antecedentes_clinicos", "nro_documento", "motivo_consulta",
+                                      "informes", "validado_por", "token"):
+                        self.assertNotIn(forbidden, response.get_data(as_text=True))
+                    selects = [q for q in sql if q.lstrip().lower().startswith("select")]
+                    self.assertEqual(len(selects), 5)  # Tres de auth, diagnóstico y detalles agrupados.
+                    self.assertFalse(any("from pacientes" in q.lower() or
+                                         "from informes" in q.lower() for q in selects))
+
+        for path in (f"/api/diagnosticar/visita/{self.visit_ids[1]}/detalles",
+                     "/api/diagnosticar/diagnostico/2147483647/detalles"):
+            response, sql = self.call(path, token=self.token(), measure=True)
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.json, {"success": False,
+                                             "message": "Diagnóstico no encontrado."})
+            self.assertLessEqual(len([q for q in sql if q.lstrip().lower().startswith("select")]), 5)
+        print("ORM detalles IA: dos ojos=5 SELECT; sin diagnóstico=4-5; "
+              "sin N+1 ni datos de otros dominios.")
+
+    def test_b1_real_diagnosis_details_denials_and_grant_provenance(self):
+        paths = (
+            f"/api/diagnosticar/visita/{self.visit_ids[0]}/detalles",
+            f"/api/diagnosticar/diagnostico/{self.diagnosis_ids[0]}/detalles",
+        )
+        wrong = jwt.encode({"user_id": self.user_ids["ophthalmologist"],
+                            "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                           "invalid-diagnosis-only-signing-key", algorithm="HS256")
+        for path in paths:
+            for token in (None, wrong, self.token(expired=True), self.token(expires=False)):
+                denied, sql = self.call(path, token=token, measure=True)
+                self.assertEqual(denied.status_code, 401)
+                self.assertEqual(sql, [])
+            with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
+                self.assertEqual(self.call(path, token=self.token())[0].status_code, 401)
+            for profile in ("administrator", "assistant", "nurse"):
+                denied, sql = self.call(path, token=self.token(profile), measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+                self.assertNotIn("data", denied.json)
+            for permission in ("diagnostico_retinopatia.ver", "imagenes.ver"):
+                with self.temporary_grant("OFTALMOLOGO", permission, present=False):
+                    for profile in ("ophthalmologist", "dual", "assistant_dual"):
+                        denied, sql = self.call(path, token=self.token(profile), measure=True)
+                        self.assertEqual(denied.status_code, 403)
+                        self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+                self.assertEqual(self.call(path, token=self.token())[0].status_code, 200)
+            with self.temporary_grant("ADMINISTRADOR_SISTEMA", "imagenes.ver", present=True):
+                with self.temporary_grant("OFTALMOLOGO", "imagenes.ver", present=False):
+                    self.assertEqual(self.call(path, token=self.token("dual"))[0].status_code, 403)
+            with self.temporary_grant("ADMINISTRADOR_SISTEMA", "diagnostico_retinopatia.ver",
+                                      present=True):
+                with self.temporary_grant("OFTALMOLOGO", "diagnostico_retinopatia.ver",
+                                          present=False):
+                    self.assertEqual(self.call(path, token=self.token("dual"))[0].status_code, 403)
+
+    def test_b1_real_diagnosis_details_failure_is_500_without_clinical_log(self):
+        path = f"/api/diagnosticar/visita/{self.visit_ids[0]}/detalles"
+        with patch.object(DiagnosisRepository, "obtener_detalles_por_visita",
+                          side_effect=RuntimeError("synthetic-only.jpg")):
+            with patch.object(self.app.logger, "error") as logged:
+                result, _ = self.call(path, token=self.token())
+        self.assertEqual(result.status_code, 500)
+        self.assertEqual(result.json, {"success": False,
+                                       "message": "No se pudo procesar la solicitud."})
+        logged.assert_called_once_with("Error al consultar detalles de diagnostico")
+        self.assertNotIn("synthetic-only.jpg", result.get_data(as_text=True))
 
     def test_b1_real_retina_file_requires_bearer_and_registered_resource(self):
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg"):

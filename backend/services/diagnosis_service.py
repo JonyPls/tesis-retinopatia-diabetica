@@ -17,6 +17,7 @@ RD_LABELS = {
     3: "RD Severo",
     4: "RD Proliferativa",
 }
+DIAGNOSIS_NOT_FOUND_MESSAGE = "Diagnóstico no encontrado."
 
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads', 'retinas')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -118,6 +119,9 @@ def _consultar_detalles(visita_id: int = None, diagnostico_id: int = None) -> di
             detalles = DiagnosisRepository.obtener_detalles_por_diagnostico(diagnostico_id)
             response_id = diagnostico_id
 
+        if detalles is None:
+            return {"success": False, "message": DIAGNOSIS_NOT_FOUND_MESSAGE}
+
         ojos = []
         for d in detalles:
             ojo = "OD" if d['ojo_evaluado'] == 'Derecho' else "OI"
@@ -162,7 +166,7 @@ def _consultar_detalles(visita_id: int = None, diagnostico_id: int = None) -> di
             }
         }
     except Exception:
-        current_app.logger.exception("Error al consultar detalles de diagnostico")
+        current_app.logger.error("Error al consultar detalles de diagnostico")
         return {"success": False, "message": "No se pudo procesar la solicitud."}
     
 

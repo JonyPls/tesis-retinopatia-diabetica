@@ -6,6 +6,7 @@ from services.diagnosis_service import (
     confirmar_validacion_detalle,
     consultar_detalles_existentes,
     consultar_detalles_por_visita,
+    DIAGNOSIS_NOT_FOUND_MESSAGE,
 )
 from services.retinograph_import_service import (
     obtener_archivo_retinografo,
@@ -17,6 +18,7 @@ from services.report_service import (
     generar_reporte_diagnostico_pdf,
 )
 from utils.security import clinical_access_required, token_required
+from utils.strict_authorization import strict_authorization_required
 
 diagnosis_bp = Blueprint('diagnosis', __name__)
 
@@ -60,23 +62,21 @@ def diagnosticar_retina():
 
 
 @diagnosis_bp.route('/api/diagnosticar/visita/<int:visita_id>/detalles', methods=['GET'])
-@token_required
-@clinical_access_required('diagnosticos.ver')
+@strict_authorization_required('diagnosis.details_read')
 def obtener_detalles_por_visita(visita_id):
     resultado = consultar_detalles_por_visita(visita_id)
     if resultado.get("success"):
         return jsonify(resultado), 200
-    return jsonify(resultado), 404
+    return jsonify(resultado), 404 if resultado.get("message") == DIAGNOSIS_NOT_FOUND_MESSAGE else 500
 
 
 @diagnosis_bp.route('/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles', methods=['GET'])
-@token_required
-@clinical_access_required('diagnosticos.ver')
+@strict_authorization_required('diagnosis.details_read')
 def obtener_detalles(diagnostico_id):
     resultado = consultar_detalles_existentes(diagnostico_id)
     if resultado.get("success"):
         return jsonify(resultado), 200
-    return jsonify(resultado), 404
+    return jsonify(resultado), 404 if resultado.get("message") == DIAGNOSIS_NOT_FOUND_MESSAGE else 500
 
 
 @diagnosis_bp.route('/api/visitas/<int:visita_id>/reporte-diagnostico', methods=['GET'])

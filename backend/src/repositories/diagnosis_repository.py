@@ -77,19 +77,18 @@ class DiagnosisRepository:
     def obtener_detalles_por_visita(visita_id: int):
         diagnostico = Diagnostico.query.filter_by(visita_id=visita_id).first()
         if not diagnostico:
-            return []
+            return None
         return DiagnosisRepository._detalles_to_dict(diagnostico.detalles)
 
     @staticmethod
     def obtener_detalles_por_diagnostico(diagnostico_id: int):
         diagnostico = Diagnostico.query.get(diagnostico_id)
-        if diagnostico:
-            detalles = diagnostico.detalles
-        else:
-            detalles = DiagnosticoDetalle.query.join(Diagnostico).filter(
-                Diagnostico.visita_id == diagnostico_id
-            ).all()
-        return DiagnosisRepository._detalles_to_dict(detalles)
+        if not diagnostico:
+            # Alias histórico por ID de visita; el ID real del diagnóstico prevalece.
+            diagnostico = Diagnostico.query.filter_by(visita_id=diagnostico_id).first()
+        if not diagnostico:
+            return None
+        return DiagnosisRepository._detalles_to_dict(diagnostico.detalles)
 
     @staticmethod
     def _detalles_to_dict(detalles):
