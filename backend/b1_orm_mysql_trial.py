@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from io import BytesIO
 import hashlib
+import importlib.util
 import inspect as python_inspect
 import os
 from pathlib import Path
@@ -37,7 +38,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     from database import db
     from routes.auth_routes import auth_bp
     from routes.patient_routes import patient_bp
-    from routes import patient_routes, files_routes
+    from routes import patient_routes, files_routes, informe_routes
     from src.models.auth_entities import (Cargo, Permiso, Rol, RolPermiso,
                                           TipoDocumento, Usuario, UsuarioRol)
     from src.models.patient_entities import Paciente, VisitaClinica
@@ -108,6 +109,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         cls.app.register_blueprint(patient_bp)
         cls.app.register_blueprint(files_routes.files_bp)
         cls.app.register_blueprint(diagnosis_routes.diagnosis_bp)
+        cls.app.register_blueprint(informe_routes.informe_bp)
         cls.image_directory = tempfile.TemporaryDirectory(
             prefix="b1-orm-images-", dir=r"C:\Users\ricar\AppData\Local\Temp\opencode")
         cls.addClassCleanup(cls.image_directory.cleanup)
@@ -3011,6 +3013,158 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                                          "message": "No se pudo procesar la solicitud."})
         logged.assert_called_once_with("Error al registrar paciente")
         self.assertIsNone(Paciente.query.filter_by(nro_documento=payload["nro_documento"]).first())
+
+    def test_29a_real_report_reads_catalog_and_pdf(self):
+        # Segundo paciente, autor diferente: lectura institucional compartida.
+        colleague_visit = VisitaClinica(paciente_id=self.patient_ids[1],
+                                       usuario_id=self.user_ids['colleague'], estado='ACTIVA')
+        db.session.add(colleague_visit)
+        db.session.flush()
+        colleague_report = informe_entities.Informe(
+            visita_id=colleague_visit.id, tipo_informe_id=2,
+            usuario_id=self.user_ids['colleague'], estado='ACTIVO',
+            datos_estructurados={'nota': 'Sintetica'}, conclusion='Sintetica')
+        db.session.add(colleague_report)
+        db.session.commit()
+        colleague_visit_id, colleague_report_id = colleague_visit.id, colleague_report.id
+        db.session.remove()
+
+        def cleanup_colleague_report():
+            db.session.remove()
+            db.session.query(informe_entities.Informe).filter_by(id=colleague_report_id).delete()
+            db.session.query(VisitaClinica).filter_by(id=colleague_visit_id).delete()
+            db.session.commit()
+            db.session.remove()
+
+        self.addCleanup(cleanup_colleague_report)
+
+        reads = (f'/api/informes/{self.report_ids[0]}',
+                 f'/api/informes/{colleague_report_id}',
+                 f'/api/informes/paciente/{self.patient_ids[0]}',
+                 f'/api/informes/paciente/{self.patient_ids[1]}',
+                 f'/api/informes/visita/{self.visit_ids[0]}',
+                 f'/api/informes/visita/{colleague_visit_id}',
+                 f'/api/informes/diagnostico/{colleague_visit_id}')
+        token = self.token()
+        for path in reads:
+            result, _ = self.call(path, token=token)
+            self.assertEqual(result.status_code, 200, (path, result.json))
+            self.assertTrue(result.json['data'])
+        detail, _ = self.call(reads[1], token=token)
+        self.assertEqual(detail.json['data']['profesional']['id'], self.user_ids['colleague'])
+        self.assertEqual(detail.json['data']['paciente']['id'], self.patient_ids[1])
+        empty, _ = self.call(f'/api/informes/visita/{self.visit_ids[1]}', token=token)
+        self.assertEqual(empty.json, {'success': True, 'data': []})
+        for profile in ('dual', 'assistant_dual'):
+            for path in reads:
+                self.assertEqual(self.call(path, token=self.token(profile))[0].status_code, 200)
+        catalog = '/api/tipos-informe'
+        for profile in ('ophthalmologist', 'nurse', 'assistant'):
+            result, _ = self.call(catalog, token=self.token(profile))
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(len(result.json['data']), 6)
+            self.assertEqual(set(result.json['data'][0]),
+                             {'id', 'nombre', 'descripcion', 'codigo_formulario', 'schema_version_actual'})
+        self.assertEqual(self.call(catalog, token=self.token('administrator'))[0].status_code, 403)
+        for profile, role_code in (('nurse', 'ENFERMERO'),
+                                   ('assistant', 'ASISTENTE_ADMINISTRATIVO')):
+            with self.temporary_grant(role_code, 'informes.ver', present=False):
+                self.assertEqual(self.call(catalog, token=self.token(profile))[0].status_code, 403)
+
+        for path in (*reads, catalog):
+            for bearer in (None, self.token(expired=True), 'invalid'):
+                denied, sql = self.call(path, token=bearer, measure=True)
+                self.assertEqual(denied.status_code, 401)
+                self.assertEqual(sql, [])
+            denied, sql = self.call(f'{path}?token={token}', token=token, measure=True)
+            self.assertEqual(denied.status_code, 401)
+            self.assertEqual(sql, [])
+        for path in reads:
+            for profile in ('administrator', 'nurse', 'assistant'):
+                denied, sql = self.call(path, token=self.token(profile), measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from informes' in q.lower().replace('`', '')
+                                     for q in sql))
+            with self.temporary_grant('OFTALMOLOGO', 'informes.ver', present=False):
+                denied, sql = self.call(path, token=token, measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from informes' in q.lower().replace('`', '')
+                                     for q in sql))
+                self.assertEqual(self.call(catalog, token=self.token('nurse'))[0].status_code, 200)
+                for profile in ('dual', 'assistant_dual'):
+                    self.assertEqual(self.call(path, token=self.token(profile))[0].status_code, 403)
+        with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+            self.assertEqual(self.call(reads[0], token=token)[0].status_code, 401)
+        with self.temporary_state(Rol, Rol.query.filter_by(codigo='OFTALMOLOGO').one().id, 'INACTIVO'):
+            self.assertEqual(self.call(reads[0], token=token)[0].status_code, 403)
+
+        pdf_path = f'/api/visitas/{self.visit_ids[0]}/reporte-diagnostico'
+        missing_pdf = f'/api/visitas/{self.visit_ids[1]}/reporte-diagnostico'
+        spec = importlib.util.spec_from_file_location(
+            'b1_real_pdf_generator', Path(__file__).resolve().parent / 'services' / 'report_service.py')
+        real_pdf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(real_pdf)
+        with (patch.object(diagnosis_routes, 'generar_reporte_diagnostico_pdf',
+                           real_pdf.generar_reporte_diagnostico_pdf),
+              patch.object(diagnosis_routes, 'ReportNotFoundError', real_pdf.ReportNotFoundError),
+              patch.object(diagnosis_routes, 'ReportTemplateError', real_pdf.ReportTemplateError)):
+            for profile in ('ophthalmologist', 'colleague', 'dual'):
+                result, _ = self.call(pdf_path, token=self.token(profile))
+                self.assertEqual(result.status_code, 200)
+                self.assertTrue(result.data.startswith(b'%PDF-'))
+                self.assertEqual(result.mimetype, 'application/pdf')
+                self.assertIn('attachment;', result.headers['Content-Disposition'])
+                self.assertEqual(result.headers['Cache-Control'], 'private, no-store')
+                self.assertEqual(result.headers['Access-Control-Expose-Headers'], 'Content-Disposition')
+                result.close()
+            self.assertEqual(self.call(missing_pdf, token=token)[0].status_code, 404)
+        with patch.object(diagnosis_routes, 'generar_reporte_diagnostico_pdf') as generator:
+            for bearer in (None, 'invalid', self.token(expired=True)):
+                denied, sql = self.call(pdf_path, token=bearer, measure=True)
+                self.assertEqual(denied.status_code, 401)
+                self.assertEqual(sql, [])
+            denied, sql = self.call(f'{pdf_path}?token={token}', token=token, measure=True)
+            self.assertEqual(denied.status_code, 401)
+            self.assertEqual(sql, [])
+            for profile in ('administrator', 'nurse', 'assistant'):
+                denied, sql = self.call(pdf_path, token=self.token(profile), measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from visitas_clinicas' in q.lower().replace('`', '') for q in sql))
+            for permission in ('pacientes.ver', 'diagnostico_retinopatia.ver', 'imagenes.ver'):
+                with self.temporary_grant('OFTALMOLOGO', permission, present=False):
+                    denied, sql = self.call(pdf_path, token=token, measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertFalse(any('from visitas_clinicas' in q.lower().replace('`', '') for q in sql))
+            with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+                self.assertEqual(self.call(pdf_path, token=token)[0].status_code, 401)
+            generator.assert_not_called()
+
+    def test_29a_disabled_report_writes_leave_every_column_unchanged(self):
+        report_id = self.report_ids[0]
+        db.session.remove()
+        original = db.session.get(informe_entities.Informe, report_id)
+        before = {column.name: getattr(original, column.name)
+                  for column in informe_entities.Informe.__table__.columns}
+        db.session.remove()
+        for method in ('PUT', 'DELETE'):
+            for identifier in (report_id, 999999999):
+                path = f'/api/informes/{identifier}'
+                denied, sql = self.call(path, method=method, measure=True)
+                self.assertEqual(denied.status_code, 401)
+                self.assertEqual(sql, [])
+                for profile in ('ophthalmologist', 'administrator', 'nurse', 'assistant',
+                                'dual', 'assistant_dual'):
+                    denied, sql = self.call(path, method=method, token=self.token(profile),
+                                            json_data={'datos_estructurados': {'nota': 'insegura'}}, measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertEqual(denied.json, {'success': False, 'message': 'No autorizado.'})
+                    self.assertFalse(any('informes' in q.lower() for q in sql))
+                    self.assertFalse(any(q.lstrip().lower().startswith(('update ', 'delete ', 'insert '))
+                                         for q in sql))
+        db.session.remove()
+        after = db.session.get(informe_entities.Informe, report_id)
+        self.assertEqual({column.name: getattr(after, column.name)
+                          for column in informe_entities.Informe.__table__.columns}, before)
 
 
 def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_available=True):

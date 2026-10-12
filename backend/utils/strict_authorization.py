@@ -38,8 +38,8 @@ def _rule(domain, roles, *permissions, any_of=(), needs_resource_check=False):
     )
 
 
-# Solo operaciones acordadas. No se incluyen informes.editar_ajenos, Gerente,
-# permisos genéricos ni la alternativa del catálogo de tipos aún no aprobada.
+# Solo operaciones acordadas. No se incluyen informes.editar_ajenos, Gerente
+# ni permisos genéricos.
 OPERATION_RULES = MappingProxyType({
     "configuration.read": _rule("administration", (ADMINISTRADOR,), "configuracion.ver"),
     "patients.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "pacientes.ver"),
@@ -71,7 +71,8 @@ OPERATION_RULES = MappingProxyType({
         "specialist", (OFTALMOLOGO,), "pacientes.ver",
         "diagnostico_retinopatia.ver", "imagenes.ver",
     ),
-    "reports.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "informes.ver"),
+    "reports.full_read": _rule("specialist", (OFTALMOLOGO,), "informes.ver"),
+    "reports.catalog_read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "informes.ver"),
     "reports.create": _rule("specialist", (OFTALMOLOGO,), "informes.crear"),
     "reports.create_with_visit": _rule(
         "specialist", (OFTALMOLOGO,), "informes.crear", "visitas.crear",
@@ -208,3 +209,16 @@ def strict_authorization_required(operation, *, resource_check=None,
         return token_required(protected, eager_permissions=True)
 
     return decorator
+
+
+def disabled_authenticated_operation(handler):
+    """B1: reservar una ruta de escritura sin consultar el recurso ni llamar al handler.
+
+    El bloqueo es temporal hasta disponer de versionado y auditoría clínica.
+    token_required verifica JWT, cuenta activa y credenciales solo en Bearer.
+    """
+    @wraps(handler)
+    def denied(*args, **kwargs):
+        return jsonify({"success": False, "message": "No autorizado."}), 403
+
+    return token_required(denied, eager_permissions=True)

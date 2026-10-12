@@ -1,6 +1,7 @@
 """Pruebas de autenticación con Flask aislado, sin app.py, BD ni modelos de IA."""
 
 import datetime
+from contextlib import ExitStack
 from io import BytesIO
 import os
 import re
@@ -566,7 +567,8 @@ class AuthSecurityTests(unittest.TestCase):
     def test_a1_retinograph_pdf_and_report_transport(self):
         token = self.token()
         headers = self.headers(token)
-        self.set_role_grants({"OFTALMOLOGO": ["pacientes.ver", "imagenes.ver"]})
+        self.set_role_grants({"OFTALMOLOGO": ["pacientes.ver", "imagenes.ver",
+                                               "diagnostico_retinopatia.ver", "informes.ver"]})
         approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
         with tempfile.TemporaryDirectory(prefix="b1-transport-only-", dir=approved) as folder:
             Path(folder, "synthetic.jpg").write_bytes(b"\xff\xd8\xff\xd9")
@@ -1940,6 +1942,88 @@ class AuthSecurityTests(unittest.TestCase):
         missing = self.client.get("/api/diagnosticos/paciente/999", headers=headers)
         self.assertEqual(missing.status_code, 404)
         self.assertNotIn("data", missing.json)
+
+
+    def test_29a_real_report_reads_and_catalog_authorize_before_service(self):
+        paths = ("/api/informes/123", "/api/informes/paciente/101",
+                 "/api/informes/visita/301", "/api/informes/diagnostico/301")
+        services = ("obtener_informe", "obtener_informes_por_paciente",
+                    "consultar_informes_por_visita", "consultar_informes_por_diagnostico")
+        with ExitStack() as stack:
+            catalog = stack.enter_context(patch.object(
+                informe_routes, "obtener_tipos", return_value=({"success": True, "data": []}, 200)))
+            mocks = [stack.enter_context(patch.object(
+                informe_routes, name, return_value=({"success": True, "data": []}, 200)))
+                for name in services]
+            # Los dobles solo simulan la respuesta: la procedencia se evalúa en relaciones de roles.
+            self.set_role_grants({"OFTALMOLOGO": ["informes.ver"]})
+            bearer = self.headers(self.token())
+            for path in paths:
+                self.assertEqual(self.client.get(path, headers=bearer).status_code, 200)
+            self.assertEqual(self.client.get("/api/tipos-informe", headers=bearer).status_code, 200)
+            for role in ("ENFERMERO", "ASISTENTE_ADMINISTRATIVO"):
+                self.set_role_grants({role: ["informes.ver"]})
+                self.assertEqual(self.client.get("/api/tipos-informe", headers=bearer).status_code, 200)
+                for path in paths:
+                    self.assertEqual(self.client.get(path, headers=bearer).status_code, 403)
+            self.set_role_grants({"ADMINISTRADOR_SISTEMA": ["informes.ver"]})
+            self.assertEqual(self.client.get("/api/tipos-informe", headers=bearer).status_code, 403)
+            for path in paths:
+                self.assertEqual(self.client.get(path, headers=bearer).status_code, 403)
+            self.assertEqual(catalog.call_count, 3)
+            for mock in mocks:
+                self.assertEqual(mock.call_count, 1)
+
+    def test_29a_real_pdf_requires_all_medical_grants_and_private_transport(self):
+        path = "/api/visitas/301/reporte-diagnostico"
+        grants = ("pacientes.ver", "diagnostico_retinopatia.ver", "imagenes.ver")
+        pdf = Mock(return_value=(b"%PDF-1.4\nsynthetic-only\n", "synthetic.pdf"))
+        with patch.object(diagnosis_routes, "generar_reporte_diagnostico_pdf", pdf):
+            self.set_role_grants({"OFTALMOLOGO": list(grants)})
+            token = self.token()
+            response = self.client.get(path, headers=self.headers(token))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, "application/pdf")
+            self.assertIn("synthetic.pdf", response.headers["Content-Disposition"])
+            self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+            response.close()
+            pdf.reset_mock()
+            for missing in grants:
+                self.set_role_grants({"OFTALMOLOGO": [code for code in grants if code != missing],
+                                      "ADMINISTRADOR_SISTEMA": [missing]})
+                self.assertEqual(self.client.get(path, headers=self.headers(token)).status_code, 403)
+            self.set_role_grants({"ADMINISTRADOR_SISTEMA": list(grants)})
+            self.assertEqual(self.client.get(path, headers=self.headers(token)).status_code, 403)
+            self.assertEqual(self.client.get(path).status_code, 401)
+            self.assertEqual(self.client.get(path, headers=self.headers("invalid")).status_code, 401)
+            self.assertEqual(self.client.get(path + "?token=" + token,
+                                             headers=self.headers(token)).status_code, 401)
+            pdf.assert_not_called()
+
+    def test_29a_disabled_report_writes_do_not_reach_legacy_services(self):
+        self.set_role_grants({"OFTALMOLOGO": ["informes.editar", "informes.inactivar"]})
+        token = self.token()
+        with (patch.object(informe_routes, "obtener_informe") as read,
+              patch.object(fake_informe_service, "actualizar_informe_existente") as edit,
+              patch.object(fake_informe_service, "eliminar_informe_existente") as delete):
+            for method in ("put", "delete"):
+                for identifier in (123, 999999):
+                    path = f"/api/informes/{identifier}"
+                    self.assertEqual(getattr(self.client, method)(path).status_code, 401)
+                    for role in ("OFTALMOLOGO", "ADMINISTRADOR_SISTEMA", "ENFERMERO",
+                                 "ASISTENTE_ADMINISTRATIVO"):
+                        self.set_role_grants({role: ["informes.editar", "informes.inactivar"]})
+                        result = getattr(self.client, method)(path, headers=self.headers(token),
+                                                               json={"datos_estructurados": {"nota": "sintetica"}})
+                        self.assertEqual(result.status_code, 403)
+                        self.assertEqual(result.json, {"success": False, "message": "No autorizado."})
+                    self.set_role_grants({"OFTALMOLOGO": ["informes.editar"],
+                                          "ADMINISTRADOR_SISTEMA": ["informes.inactivar"]})
+                    self.assertEqual(getattr(self.client, method)(path,
+                                     headers=self.headers(token)).status_code, 403)
+            read.assert_not_called()
+            edit.assert_not_called()
+            delete.assert_not_called()
 
 
 if __name__ == "__main__":

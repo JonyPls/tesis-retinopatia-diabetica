@@ -22,9 +22,10 @@ y prueba desechable se detallan en `backend/docs/autorizacion-b1-transicion-gran
 | `informes.ver`, `informes.crear`, `informes.editar`, `informes.anular` | SQL v2 | Leer, crear, editar y anular: funciones diferentes. |
 | `informes.inactivar` | Nuevo: migración B1 propuesta | Baja lógica a `INACTIVO` del DELETE actual; no es anulación clínica. |
 
-`informes.editar_ajenos` es un **código nuevo pendiente de aprobación**, NO
-incluido en la migración B1. Una edición ajena requiere además autoría y
-auditoría; los informes finalizados no deben modificarse silenciosamente.
+`informes.editar_ajenos` no está aprobado ni incluido en la migración B1:
+la edición ajena queda denegada por defecto. Una eventual excepción exigiría
+aprobación expresa, autoría, versionado y auditoría persistentes. La edición
+posterior, incluso propia, permanece bloqueada hasta contar con esos mecanismos.
 No existe endpoint para `informes.anular`: tampoco debe tratarse como alias del
 DELETE que inactiva. `pacientes.editar`, `visitas.crear`, `dashboard.ver`,
 `usuarios.ver`, `usuarios.crear`, `usuarios.editar`,
@@ -32,9 +33,11 @@ DELETE que inactiva. `pacientes.editar`, `visitas.crear`, `dashboard.ver`,
 rutas clínicas independientes que los exijan como tales. Las visitas se crean hoy
 desde los flujos de diagnóstico o informe.
 
-**Desajustes actuales:** Flask usa `diagnosticos.ver/crear/validar/gestionar`,
-`informes.eliminar/gestionar` y `pacientes.gestionar`, distintos o ausentes en
-SQL v2. `clinico.ver`, `clinico.leer`, `clinico.acceder`,
+**Desajustes históricos o aún pendientes:** algunas rutas legacy de Flask usan
+`diagnosticos.ver/crear/validar/gestionar`, `informes.gestionar` y
+`pacientes.gestionar`, distintos o ausentes en SQL v2. Desde 29A el GET del
+PDF y los GET de informes ya no usan esos alias; PUT/DELETE están bloqueados.
+`clinico.ver`, `clinico.leer`, `clinico.acceder`,
 `clinico.gestionar` y `clinico.*` son requisitos generales en el decorador
 actual, no concesiones mínimas aceptables para la futura política.
 La nomenclatura de este documento no cambia su funcionamiento actual.
@@ -653,3 +656,39 @@ conciliación: `confirmaciones-exportacion-retinografo-28c4.md`.
 5. Probar perfiles sintéticos con Flask aislado, luego integración sobre datos
    ficticios autorizados; preservar la lectura compartida y denegar escrituras
    sin permiso. Solo después cambiar la semántica de A1-DELETE-PERMISSION.
+
+## Estado implementado en 29A: lectura de informes y PDF
+
+Las filas y propuestas históricas anteriores describen etapas previas; para
+estas ocho rutas prevalece el siguiente estado **activo**:
+
+| Operación HTTP | Política efectiva | Roles y permisos del mismo rol |
+| --- | --- | --- |
+| `GET /api/tipos-informe` | `reports.catalog_read` | O, E o S activo + `informes.ver`; solo metadatos de tipos activos, sin pacientes. |
+| `GET /api/informes/<id>`, `/paciente/<id>`, `/visita/<id>`, `/diagnostico/<id>` | `reports.full_read` | Solo O activo + `informes.ver`; lectura íntegra institucional compartida entre especialistas autorizados. El alias diagnóstico conserva semántica de visita. |
+| `GET /api/visitas/<id>/reporte-diagnostico` | `diagnosis.pdf_read` | Solo O activo + `pacientes.ver`, `diagnostico_retinopatia.ver` e `imagenes.ver`; PDF del diagnóstico IA, **no** de informes de exámenes oftalmológicos. |
+| `PUT` y `DELETE /api/informes/<id>` | `disabled_authenticated_operation` | 401 sin JWT/cuenta activa; 403 para **todos** los autenticados, sin leer el recurso ni ejecutar servicio de escritura. |
+
+El motor B1 lee grants activos de la cuenta y roles activos en cada solicitud;
+no admite administración por jerarquía, permisos genéricos, `informes.gestionar`
+ni mezcla de grants con un rol no habilitado. E y S pueden consultar el catálogo
+con su grant, pero **no** contenido clínico completo; no se habilitan proyecciones
+parciales. No se restringe la lectura de O a informes de su autoría. El PDF
+se genera en memoria tras autorizar y responde con `Cache-Control: private,
+no-store`; el cliente usa Bearer/Blob, nunca un JWT en la URL.
+La lectura de imágenes del PDF conserva el `basename` de las rutas almacenadas
+y la raíz `uploads/retinas` del generador original. La resistencia a enlaces
+simbólicos o escrituras fuera de banda en esa raíz es una revisión de
+almacenamiento separada; 29A no modifica ese lector ni afirma una explotación.
+
+El bloqueo de escritura es **temporal**: PUT requiere edición versionada y
+auditable, y DELETE requiere inactivación auditable; anulación clínica es una
+operación independiente, todavía sin endpoint. No se añadieron permisos,
+grants, tablas ni columnas. `POST /api/informes` **permanece legacy e inseguro**:
+creación por bypass de rol, visita indirecta, validación, rollback y concurrencia
+son prioridad alta para 29B. Se permiten informes de exámenes independientes
+sin diagnóstico IA validado; no se introdujo ninguna regla médica nueva.
+
+Las pruebas `expectedFailure` sobre endpoints legacy aislados de
+`test_auth_security.py` no representan la autorización de estas rutas nuevas;
+se mantienen como evidencia histórica hasta migrar sus otras operaciones.

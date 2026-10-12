@@ -225,8 +225,7 @@ def obtener_detalles(diagnostico_id):
 
 
 @diagnosis_bp.route('/api/visitas/<int:visita_id>/reporte-diagnostico', methods=['GET'])
-@token_required
-@clinical_access_required('diagnosticos.ver')
+@strict_authorization_required('diagnosis.pdf_read')
 def descargar_reporte_diagnostico(visita_id):
     try:
         pdf_bytes, filename = generar_reporte_diagnostico_pdf(visita_id)
@@ -243,6 +242,7 @@ def descargar_reporte_diagnostico(visita_id):
         max_age=0,
     )
     response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
+    response.headers['Cache-Control'] = 'private, no-store'
     return response
 
 
