@@ -105,6 +105,10 @@ export default function ClinicalReports() {
             recentPatients={hook.recentPatients}
             selectedPatient={hook.selectedPatient}
             isSearching={hook.isSearching}
+            searchError={hook.searchError}
+            recentError={hook.recentError}
+            hasSearched={hook.hasSearched}
+            isLoadingRecent={hook.isLoadingRecent}
             onQueryChange={hook.handleQueryChange}
             onSelect={hook.selectPatient}
             onClear={hook.clearPatient}

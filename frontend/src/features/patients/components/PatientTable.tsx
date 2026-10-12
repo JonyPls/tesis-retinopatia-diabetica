@@ -10,11 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
-import { Patient } from "../types";
+import { Patient, PatientReadScope } from "../types";
 
 interface PatientTableProps {
   patients: Patient[];
   isLoading: boolean;
+  scope: PatientReadScope;
   calculateAge: (date: string) => string | number;
 }
 
@@ -31,7 +32,7 @@ const getPatientStatus = (maxLevel?: number | null): Status => {
   return "Normal";
 };
 
-function TableHeaderRow() {
+function TableHeaderRow({ scope }: { scope: PatientReadScope }) {
   const headClass =
     "text-xs font-medium uppercase tracking-wider text-muted-foreground";
   return (
@@ -40,23 +41,23 @@ function TableHeaderRow() {
       <TableHead className={headClass}>Paciente</TableHead>
       <TableHead className={headClass}>Edad</TableHead>
       <TableHead className={headClass}>Teléfono</TableHead>
-      <TableHead className={headClass}>Última Visita</TableHead>
-      <TableHead className={headClass}>Estado</TableHead>
+      {scope !== "administrative" && <TableHead className={headClass}>Última Visita</TableHead>}
+      {scope === "clinical" && <TableHead className={headClass}>Estado</TableHead>}
       <TableHead className={`${headClass} text-right`}>Acciones</TableHead>
     </TableRow>
   );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message, scope }: { message: string; scope: PatientReadScope }) {
   return (
     <Table>
       <TableHeader>
-        <TableHeaderRow />
+        <TableHeaderRow scope={scope} />
       </TableHeader>
       <TableBody>
         <TableRow className="hover:bg-transparent">
           <TableCell
-            colSpan={7}
+            colSpan={scope === "clinical" ? 7 : scope === "assistance" ? 6 : 5}
             className="py-12 text-center text-sm text-muted-foreground"
           >
             {message}
@@ -70,20 +71,21 @@ function EmptyState({ message }: { message: string }) {
 export function PatientTable({
   patients,
   isLoading,
+  scope,
   calculateAge,
 }: PatientTableProps) {
   if (isLoading) {
-    return <EmptyState message="Cargando pacientes..." />;
+    return <EmptyState message="Cargando pacientes..." scope={scope} />;
   }
 
   if (patients.length === 0) {
-    return <EmptyState message="No se encontraron pacientes con ese criterio." />;
+    return <EmptyState message="No se encontraron pacientes con ese criterio." scope={scope} />;
   }
 
   return (
     <Table>
       <TableHeader>
-        <TableHeaderRow />
+          <TableHeaderRow scope={scope} />
       </TableHeader>
       <TableBody>
         {patients.map((p) => (
@@ -114,7 +116,7 @@ export function PatientTable({
             <TableCell className="text-sm text-muted-foreground">
               {formatPhone(p.telefono) || "Sin teléfono"}
             </TableCell>
-            <TableCell className="text-sm">
+            {scope !== "administrative" && <TableCell className="text-sm">
               {p.ultima_visita ? (
                 new Date(p.ultima_visita).toLocaleDateString("es-PE", {
                   day: "2-digit",
@@ -126,10 +128,12 @@ export function PatientTable({
                   Sin registros
                 </span>
               )}
-            </TableCell>
-            <TableCell>
-              <StatusBadge status={getPatientStatus(p.maxima_gravedad)} />
-            </TableCell>
+            </TableCell>}
+            {scope === "clinical" && <TableCell>
+              {"maxima_gravedad" in p
+                ? <StatusBadge status={getPatientStatus(p.maxima_gravedad)} />
+                : <span className="text-xs text-muted-foreground">No disponible</span>}
+            </TableCell>}
             <TableCell className="text-right">
               <Button
                 asChild

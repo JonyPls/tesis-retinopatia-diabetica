@@ -3,6 +3,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PatientSearchResult } from "@/features/patients/api/patientService";
 import { useRef, useEffect } from "react";
+import type { PatientRequestError } from "@/features/patients/patientAccess";
+import { PatientLookupError } from "@/features/patients/components/PatientLookupError";
 
 interface PatientSelectorStepProps {
   query: string;
@@ -10,6 +12,10 @@ interface PatientSelectorStepProps {
   recentPatients: PatientSearchResult[];
   selectedPatient: PatientSearchResult | null;
   isSearching: boolean;
+  searchError: PatientRequestError | null;
+  recentError: PatientRequestError | null;
+  hasSearched: boolean;
+  isLoadingRecent: boolean;
   onQueryChange: (value: string) => void;
   onSelect: (p: PatientSearchResult) => void;
   onClear: () => void;
@@ -21,6 +27,10 @@ export function PatientSelectorStep({
   recentPatients,
   selectedPatient,
   isSearching,
+  searchError,
+  recentError,
+  hasSearched,
+  isLoadingRecent,
   onQueryChange,
   onSelect,
   onClear,
@@ -55,6 +65,8 @@ export function PatientSelectorStep({
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Buscar por nombre o documento..."
+            aria-label="Buscar paciente"
+            aria-invalid={!!searchError}
             className="pl-9"
           />
         </div>
@@ -74,7 +86,8 @@ export function PatientSelectorStep({
               <button
                 type="button"
                 onClick={onClear}
-                className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                aria-label="Cambiar paciente"
+                className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -83,13 +96,21 @@ export function PatientSelectorStep({
         ) : (
           <>
             {isSearching && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Buscando...
               </div>
             )}
 
-            {searchResults.length > 0 && (
+            {(query.trim().length >= 2 ? searchError : recentError) && (
+              <PatientLookupError error={(query.trim().length >= 2 ? searchError : recentError)!} />
+            )}
+
+            {!query && isLoadingRecent && (
+              <p role="status" className="text-sm text-muted-foreground">Cargando pacientes recientes...</p>
+            )}
+
+            {!searchError && query.trim().length >= 2 && searchResults.length > 0 && (
               <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider sticky top-0 bg-card pb-1 z-10">
                   Resultados de búsqueda
@@ -97,8 +118,9 @@ export function PatientSelectorStep({
                 {searchResults.map((p) => (
                   <button
                     key={p.id}
+                    type="button"
                     onClick={() => onSelect(p)}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors text-left"
+                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <div className="h-9 w-9 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-xs">
                       {(p.nombres[0] + p.apellidos[0]).toUpperCase()}
@@ -115,7 +137,7 @@ export function PatientSelectorStep({
               </div>
             )}
 
-            {!isSearching && query.trim().length >= 2 && searchResults.length === 0 && (
+            {!isSearching && hasSearched && !searchError && query.trim().length >= 2 && searchResults.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
                   <User className="h-5 w-5 text-muted-foreground" />
@@ -129,7 +151,7 @@ export function PatientSelectorStep({
               </div>
             )}
 
-            {!query && recentPatients.length > 0 && (
+            {!query && !recentError && recentPatients.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
                   Pacientes recientes
@@ -138,8 +160,9 @@ export function PatientSelectorStep({
                   {recentPatients.slice(0, 4).map((p) => (
                     <button
                       key={p.id}
+                      type="button"
                       onClick={() => onSelect(p)}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors text-left"
+                      className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <div className="h-9 w-9 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-xs">
                         {(p.nombres[0] + p.apellidos[0]).toUpperCase()}

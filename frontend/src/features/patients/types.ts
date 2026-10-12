@@ -1,3 +1,5 @@
+export type PatientReadScope = "clinical" | "assistance" | "administrative";
+
 export interface Patient {
   id?: string | number;
   tipo_doc_id?: number;

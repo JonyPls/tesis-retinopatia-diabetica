@@ -3,6 +3,7 @@ import {
   DiagnosticoVisita,
   PatientSearchResult,
 } from "@/features/patients/api/patientService";
+import type { PatientRequestError } from "@/features/patients/patientAccess";
 
 export type EyeKey = "OD" | "OI";
 
@@ -34,6 +35,10 @@ export interface DiagnosisHook {
   isSearching: boolean;
   isLoadingMorePatients: boolean;
   hasMoreSearchResults: boolean;
+  searchError: PatientRequestError | null;
+  recentError: PatientRequestError | null;
+  hasSearched: boolean;
+  isLoadingRecent: boolean;
   visitasRecientes: DiagnosticoVisita[];
   selectedVisita: DiagnosticoVisita | null | undefined;
   isLoadingVisitas: boolean;

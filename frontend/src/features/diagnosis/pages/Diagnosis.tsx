@@ -189,6 +189,10 @@ export default function Diagnosis() {
                 isSearching={diagnosisHook.isSearching}
                 isLoadingMore={diagnosisHook.isLoadingMorePatients}
                 hasMoreSearchResults={diagnosisHook.hasMoreSearchResults}
+                searchError={diagnosisHook.searchError}
+                recentError={diagnosisHook.recentError}
+                hasSearched={diagnosisHook.hasSearched}
+                isLoadingRecent={diagnosisHook.isLoadingRecent}
                 visitasRecientes={diagnosisHook.visitasRecientes}
                 selectedVisita={diagnosisHook.selectedVisita}
                 isLoadingVisitas={diagnosisHook.isLoadingVisitas}

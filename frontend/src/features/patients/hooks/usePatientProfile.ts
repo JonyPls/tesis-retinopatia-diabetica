@@ -1,48 +1,72 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
-import { Patient, Diagnosis } from "../types";
+import { Patient, Diagnosis, PatientReadScope } from "../types";
+import { patientRequestError, type PatientRequestError } from "../patientAccess";
 
 export function usePatientProfile(id: string | undefined) {
   const navigate = useNavigate();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [scope, setScope] = useState<PatientReadScope>("administrative");
+  const [patientError, setPatientError] = useState<PatientRequestError | null>(null);
+  const [historyError, setHistoryError] = useState<PatientRequestError | null>(null);
 
   useEffect(() => {
+    let active = true;
     const fetchData = async () => {
       setIsLoading(true);
+      setPatient(null);
+      setDiagnoses([]);
+      setScope("administrative");
+      setPatientError(null);
+      setHistoryError(null);
       try {
-        const [resPac, resDiag] = await Promise.all([
-          api.get(`/pacientes/${id}`),
-          api.get(`/pacientes/${id}/visitas`),
-        ]);
-
+        const resPac = await api.get(`/pacientes/${id}`);
+        if (!active) return;
         const dataPac = resPac.data;
-        const dataDiag = resDiag.data;
 
         if (
           dataPac.data &&
           (!Array.isArray(dataPac.data) || dataPac.data.length > 0)
         ) {
-          setPatient(
-            Array.isArray(dataPac.data) ? dataPac.data[0] : dataPac.data,
-          );
+          const resolved = Array.isArray(dataPac.data) ? dataPac.data[0] : dataPac.data;
+          setPatient(resolved);
+          const resolvedScope: PatientReadScope = dataPac.scope === "clinical" ||
+            dataPac.scope === "assistance" ? dataPac.scope : "administrative";
+          setScope(resolvedScope);
+          if (resolvedScope === "clinical" && dataPac.history_available === true) {
+            try {
+              const resDiag = await api.get(`/pacientes/${id}/visitas`);
+              if (active) setDiagnoses(resDiag.data.data || []);
+            } catch (error) {
+              if (active) {
+                const requestError = patientRequestError(error);
+                setHistoryError(requestError.status === 403
+                  ? { ...requestError, message: "No tiene autorización para consultar el historial clínico." }
+                  : requestError);
+              }
+            }
+          } else if (resolvedScope === "clinical") {
+            setHistoryError({ status: 403, message: "No tiene autorización para consultar el historial clínico." });
+          }
         } else {
           setPatient(null);
         }
-
-        if (dataDiag.data) {
-          setDiagnoses(dataDiag.data);
-        }
       } catch (error) {
-        console.error("Error obteniendo datos", error);
-        setPatient(null);
+        if (active) {
+          setPatient(null);
+          if ((error as { response?: { status?: number } })?.response?.status !== 404) {
+            setPatientError(patientRequestError(error));
+          }
+        }
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     if (id) fetchData();
+    return () => { active = false; };
   }, [id]);
 
   const calculateAge = (birthDateStr: string) => {
@@ -106,6 +130,9 @@ export function usePatientProfile(id: string | undefined) {
 
   return {
     patient,
+    scope,
+    patientError,
+    historyError,
     diagnoses,
     isLoading,
     calculateAge,

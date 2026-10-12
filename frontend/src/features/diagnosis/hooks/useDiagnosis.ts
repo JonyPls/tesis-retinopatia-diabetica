@@ -17,6 +17,7 @@ import {
   validarDetalleDiagnostico,
 } from "@/features/diagnosis/api/diagnosisService";
 import { useAuthStore } from "@/features/auth/store/authStore";
+import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
 import { EyeKey, EyeState, DiagnosisHook } from "../types";
 
 const EMPTY_EYE: EyeState = { file: null, preview: null, isExistingImage: false };
@@ -60,6 +61,12 @@ export function useDiagnosis(): DiagnosisHook {
   const [isLoadingMorePatients, setIsLoadingMorePatients] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
   const [hasMoreSearchResults, setHasMoreSearchResults] = useState(false);
+  const [searchError, setSearchError] = useState<PatientRequestError | null>(null);
+  const [recentError, setRecentError] = useState<PatientRequestError | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(true);
+  const searchRequest = useRef(0);
+  const recentDenied = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visitasRecientes, setVisitasRecientes] = useState<DiagnosticoVisita[]>([]);
   const [selectedVisita, setSelectedVisita] =
@@ -99,9 +106,21 @@ export function useDiagnosis(): DiagnosisHook {
 
   // Cargar recientes al montar
   useEffect(() => {
+    let active = true;
     obtenerPacientesRecientes(6)
-      .then(setRecentPatients)
-      .catch(() => {});
+      .then((data) => { if (active && !recentDenied.current) setRecentPatients(data); })
+      .catch((error) => {
+        if (active) {
+          setRecentPatients([]);
+          setRecentError(patientRequestError(error));
+        }
+      })
+      .finally(() => { if (active) setIsLoadingRecent(false); });
+    return () => {
+      active = false;
+      searchRequest.current++;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -160,7 +179,14 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const handleQueryChange = (value: string) => {
+    const request = ++searchRequest.current;
     setQuery(value);
+    setSearchResults([]);
+    setSearchError(null);
+    setHasSearched(false);
+    setHasMoreSearchResults(false);
+    setIsSearching(false);
+    setIsLoadingMorePatients(false);
     if (selectedPatient) {
       setSelectedPatient(null);
       setSelectedVisita(undefined);
@@ -182,17 +208,24 @@ export function useDiagnosis(): DiagnosisHook {
           page: 1,
           perPage: PATIENT_SEARCH_PAGE_SIZE,
         });
+        if (request !== searchRequest.current) return;
         setSearchResults(response.data);
+        setHasSearched(true);
         setSearchPage(response.pagination.page);
         setHasMoreSearchResults(response.pagination.has_more);
-      } catch {
-        toast({
-          title: "Error",
-          description: "No se pudo conectar con el servidor.",
-          variant: "destructive",
-        });
+      } catch (error) {
+        if (request !== searchRequest.current) return;
+        const failure = patientRequestError(error);
+        setSearchResults([]);
+        setHasMoreSearchResults(false);
+        setSearchError(failure);
+        if (failure.status === 403) {
+          recentDenied.current = true;
+          setRecentPatients([]);
+          setRecentError(failure);
+        }
       } finally {
-        setIsSearching(false);
+        if (request === searchRequest.current) setIsSearching(false);
       }
     }, 400);
   };
@@ -202,28 +235,40 @@ export function useDiagnosis(): DiagnosisHook {
     if (term.length < 2 || isLoadingMorePatients || !hasMoreSearchResults) return;
 
     setIsLoadingMorePatients(true);
+    const request = searchRequest.current;
     try {
       const nextPage = searchPage + 1;
       const response = await buscarPacientesPaginado(term, {
         page: nextPage,
         perPage: PATIENT_SEARCH_PAGE_SIZE,
       });
+      if (request !== searchRequest.current) return;
       setSearchResults((prev) => [...prev, ...response.data]);
       setSearchPage(response.pagination.page);
       setHasMoreSearchResults(response.pagination.has_more);
-    } catch {
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar más pacientes.",
-        variant: "destructive",
-      });
+    } catch (error) {
+      if (request !== searchRequest.current) return;
+      const failure = patientRequestError(error);
+      setSearchResults([]);
+      setHasMoreSearchResults(false);
+      setSearchError(failure);
+      if (failure.status === 403) {
+        recentDenied.current = true;
+        setRecentPatients([]);
+        setRecentError(failure);
+      }
     } finally {
-      setIsLoadingMorePatients(false);
+      if (request === searchRequest.current) setIsLoadingMorePatients(false);
     }
   };
 
   const selectPatient = (p: PatientSearchResult) => {
     setSelectedPatient(p);
+    searchRequest.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsSearching(false);
+    setIsLoadingMorePatients(false);
+    setSearchError(null);
     setQuery(`${p.nombres} ${p.apellidos}`);
     setSearchResults([]);
     setSearchPage(1);
@@ -239,6 +284,12 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const clearPatient = () => {
+    searchRequest.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsSearching(false);
+    setIsLoadingMorePatients(false);
+    setSearchError(null);
+    setHasSearched(false);
     setSelectedPatient(null);
     setQuery("");
     setSearchResults([]);
@@ -650,6 +701,12 @@ export function useDiagnosis(): DiagnosisHook {
   const goBack = () => setStep((s) => Math.max(1, s - 1));
 
   const resetAll = () => {
+    searchRequest.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsSearching(false);
+    setIsLoadingMorePatients(false);
+    setSearchError(null);
+    setHasSearched(false);
     setStep(1);
     setSelectedPatient(null);
     setQuery("");
@@ -694,6 +751,10 @@ export function useDiagnosis(): DiagnosisHook {
     isSearching,
     isLoadingMorePatients,
     hasMoreSearchResults,
+    searchError,
+    recentError,
+    hasSearched,
+    isLoadingRecent,
     visitasRecientes,
     selectedVisita,
     isLoadingVisitas,

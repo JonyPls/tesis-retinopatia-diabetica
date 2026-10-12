@@ -25,31 +25,43 @@ def _extract_report_conclusion(datos_estructurados):
 
 class PatientRepository:
     @staticmethod
-    def obtener_pacientes():
-        query = text("""
+    def obtener_pacientes(*, scope='clinical', include_severity=True):
+        if scope not in ('clinical', 'assistance', 'administrative'):
+            raise ValueError('Invalid patient scope')
+        if include_severity and scope != 'clinical':
+            raise ValueError('Severity requires clinical scope')
+        visit_column = ', MAX(v.fecha_visita) AS ultima_visita' if scope != 'administrative' else ''
+        consent_columns = (', p.consentimiento_informado, p.fecha_consentimiento'
+                           if scope != 'administrative' else '')
+        consent_group = (', p.consentimiento_informado, p.fecha_consentimiento'
+                         if scope != 'administrative' else '')
+        severity_column = (', MAX(COALESCE(drd.resultado_final_id, drd.resultado_ia_id)) '
+                           'AS maxima_gravedad') if include_severity else ''
+        visit_join = ("LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id "
+                      "AND v.estado <> 'ANULADA'") if scope != 'administrative' else ''
+        diagnosis_join = ("LEFT JOIN diagnosticos_retinopatia dr ON v.id = dr.visita_id "
+                          "AND dr.estado <> 'ANULADO' "
+                          "LEFT JOIN diagnosticos_retinopatia_detalle drd "
+                          "ON dr.id = drd.diagnostico_retinopatia_id") if include_severity else ''
+        query = text(f"""
             SELECT
                 p.id,
                 td.codigo AS tipo_doc_abrev,
                 p.tipo_doc_id,
-                p.nro_documento, 
+                p.nro_documento,
                 p.nombres,
                 p.apellidos,
                 p.sexo,
                 p.fecha_nacimiento,
                 p.telefono,
                 p.correo,
-                p.direccion,
-                p.antecedentes_clinicos,
-                p.alergias,
-                p.consentimiento_informado,
-                p.fecha_consentimiento,
-                MAX(v.fecha_visita) AS ultima_visita,
-                MAX(COALESCE(drd.resultado_final_id, drd.resultado_ia_id)) AS maxima_gravedad
+                p.direccion
+                {consent_columns}
+                {visit_column} {severity_column}
             FROM pacientes p
             JOIN tipos_documento td ON p.tipo_doc_id = td.id
-            LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id AND v.estado <> 'ANULADA'
-            LEFT JOIN diagnosticos_retinopatia dr ON v.id = dr.visita_id AND dr.estado <> 'ANULADO'
-            LEFT JOIN diagnosticos_retinopatia_detalle drd ON dr.id = drd.diagnostico_retinopatia_id
+            {visit_join}
+            {diagnosis_join}
             WHERE p.estado = 'ACTIVO'
             GROUP BY
                 p.id,
@@ -62,11 +74,8 @@ class PatientRepository:
                 p.fecha_nacimiento,
                 p.telefono,
                 p.correo,
-                p.direccion,
-                p.antecedentes_clinicos,
-                p.alergias,
-                p.consentimiento_informado,
-                p.fecha_consentimiento
+                p.direccion
+                {consent_group}
             ORDER BY p.id DESC
         """)
         result = db.session.execute(query)
@@ -85,9 +94,15 @@ class PatientRepository:
         db.session.commit()
 
     @staticmethod
-    def obtener_paciente_por_id(paciente_id: int):
-        # We can use ORM and return a dict
-        query = text("""
+    def obtener_paciente_por_id(paciente_id: int, *, scope='clinical'):
+        if scope not in ('clinical', 'assistance', 'administrative'):
+            raise ValueError('Invalid patient scope')
+        sensitive_columns = {
+            'clinical': ', p.consentimiento_informado, p.fecha_consentimiento, p.antecedentes_clinicos, p.alergias',
+            'assistance': ', p.consentimiento_informado, p.fecha_consentimiento, p.alergias',
+            'administrative': '',
+        }[scope]
+        query = text(f"""
             SELECT 
                 p.id, 
                 td.codigo AS tipo_doc_abrev,
@@ -100,11 +115,8 @@ class PatientRepository:
                 p.fecha_nacimiento, 
                 p.telefono,
                 p.correo,
-                p.direccion,
-                p.antecedentes_clinicos,
-                p.alergias,
-                p.consentimiento_informado,
-                p.fecha_consentimiento
+                p.direccion
+                {sensitive_columns}
             FROM pacientes p
             LEFT JOIN tipos_documento td ON p.tipo_doc_id = td.id
             WHERE p.id = :paciente_id
@@ -244,7 +256,8 @@ class PatientRepository:
         return visitas
 
     @staticmethod
-    def buscar_paciente(query_text: str, page: int = 1, per_page: int = 5):
+    def buscar_paciente(query_text: str, page: int = 1, per_page: int = 5,
+                        *, include_last_visit: bool = True):
         search_pattern = f"%{query_text}%"
         prefix_pattern = f"{query_text}%"
         offset = (page - 1) * per_page
@@ -293,6 +306,31 @@ class PatientRepository:
                 END,
                 COALESCE(MAX(v.fecha_visita), p.fecha_creado) DESC
             LIMIT :per_page OFFSET :offset
+        """) if include_last_visit else text("""
+            SELECT
+                p.id,
+                td.codigo AS tipo_doc_abrev,
+                p.tipo_doc_id,
+                td.codigo AS tipo_doc,
+                p.nro_documento,
+                p.nombres,
+                p.apellidos
+            FROM pacientes p
+            LEFT JOIN tipos_documento td ON p.tipo_doc_id = td.id
+            WHERE p.estado = 'ACTIVO' AND (
+                p.nro_documento LIKE :search_pattern
+                OR CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :search_pattern
+                OR CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :search_pattern
+            )
+            ORDER BY
+                CASE
+                    WHEN p.nro_documento LIKE :prefix_pattern THEN 0
+                    WHEN CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :prefix_pattern THEN 1
+                    WHEN CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :prefix_pattern THEN 2
+                    ELSE 3
+                END,
+                p.fecha_creado DESC, p.id DESC
+            LIMIT :per_page OFFSET :offset
         """)
         params = {
             "search_pattern": search_pattern,
@@ -306,7 +344,7 @@ class PatientRepository:
         return [dict(row._mapping) for row in result], total
 
     @staticmethod
-    def obtener_pacientes_recientes(limit: int = 6):
+    def obtener_pacientes_recientes(limit: int = 6, *, include_last_visit: bool = True):
         query = text("""
             SELECT
                 p.id,
@@ -321,6 +359,18 @@ class PatientRepository:
             WHERE p.estado = 'ACTIVO'
             GROUP BY p.id, td.codigo, p.nro_documento, p.nombres, p.apellidos
             ORDER BY COALESCE(MAX(v.fecha_visita), p.fecha_creado) DESC
+            LIMIT :limit
+        """) if include_last_visit else text("""
+            SELECT
+                p.id,
+                td.codigo AS tipo_doc_abrev,
+                p.nro_documento,
+                p.nombres,
+                p.apellidos
+            FROM pacientes p
+            JOIN tipos_documento td ON p.tipo_doc_id = td.id
+            WHERE p.estado = 'ACTIVO'
+            ORDER BY p.fecha_creado DESC, p.id DESC
             LIMIT :limit
         """)
         result = db.session.execute(query, {"limit": limit})

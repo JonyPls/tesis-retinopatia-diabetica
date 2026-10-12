@@ -100,9 +100,10 @@ def _validate_patient_data(
 
     return None
 
-def obtener_todos_pacientes():
+def obtener_todos_pacientes(*, scope='clinical', include_severity=True):
     try:
-        pacientes = PatientRepository.obtener_pacientes()
+        pacientes = PatientRepository.obtener_pacientes(
+            scope=scope, include_severity=include_severity)
         return {
             "success": True,
             "data": pacientes
@@ -190,9 +191,9 @@ def registrar_nuevo_paciente(datos_paciente_dict):
         current_app.logger.exception("Error al registrar paciente")
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
-def obtener_detalle_paciente(paciente_id):
+def obtener_detalle_paciente(paciente_id, *, scope='clinical'):
     try:
-        paciente = PatientRepository.obtener_paciente_por_id(paciente_id)
+        paciente = PatientRepository.obtener_paciente_por_id(paciente_id, scope=scope)
         if paciente:
             return {
                 "success": True,
@@ -217,12 +218,13 @@ def obtener_historial_diagnosticos(paciente_id):
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
-def buscar_pacientes_dinamico(query_text, page=1, per_page=5):
+def buscar_pacientes_dinamico(query_text, page=1, per_page=5, *, include_last_visit=True):
     try:
         resultados, total = PatientRepository.buscar_paciente(
             query_text,
             page=page,
             per_page=per_page,
+            include_last_visit=include_last_visit,
         )
         return {
             "success": True,
@@ -239,9 +241,10 @@ def buscar_pacientes_dinamico(query_text, page=1, per_page=5):
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
-def obtener_recientes(limit=6):
+def obtener_recientes(limit=6, *, include_last_visit=True):
     try:
-        pacientes = PatientRepository.obtener_pacientes_recientes(limit)
+        pacientes = PatientRepository.obtener_pacientes_recientes(
+            limit, include_last_visit=include_last_visit)
         return {"success": True, "data": pacientes}, 200
     except Exception:
         current_app.logger.exception("Error al obtener pacientes recientes")

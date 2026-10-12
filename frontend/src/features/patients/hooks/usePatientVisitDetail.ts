@@ -6,6 +6,7 @@ import {
   type DetalleDiagnosticoExistente,
 } from "@/features/diagnosis/api/diagnosisService";
 import type { Diagnosis, Patient } from "../types";
+import { patientRequestError, type PatientRequestError } from "../patientAccess";
 
 type VisitDetailError = "invalid_params" | "patient_not_found" | "visit_not_found" | "load_error";
 
@@ -24,6 +25,7 @@ export function usePatientVisitDetail(
   const [isComparisonLoading, setIsComparisonLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<VisitDetailError | null>(null);
+  const [requestError, setRequestError] = useState<PatientRequestError | null>(null);
 
   const pacienteId = Number(pacienteIdParam);
   const visitaId = Number(visitaIdParam);
@@ -44,12 +46,12 @@ export function usePatientVisitDetail(
 
       setIsLoading(true);
       setError(null);
+      setRequestError(null);
+      setPatient(null);
+      setVisits([]);
 
       try {
-        const [patientResponse, visitsResponse] = await Promise.all([
-          api.get(`/pacientes/${pacienteId}`),
-          api.get(`/pacientes/${pacienteId}/visitas`),
-        ]);
+        const patientResponse = await api.get(`/pacientes/${pacienteId}`);
 
         if (!isMounted) return;
 
@@ -66,6 +68,29 @@ export function usePatientVisitDetail(
           setError("patient_not_found");
           return;
         }
+
+        if (patientResponse.data?.scope !== "clinical" ||
+            patientResponse.data?.history_available !== true) {
+          setError("load_error");
+          setRequestError({ status: 403, message: "No tiene autorización para consultar el historial clínico." });
+          return;
+        }
+
+        let visitsResponse;
+        try {
+          visitsResponse = await api.get(`/pacientes/${pacienteId}/visitas`);
+        } catch (visitError) {
+          if (isMounted) {
+            setPatient(resolvedPatient);
+            setError("load_error");
+            const requestError = patientRequestError(visitError);
+            setRequestError(requestError.status === 403
+              ? { ...requestError, message: "No tiene autorización para consultar el historial clínico." }
+              : requestError);
+          }
+          return;
+        }
+        if (!isMounted) return;
 
         const visitData = visitsResponse.data?.data;
         const resolvedVisits = Array.isArray(visitData) ? visitData : [];
@@ -95,13 +120,14 @@ export function usePatientVisitDetail(
         setComparisonDiagnosisDetails([]);
         setError(selectedVisit ? null : "visit_not_found");
       } catch (loadError) {
-        console.error("Error obteniendo detalle de visita", loadError);
         if (!isMounted) return;
         setPatient(null);
         setVisits([]);
         setDiagnosisDetails([]);
         setComparisonDiagnosisDetails([]);
-        setError("load_error");
+        const notFound = (loadError as { response?: { status?: number } })?.response?.status === 404;
+        setError(notFound ? "patient_not_found" : "load_error");
+        if (!notFound) setRequestError(patientRequestError(loadError));
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -179,6 +205,7 @@ export function usePatientVisitDetail(
     comparisonError,
     comparisonVisit,
     error,
+    requestError,
     diagnosisDetails,
     isComparisonLoading,
     isLoading,

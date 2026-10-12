@@ -6,6 +6,7 @@ import { usePatientProfile } from "../hooks/usePatientProfile";
 import { PatientInfoCard } from "../components/PatientInfoCard";
 import { PatientSummaryBand } from "../components/PatientSummaryBand";
 import { PatientTimeline } from "../components/PatientTimeline";
+import { PatientLookupError } from "../components/PatientLookupError";
 
 export default function PatientProfile() {
   const { id } = useParams();
@@ -24,6 +25,10 @@ export default function PatientProfile() {
         </div>
       </AppLayout>
     );
+  }
+
+  if (hook.patientError) {
+    return <AppLayout title="Datos del paciente"><PatientLookupError error={hook.patientError} /></AppLayout>;
   }
 
   if (!hook.patient) {
@@ -53,20 +58,21 @@ export default function PatientProfile() {
       diagnosis.maxima_gravedad !== null ||
       Boolean(diagnosis.resultado_ia),
   );
+  const showHistory = hook.scope === "clinical" && !hook.historyError;
 
   return (
     <AppLayout
-      title="Historia clínica"
+      title={hook.scope === "clinical" ? "Historia clínica" : "Datos del paciente"}
       subtitle={`${fullName} · ${docType} ${hook.patient.nro_documento}`}
     >
       <div className="space-y-6">
-        <PatientSummaryBand
+        {showHistory && <PatientSummaryBand
           status={hook.status}
           maxRdLevel={hook.maxLevel}
           hasRdData={hasRdData}
           lastVisit={hook.lastVisit}
           visitCount={hook.diagnoses.length}
-        />
+        />}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
           <aside className="space-y-3 lg:sticky lg:top-6 lg:self-start">
@@ -83,12 +89,14 @@ export default function PatientProfile() {
 
             <PatientInfoCard
               patient={hook.patient}
+              scope={hook.scope}
               calculateAge={hook.calculateAge}
               getInitials={hook.getInitials}
             />
           </aside>
 
-          <section className="min-w-0 space-y-3">
+          {hook.historyError && <PatientLookupError error={hook.historyError} />}
+          {showHistory && <section className="min-w-0 space-y-3">
             <div className="flex justify-end">
               <Button asChild className="bg-primary hover:bg-primary/90">
                 <Link to="/diagnostico">
@@ -103,7 +111,7 @@ export default function PatientProfile() {
               patientName={fullName}
               patientId={hook.patient.id}
             />
-          </section>
+          </section>}
         </div>
       </div>
     </AppLayout>

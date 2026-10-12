@@ -3,11 +3,12 @@ import { Eye, Phone, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
-import { Patient } from "../types";
+import { Patient, PatientReadScope } from "../types";
 
 interface PatientCardGridProps {
   patients: Patient[];
   isLoading: boolean;
+  scope: PatientReadScope;
   calculateAge: (date: string) => string | number;
 }
 
@@ -32,6 +33,7 @@ const getInitials = (nombres?: string, apellidos?: string) => {
 export function PatientCardGrid({
   patients,
   isLoading,
+  scope,
   calculateAge,
 }: PatientCardGridProps) {
   if (isLoading) {
@@ -100,7 +102,11 @@ export function PatientCardGrid({
 
               <div className="space-y-2 text-xs text-muted-foreground">
                 <div className="flex items-center justify-between gap-2">
-                  <StatusBadge status={status} />
+                  {scope === "clinical" && (
+                    "maxima_gravedad" in p
+                      ? <StatusBadge status={status} />
+                      : <span>No disponible</span>
+                  )}
                   <span className="tabular-nums text-foreground/80">
                     {calculateAge(p.fecha_nacimiento)} años · {p.sexo}
                   </span>
@@ -109,7 +115,7 @@ export function PatientCardGrid({
                   <Phone className="h-3 w-3" />
                   {formatPhone(p.telefono) || "Sin teléfono"}
                 </div>
-                <div className="flex items-center gap-1.5">
+                {scope !== "administrative" && <div className="flex items-center gap-1.5">
                   <Calendar className="h-3 w-3" />
                   {p.ultima_visita ? (
                     new Date(p.ultima_visita).toLocaleDateString("es-PE", {
@@ -120,7 +126,7 @@ export function PatientCardGrid({
                   ) : (
                     <span className="italic opacity-70">Sin registros</span>
                   )}
-                </div>
+                </div>}
               </div>
 
               <div className="mt-4 pt-3 border-t border-border">

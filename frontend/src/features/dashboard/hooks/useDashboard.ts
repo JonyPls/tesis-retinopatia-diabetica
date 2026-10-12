@@ -1,16 +1,26 @@
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import { Patient } from "../types";
+import { patientRequestMessage } from "@/features/patients/patientAccess";
 
-export function useDashboard() {
+export function useDashboard(enabled: boolean) {
   const [recentPatients, setRecentPatients] = useState<Patient[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setRecentPatients([]);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+    let active = true;
+    setIsLoading(true);
     const fetchRecentPatients = async () => {
       try {
         const { data } = await api.get("/pacientes");
-        if (data.data) {
+        if (active && data.data) {
           const sorted = (data.data as Patient[])
             .filter((p) => p.ultima_visita)
             .sort(
@@ -20,16 +30,21 @@ export function useDashboard() {
             );
 
           setRecentPatients(sorted.slice(0, 6));
+          setError(null);
         }
       } catch (error) {
-        console.error("Error al cargar pacientes recientes", error);
+        if (active) {
+          setRecentPatients([]);
+          setError(patientRequestMessage(error));
+        }
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
 
     fetchRecentPatients();
-  }, []);
+    return () => { active = false; };
+  }, [enabled]);
 
   const calculateAge = (birthDate: string) => {
     if (!birthDate) return "-";
@@ -46,6 +61,7 @@ export function useDashboard() {
   return {
     recentPatients,
     isLoading,
+    error,
     calculateAge,
   };
 }

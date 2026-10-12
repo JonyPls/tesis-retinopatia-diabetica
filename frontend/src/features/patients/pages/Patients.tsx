@@ -13,6 +13,7 @@ import { usePatients } from "../hooks/usePatients";
 import { PatientTable } from "../components/PatientTable";
 import { PatientCardGrid } from "../components/PatientCardGrid";
 import { CreatePatientDialog } from "../components/CreatePatientDialog";
+import { PatientLookupError } from "../components/PatientLookupError";
 
 const calculateAge = (birthDate: string) => {
   if (!birthDate) return "-";
@@ -128,16 +129,20 @@ export default function Patients() {
           </div>
 
         <div className="border-t border-border p-4">
-          {hook.viewMode === "table" ? (
+          {hook.loadError ? (
+            <PatientLookupError error={hook.loadError} />
+          ) : hook.viewMode === "table" ? (
             <PatientTable
               patients={hook.currentData}
               isLoading={hook.isLoading}
+              scope={hook.scope}
               calculateAge={calculateAge}
             />
           ) : (
             <PatientCardGrid
               patients={hook.currentData}
               isLoading={hook.isLoading}
+              scope={hook.scope}
               calculateAge={calculateAge}
             />
           )}

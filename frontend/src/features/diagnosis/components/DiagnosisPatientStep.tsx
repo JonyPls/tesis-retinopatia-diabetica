@@ -18,6 +18,8 @@ import type {
   PatientSearchResult,
 } from "@/features/patients/api/patientService";
 import { cn } from "@/lib/utils";
+import type { PatientRequestError } from "@/features/patients/patientAccess";
+import { PatientLookupError } from "@/features/patients/components/PatientLookupError";
 
 interface DiagnosisPatientStepProps {
   query: string;
@@ -27,6 +29,10 @@ interface DiagnosisPatientStepProps {
   isSearching: boolean;
   isLoadingMore: boolean;
   hasMoreSearchResults: boolean;
+  searchError: PatientRequestError | null;
+  recentError: PatientRequestError | null;
+  hasSearched: boolean;
+  isLoadingRecent: boolean;
   visitasRecientes: DiagnosticoVisita[];
   selectedVisita: DiagnosticoVisita | null | undefined;
   isLoadingVisitas: boolean;
@@ -46,6 +52,10 @@ export function DiagnosisPatientStep({
   isSearching,
   isLoadingMore,
   hasMoreSearchResults,
+  searchError,
+  recentError,
+  hasSearched,
+  isLoadingRecent,
   visitasRecientes,
   selectedVisita,
   isLoadingVisitas,
@@ -100,6 +110,8 @@ export function DiagnosisPatientStep({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Buscar por documento, nombres o apellidos..."
+          aria-label="Buscar paciente"
+          aria-invalid={!!searchError}
           className="h-11 pl-9 pr-10"
         />
         {query && (
@@ -121,6 +133,10 @@ export function DiagnosisPatientStep({
         recentPatients={recentPatients}
         isLoadingMore={isLoadingMore}
         hasMoreSearchResults={hasMoreSearchResults}
+        searchError={searchError}
+        recentError={recentError}
+        hasSearched={hasSearched}
+        isLoadingRecent={isLoadingRecent}
         onLoadMore={onLoadMore}
         onSelect={onSelect}
       />
@@ -326,6 +342,10 @@ function PatientList({
   recentPatients,
   isLoadingMore,
   hasMoreSearchResults,
+  searchError,
+  recentError,
+  hasSearched,
+  isLoadingRecent,
   onLoadMore,
   onSelect,
 }: {
@@ -335,6 +355,10 @@ function PatientList({
   recentPatients: PatientSearchResult[];
   isLoadingMore: boolean;
   hasMoreSearchResults: boolean;
+  searchError: PatientRequestError | null;
+  recentError: PatientRequestError | null;
+  hasSearched: boolean;
+  isLoadingRecent: boolean;
   onLoadMore: () => void;
   onSelect: (p: PatientSearchResult) => void;
 }) {
@@ -343,14 +367,21 @@ function PatientList({
 
   if (isSearching) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+      <div role="status" className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         Buscando pacientes...
       </div>
     );
   }
 
-  if (showingSearch && searchResults.length === 0) {
+  const error = showingSearch ? searchError : recentError;
+  if (error) return <PatientLookupError error={error} />;
+
+  if (!showingSearch && isLoadingRecent) {
+    return <p role="status" className="text-sm text-muted-foreground">Cargando pacientes recientes...</p>;
+  }
+
+  if (showingSearch && hasSearched && searchResults.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center">
         <User className="mx-auto h-8 w-8 text-muted-foreground/70" />
@@ -364,6 +395,8 @@ function PatientList({
       </div>
     );
   }
+
+  if (showingSearch && !hasSearched) return null;
 
   if (!showingSearch && patients.length === 0) {
     return (

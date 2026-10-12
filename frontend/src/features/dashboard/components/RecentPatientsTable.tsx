@@ -21,6 +21,7 @@ import { Patient } from "../types";
 interface RecentPatientsTableProps {
   patients: Patient[];
   isLoading: boolean;
+  error: string | null;
   calculateAge: (date: string) => string | number;
 }
 
@@ -34,6 +35,7 @@ const getPatientStatus = (maxLevel?: number | null): Status => {
 export function RecentPatientsTable({
   patients,
   isLoading,
+  error,
   calculateAge,
 }: RecentPatientsTableProps) {
   return (
@@ -76,7 +78,13 @@ export function RecentPatientsTable({
                   colSpan={4}
                   className="text-center py-8 text-muted-foreground text-sm"
                 >
-                  Cargando últimos pacientes...
+                  <span role="status">Cargando últimos pacientes...</span>
+                </TableCell>
+              </TableRow>
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={4} className="py-8 text-center text-sm text-destructive">
+                  <p role="alert">{error}</p>
                 </TableCell>
               </TableRow>
             ) : patients.length === 0 ? (
@@ -121,9 +129,9 @@ export function RecentPatientsTable({
                       })}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge
-                      status={getPatientStatus(p.maxima_gravedad)}
-                    />
+                    {"maxima_gravedad" in p
+                      ? <StatusBadge status={getPatientStatus(p.maxima_gravedad)} />
+                      : <span className="text-xs text-muted-foreground">No disponible</span>}
                   </TableCell>
                 </TableRow>
               ))

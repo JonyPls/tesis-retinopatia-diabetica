@@ -14,6 +14,7 @@ import { VisitComparisonSelector } from "../components/visit-detail/VisitCompari
 import { VisitComparisonTab } from "../components/visit-detail/VisitComparisonTab";
 import { VisitReportsTab } from "../components/visit-detail/VisitReportsTab";
 import { VisitSummaryTab } from "../components/visit-detail/VisitSummaryTab";
+import { PatientLookupError } from "../components/PatientLookupError";
 
 const TABS = [
   { value: "resumen", label: "Resumen" },
@@ -119,6 +120,10 @@ export default function PatientVisitDetail() {
         <LoadingState />
       </AppLayout>
     );
+  }
+
+  if (hook.requestError) {
+    return <AppLayout title="Detalle de visita"><PatientLookupError error={hook.requestError} /></AppLayout>;
   }
 
   if (hook.error === "patient_not_found") {

@@ -2,6 +2,7 @@ from functools import wraps
 from flask import current_app, request, jsonify
 import jwt
 import os
+from src.repositories.auth_repository import AuthRepository
 
 ADMIN_ROLES = {
     "Admin",
@@ -34,7 +35,7 @@ GENERIC_UNAUTHORIZED_MESSAGE = "No autorizado."
 GENERIC_NOT_FOUND_MESSAGE = "Recurso no encontrado."
 
 
-def token_required(f):
+def token_required(f, *, eager_permissions=False):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
@@ -58,8 +59,12 @@ def token_required(f):
 
         # 4. Validamos que el token sea auténtico y no haya expirado
         try:
-            data = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=["HS256"])
-            request.current_user = data
+            data = jwt.decode(
+                token,
+                os.getenv('SECRET_KEY'),
+                algorithms=["HS256"],
+                options={"require": ["exp", "user_id"]},
+            )
             
         except jwt.ExpiredSignatureError:
             return jsonify({
@@ -71,6 +76,23 @@ def token_required(f):
                 "success": False, 
                 "message": "Token inválido."
             }), 401
+
+        try:
+            if eager_permissions:
+                user = AuthRepository.get_active_user_with_permissions_by_id(data['user_id'])
+            else:
+                user = AuthRepository.get_active_user_by_id(data['user_id'])
+            if not user:
+                return jsonify({"success": False, "message": GENERIC_UNAUTHORIZED_MESSAGE}), 401
+
+            # Los roles y permisos del token pueden haber cambiado desde su emisión.
+            data.pop('permissions', None)
+            request.current_user = {**data, 'roles': user.roles, 'permisos': user.permisos}
+            if eager_permissions:
+                request.authenticated_user = user  # Solo durante esta petición.
+        except Exception:
+            current_app.logger.exception("Error al verificar la cuenta autenticada")
+            return safe_json_error(status=500)
 
         # 5. Si todo está perfecto, dejamos que la petición continúe hacia la ruta original
         return f(*args, **kwargs)

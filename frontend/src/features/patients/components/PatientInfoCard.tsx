@@ -1,10 +1,11 @@
 import { Mail, Phone, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Patient } from "../types";
+import { Patient, PatientReadScope } from "../types";
 
 interface PatientInfoCardProps {
   patient: Patient;
+  scope: PatientReadScope;
   calculateAge: (date: string) => number;
   getInitials: (nombres?: string, apellidos?: string) => string;
 }
@@ -73,6 +74,7 @@ function Section({
 
 export function PatientInfoCard({
   patient,
+  scope,
   calculateAge,
   getInitials,
 }: PatientInfoCardProps) {
@@ -123,16 +125,18 @@ export function PatientInfoCard({
           </div>
         </Section>
 
-        <Section title="Clínico">
+        {scope !== "administrative" && <Section title="Consentimiento">
+          <Field label="Consentimiento" value={consent} />
+        </Section>}
+        {scope !== "administrative" && <Section title="Clínico">
           <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
-            <Field label="Consentimiento" value={consent} />
-            <Field
+            {scope === "clinical" && <Field
               label="Antecedentes"
               value={patient.antecedentes_clinicos}
-            />
+            />}
             <Field label="Alergias" value={patient.alergias} />
           </div>
-        </Section>
+        </Section>}
       </CardContent>
     </Card>
   );

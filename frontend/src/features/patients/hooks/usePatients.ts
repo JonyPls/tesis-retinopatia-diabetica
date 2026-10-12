@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
-import { Patient, PatientFormData } from "../types";
+import { Patient, PatientFormData, PatientReadScope } from "../types";
+import { patientRequestError, type PatientRequestError } from "../patientAccess";
 
 const INITIAL_FORM: PatientFormData = {
   tipo_doc: "DNI",
@@ -175,6 +176,8 @@ export function usePatients({
 }: UsePatientsOptions = {}) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [scope, setScope] = useState<PatientReadScope>("administrative");
+  const [loadError, setLoadError] = useState<PatientRequestError | null>(null);
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -190,16 +193,16 @@ export function usePatients({
 
   const fetchPatients = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const { data } = await api.get("/pacientes");
       setPatients(data.data || []);
+      setScope(data.scope === "clinical" || data.scope === "assistance"
+        ? data.scope : "administrative");
     } catch (error) {
-      console.error("Error al obtener pacientes:", error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los pacientes",
-        variant: "destructive",
-      });
+      setPatients([]);
+      setScope("administrative");
+      setLoadError(patientRequestError(error));
     } finally {
       setIsLoading(false);
     }
@@ -310,6 +313,8 @@ export function usePatients({
   return {
     patients,
     isLoading,
+    scope,
+    loadError,
     query,
     setQuery,
     filtered,

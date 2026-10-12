@@ -11,6 +11,7 @@ import {
 } from "@/features/patients/api/patientService";
 import { TipoInforme, Informe, ReportFormHandle } from "../types";
 import { SUPPORTED_REPORT_TYPE_IDS } from "../supportedTypes";
+import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
 
 function withMinDuration<T>(promise: Promise<T>, ms = 400): Promise<T> {
   const delay = new Promise<void>((r) => setTimeout(r, ms));
@@ -36,6 +37,12 @@ export function useReports() {
   const [searchResults, setSearchResults] = useState<PatientSearchResult[]>([]);
   const [recentPatients, setRecentPatients] = useState<PatientSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<PatientRequestError | null>(null);
+  const [recentError, setRecentError] = useState<PatientRequestError | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(true);
+  const searchRequest = useRef(0);
+  const recentDenied = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Visita selector (step 2)
@@ -65,13 +72,30 @@ export function useReports() {
 
   // Load recent patients on mount
   useEffect(() => {
+    let active = true;
     obtenerPacientesRecientes()
-      .then(setRecentPatients)
-      .catch(() => {});
+      .then((data) => { if (active && !recentDenied.current) setRecentPatients(data); })
+      .catch((error) => {
+        if (active) {
+          setRecentPatients([]);
+          setRecentError(patientRequestError(error));
+        }
+      })
+      .finally(() => { if (active) setIsLoadingRecent(false); });
+    return () => {
+      active = false;
+      searchRequest.current++;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   const handleQueryChange = (value: string) => {
+    const request = ++searchRequest.current;
     setQuery(value);
+    setSearchResults([]);
+    setSearchError(null);
+    setHasSearched(false);
+    setIsSearching(false);
     if (selectedPatient) setSelectedPatient(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -84,20 +108,30 @@ export function useReports() {
       setIsSearching(true);
       try {
         const data = await withMinDuration(buscarPacientes(value.trim()));
+        if (request !== searchRequest.current) return;
         setSearchResults(data);
-      } catch {
-        toast({
-          title: "Error",
-          description: "No se pudo conectar con el servidor.",
-          variant: "destructive",
-        });
+        setHasSearched(true);
+      } catch (error) {
+        if (request !== searchRequest.current) return;
+        const failure = patientRequestError(error);
+        setSearchResults([]);
+        setSearchError(failure);
+        if (failure.status === 403) {
+          recentDenied.current = true;
+          setRecentPatients([]);
+          setRecentError(failure);
+        }
       } finally {
-        setIsSearching(false);
+        if (request === searchRequest.current) setIsSearching(false);
       }
     }, 400);
   };
 
   const selectPatient = (p: PatientSearchResult) => {
+    searchRequest.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsSearching(false);
+    setSearchError(null);
     setSelectedPatient(p);
     setQuery(`${p.nombres} ${p.apellidos}`);
     setSearchResults([]);
@@ -342,6 +376,11 @@ export function useReports() {
   };
 
   const clearPatient = () => {
+    searchRequest.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsSearching(false);
+    setSearchError(null);
+    setHasSearched(false);
     setSelectedPatient(null);
     setQuery("");
     setSearchResults([]);
@@ -354,6 +393,11 @@ export function useReports() {
   };
 
   const resetAll = () => {
+    searchRequest.current++;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsSearching(false);
+    setSearchError(null);
+    setHasSearched(false);
     setStep(1);
     setSelectedTipos([]);
     setSelectedPatient(null);
@@ -380,6 +424,10 @@ export function useReports() {
     searchResults,
     recentPatients,
     isSearching,
+    searchError,
+    recentError,
+    hasSearched,
+    isLoadingRecent,
     handleQueryChange,
     selectPatient,
     goNext,

@@ -1,78 +1,50 @@
-import { useDashboard } from "../hooks/useDashboard";
-import { KpiGrid } from "../components/KpiGrid";
 import { RecentPatientsTable } from "../components/RecentPatientsTable";
-import { RDLevelDistribution } from "../components/RDLevelDistribution";
+import { useDashboard } from "../hooks/useDashboard";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { dashboardKPIs } from "@/data/dashboard";
-import { Users, Activity, AlertTriangle, Clock, RefreshCw, Brain, ClipboardList } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useAuthStore } from "@/features/auth/store/authStore";
+import { canViewClinicalDashboard } from "@/features/patients/patientAccess";
+import { Brain } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { KpiItem } from "../types";
-
-const kpis: KpiItem[] = [
-  {
-    label: "Pacientes Registrados",
-    value: dashboardKPIs.totalPatients.toLocaleString("es-PE"),
-    delta: "+4 esta semana",
-    icon: Users,
-    tone: "primary",
-  },
-  {
-    label: "Diagnósticos IA Hoy",
-    value: String(dashboardKPIs.diagnosesToday),
-    delta: "+3 vs. ayer",
-    icon: Brain,
-    tone: "info",
-  },
-  {
-    label: "Casos Críticos Detectados",
-    value: String(dashboardKPIs.criticalCases),
-    delta: "Requieren derivación",
-    icon: AlertTriangle,
-    tone: "destructive",
-  },
-  {
-    label: "Pendientes de Revisión",
-    value: String(dashboardKPIs.pendingReview),
-    delta: "Cola de validación",
-    icon: ClipboardList,
-    tone: "warning",
-  },
-];
 
 export default function Dashboard() {
-  const { recentPatients, isLoading, calculateAge } = useDashboard();
+  const user = useAuthStore((state) => state.user);
+  const clinical = canViewClinicalDashboard(user);
+  const { recentPatients, isLoading, error, calculateAge } = useDashboard(clinical);
+  const canEvaluate = clinical && user?.roles.some((role) =>
+    ["Oftalmologo", "Oftalmólogo"].includes(role));
 
   return (
     <AppLayout
       title="Dashboard"
-      subtitle="Resumen operativo · Lunes 26 de Abril, 2025"
-      actions={
+      subtitle={clinical ? "Actividad clínica reciente" : "Inicio del sistema"}
+      actions={canEvaluate ? (
         <Button asChild className="bg-gradient-primary hover:opacity-90">
           <Link to="/diagnostico">
             <Brain className="h-4 w-4" />
             Nueva Evaluación IA
           </Link>
         </Button>
-      }
+      ) : undefined}
     >
-      <KpiGrid kpis={kpis} />
-
-      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
-        <RecentPatientsTable
-          patients={recentPatients}
-          isLoading={isLoading}
-          calculateAge={calculateAge}
-        />
-        <RDLevelDistribution />
-      </div>
+      {clinical ? (
+        <div className="grid gap-6 lg:grid-cols-3">
+          <RecentPatientsTable
+            patients={recentPatients}
+            isLoading={isLoading}
+            error={error}
+            calculateAge={calculateAge}
+          />
+        </div>
+      ) : (
+        <section className="max-w-2xl rounded-md border border-border bg-card p-5 sm:p-6">
+          <h3 className="text-base font-semibold">Bienvenido al sistema</h3>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            La vista administrativa aún no cuenta con indicadores disponibles.
+            Utilice el menú para acceder a las funciones habilitadas para su cuenta.
+          </p>
+        </section>
+      )}
     </AppLayout>
   );
 }

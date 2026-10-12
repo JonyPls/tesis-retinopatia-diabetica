@@ -25,6 +25,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuthStore } from "@/features/auth/store/authStore";
+import { canReadPatients } from "@/features/patients/patientAccess";
 
 const mainItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, end: true },
@@ -120,7 +121,7 @@ export function AppSidebar() {
           )}
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
+              {mainItems.filter((item) => item.url === "/dashboard" || canReadPatients(user)).map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild className="hover:bg-transparent">
                     <NavLink
@@ -181,10 +182,14 @@ export function AppSidebar() {
                 <Activity className="h-2.5 w-2.5" /> En línea
               </div>
             </div>
-            <LogOut
-              className="h-4 w-4 text-sidebar-foreground/60 hover:text-sidebar-accent-foreground cursor-pointer"
+            <button
+              type="button"
               onClick={handleLogout}
-            />
+              aria-label="Cerrar sesión"
+              className="rounded p-1 text-sidebar-foreground/60 hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4 py-2">
