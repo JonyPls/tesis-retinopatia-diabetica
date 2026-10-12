@@ -1,5 +1,6 @@
 from database import db
 from datetime import datetime
+from sqlalchemy.dialects.mysql import BIGINT, BINARY, CHAR, DATETIME, INTEGER
 
 class GradoRetinopatia(db.Model):
     __tablename__ = 'grados_retinopatia'
@@ -52,3 +53,54 @@ class DiagnosticoDetalle(db.Model):
 
     resultado_ia = db.relationship('GradoRetinopatia', foreign_keys=[resultado_ia_id])
     resultado_final = db.relationship('GradoRetinopatia', foreign_keys=[resultado_final_id])
+
+
+class ConfirmacionExportacionRetinografo(db.Model):
+    """Asociacion humana de una exportacion; no es validacion de un resultado IA."""
+    __tablename__ = 'confirmaciones_exportacion_retinografo'
+    __table_args__ = (
+        db.UniqueConstraint('token_verificador', name='uq_confirmacion_token'),
+        db.UniqueConstraint('clave_copia', name='uq_confirmacion_copia'),
+        db.UniqueConstraint('detalle_id', name='uq_confirmacion_detalle'),
+        db.Index('idx_confirmacion_paciente_estado', 'paciente_id', 'estado'),
+        db.Index('idx_confirmacion_profesional_fecha', 'confirmado_por', 'fecha_confirmacion'),
+        db.Index('idx_confirmacion_revocador', 'revocada_por'),
+        db.CheckConstraint("REGEXP_LIKE(sha256_fuente, '^[0-9a-f]{64}$', 'c')",
+                           name='ck_confirmacion_sha256'),
+        db.CheckConstraint("REGEXP_LIKE(clave_copia, '^[0-9a-f]{32}$', 'c')",
+                           name='ck_confirmacion_copia'),
+        db.CheckConstraint('fecha_expiracion = fecha_confirmacion + INTERVAL 60 MINUTE',
+                           name='ck_confirmacion_vigencia'),
+        db.CheckConstraint("""(estado = 'CONFIRMADA' AND detalle_id IS NULL AND fecha_consumo IS NULL
+                           AND revocada_por IS NULL AND fecha_revocacion IS NULL)
+                        OR (estado = 'CONSUMIDA' AND detalle_id IS NOT NULL AND fecha_consumo IS NOT NULL
+                           AND revocada_por IS NULL AND fecha_revocacion IS NULL)
+                        OR (estado = 'REVOCADA' AND detalle_id IS NULL AND fecha_consumo IS NULL
+                           AND revocada_por IS NOT NULL AND fecha_revocacion IS NOT NULL)""",
+                           name='ck_confirmacion_estado'),
+        db.CheckConstraint('(fecha_consumo IS NULL OR fecha_consumo >= fecha_confirmacion) '
+                           'AND (fecha_revocacion IS NULL OR fecha_revocacion >= fecha_confirmacion)',
+                           name='ck_confirmacion_fechas'),
+    )
+
+    id = db.Column(BIGINT(unsigned=True), primary_key=True)
+    # Verificador de un secreto futuro de 32 bytes; nunca almacenar el token en claro.
+    token_verificador = db.Column(BINARY(32), nullable=False)
+    paciente_id = db.Column(INTEGER(unsigned=True), db.ForeignKey('pacientes.id', name='fk_confirmacion_paciente', ondelete='RESTRICT', onupdate='CASCADE'), nullable=False)
+    confirmado_por = db.Column(INTEGER(unsigned=True), db.ForeignKey('usuarios.id', name='fk_confirmacion_profesional', ondelete='RESTRICT', onupdate='CASCADE'), nullable=False)
+    ojo_confirmado = db.Column(db.Enum('Derecho', 'Izquierdo'), nullable=False)
+    nombre_exportacion = db.Column(db.String(255, collation='utf8mb4_bin'), nullable=False)
+    sha256_fuente = db.Column(CHAR(64, charset='ascii', collation='ascii_bin'), nullable=False)
+    clave_copia = db.Column(CHAR(32, charset='ascii', collation='ascii_bin'), nullable=False)
+    fecha_confirmacion = db.Column(DATETIME(fsp=6), nullable=False)
+    fecha_expiracion = db.Column(DATETIME(fsp=6), nullable=False)
+    estado = db.Column(db.Enum('CONFIRMADA', 'CONSUMIDA', 'REVOCADA'), nullable=False)
+    detalle_id = db.Column(BIGINT(unsigned=True), db.ForeignKey('diagnosticos_retinopatia_detalle.id', name='fk_confirmacion_detalle', ondelete='RESTRICT', onupdate='RESTRICT'))
+    fecha_consumo = db.Column(DATETIME(fsp=6))
+    revocada_por = db.Column(INTEGER(unsigned=True), db.ForeignKey('usuarios.id', name='fk_confirmacion_revocador', ondelete='RESTRICT', onupdate='RESTRICT'))
+    fecha_revocacion = db.Column(DATETIME(fsp=6))
+
+    paciente = db.relationship('Paciente', foreign_keys=[paciente_id])
+    confirmador = db.relationship('Usuario', foreign_keys=[confirmado_por])
+    revocador = db.relationship('Usuario', foreign_keys=[revocada_por])
+    detalle = db.relationship('DiagnosticoDetalle', foreign_keys=[detalle_id], uselist=False)

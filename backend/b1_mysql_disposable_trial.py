@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import socket
@@ -79,6 +80,7 @@ SEED_COUNTS = {
     "visitas_clinicas": 0, "diagnosticos_retinopatia": 0,
     "diagnosticos_retinopatia_detalle": 0, "informes": 0,
 }
+CONFIRMATIONS = 'confirmaciones_exportacion_retinografo'
 UNAFFECTED_TABLES = (
     "usuarios", "usuario_rol", "pacientes", "visitas_clinicas",
     "diagnosticos_retinopatia", "diagnosticos_retinopatia_detalle", "informes",
@@ -135,7 +137,10 @@ def client_script(port, password, path, database=None):
         encoding="utf-8", capture_output=True, timeout=90, env=environment,
     )
     # Nunca imprimir stdout/stderr: un error del seed podria incluir datos.
-    require(result.returncode == 0, f"Falló la etapa {path.name}; código de cliente {result.returncode}.")
+    error = re.search(r"ERROR (\d+) \(([\w]+)\) at line (\d+)", result.stderr)
+    diagnostic = f" error MySQL {error.group(1)} en línea {error.group(3)}" if error else ""
+    require(result.returncode == 0,
+            f"Falló la etapa {path.name}; código de cliente {result.returncode};{diagnostic}.")
 
 
 def catalog(connection):
@@ -180,7 +185,9 @@ def verify_seed(connection, *, historical=False):
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = %s AND table_type = 'BASE TABLE'
     """, (SCHEMA,)))
-    require(len(tables) == 14, "El seed no creó exactamente 14 tablas.")
+    expected_tables = set(SEED_COUNTS) if historical else set(SEED_COUNTS) | {CONFIRMATIONS}
+    require(tables == {(table,) for table in expected_tables},
+            "Las tablas del seed no coinciden con el maestro esperado.")
     require(set(rows(connection, "SELECT codigo FROM roles")) == {(r,) for r in ROLES},
             "Los cuatro roles no coinciden con la semilla v2.")
     if historical:
@@ -196,6 +203,8 @@ def verify_seed(connection, *, historical=False):
         require(grants(connection) == original_links,
                 "Los grants históricos no coinciden por código con la semilla original.")
     else:
+        require(rows(connection, f"SELECT COUNT(*) FROM `{CONFIRMATIONS}`")[0][0] == 0,
+                "El maestro no debe sembrar confirmaciones clínicas.")
         require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS | NEW_PERMISSIONS},
                 "El maestro B1 no contiene exactamente los 21 códigos aprobados.")
         require(counts(grants(connection)) == EXPECTED_FINAL_COUNTS,
@@ -243,7 +252,8 @@ def verify_seed(connection, *, historical=False):
     require(rows(connection, """
         SELECT COUNT(*) FROM information_schema.referential_constraints
         WHERE constraint_schema=%s
-    """, (SCHEMA,))[0][0] == 18, "Faltan claves foráneas del esquema de 14 tablas.")
+    """, (SCHEMA,))[0][0] == (18 if historical else 22),
+            "Faltan claves foráneas del esquema esperado.")
 
 
 def seed_signature(connection):
@@ -407,6 +417,9 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                 "La conexión no es a la instancia temporal propia.")
         verify_seed(connection, historical=historical_seed is not None)
         if historical_seed is None:
+            from b1_retinograph_schema_trial import check_confirmation_schema
+
+            check_confirmation_schema(connection)
             original_signature = seed_signature(connection)
             # El maestro hace DROP TABLE; repetirlo solo tras confirmar UUID,
             # datadir y puerto de la instancia desechable propia.
@@ -414,10 +427,16 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                     "Cambió la identidad del servidor antes de reconstruir B1.")
             client_script(port, password, v2)
             verify_seed(connection)
+            check_confirmation_schema(connection)
             require(seed_signature(connection) == original_signature,
                     "La segunda reconstrucción B1 difiere en tablas o datos semilla.")
-            print("MAESTRO B1: 14 tablas y semilla conservada en dos reconstrucciones; "
-                  "21 permisos, grants 7/13/6/6 por código; sin duplicados.")
+            print("MAESTRO B1: 15 tablas y semilla conservada en dos reconstrucciones; "
+                   "21 permisos, grants 7/13/6/6 por código; sin duplicados.")
+            from b1_retinograph_schema_trial import check_confirmation_integrity
+
+            check_confirmation_integrity(connection)
+            require(rows(connection, f"SELECT COUNT(*) FROM `{CONFIRMATIONS}`")[0][0] == 0,
+                    "La prueba de integridad dejó confirmaciones sintéticas persistidas.")
             before_fingerprints = fingerprints(connection)
             if orm_integration:
                 from b1_orm_mysql_trial import run_orm_integration
@@ -577,5 +596,7 @@ if __name__ == "__main__":
     except Exception as error:
         # No imprimir excepciones de PyMySQL/CLI: podrian incluir SQL o secretos.
         message = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        if isinstance(error, pymysql.MySQLError):
+            message += f" MySQL {error.args[0]}"
         print(f"ENSAYO DETENIDO: {message}", file=sys.stderr)
         sys.exit(1)

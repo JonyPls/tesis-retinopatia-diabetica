@@ -373,6 +373,64 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             "consentimiento_informado": True, **extra,
         }
 
+    def test_28c_confirmation_orm_matches_master_and_relates_to_detail(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        actual = inspect(db.engine).get_columns(model.__tablename__)
+        self.assertEqual({column['name'] for column in actual},
+                         {column.name for column in model.__table__.columns})
+        for column in actual:
+            self.assertEqual(column['nullable'], model.__table__.c[column['name']].nullable)
+        for name in ('id', 'paciente_id', 'confirmado_por', 'detalle_id', 'revocada_por'):
+            self.assertTrue(model.__table__.c[name].type.unsigned)
+            self.assertTrue(next(col for col in actual if col['name'] == name)['type'].unsigned)
+        for name in ('fecha_confirmacion', 'fecha_expiracion', 'fecha_consumo', 'fecha_revocacion'):
+            self.assertEqual(model.__table__.c[name].type.fsp, 6)
+            self.assertEqual(next(col for col in actual if col['name'] == name)['type'].fsp, 6)
+        self.assertEqual(model.__table__.c.token_verificador.type.length, 32)
+        for name, length in (('nombre_exportacion', 255), ('sha256_fuente', 64),
+                             ('clave_copia', 32)):
+            self.assertEqual(model.__table__.c[name].type.length, length)
+            self.assertEqual(next(col for col in actual if col['name'] == name)['type'].length,
+                             length)
+        self.assertEqual(model.__table__.c.estado.type.enums,
+                         ['CONFIRMADA', 'CONSUMIDA', 'REVOCADA'])
+        self.assertEqual({constraint.name for constraint in model.__table__.constraints
+                          if isinstance(constraint, db.CheckConstraint)},
+                         {check['name'] for check in inspect(db.engine).get_check_constraints(
+                             model.__tablename__)})
+        self.assertEqual({fk.name for fk in model.__table__.foreign_key_constraints},
+                         {'fk_confirmacion_paciente', 'fk_confirmacion_profesional',
+                          'fk_confirmacion_revocador', 'fk_confirmacion_detalle'})
+        detail = diagnosis_entities.DiagnosticoDetalle.query.filter_by(
+            diagnostico_retinopatia_id=self.diagnosis_ids[0], ojo_evaluado='Derecho').one()
+        detail_id = detail.id
+        confirmed_at = datetime(2030, 1, 1, 12, 0, 0, 123456)
+        entry = model(token_verificador=b'\x28' * 32, paciente_id=self.patient_ids[0],
+                      confirmado_por=self.user_ids['ophthalmologist'],
+                      ojo_confirmado='Derecho', nombre_exportacion='synthetic_R_1.jpg',
+                      sha256_fuente='a' * 64, clave_copia='b' * 32,
+                      fecha_confirmacion=confirmed_at,
+                      fecha_expiracion=confirmed_at + timedelta(minutes=60),
+                      estado='CONSUMIDA', detalle_id=detail_id, fecha_consumo=confirmed_at)
+        try:
+            db.session.add(entry)
+            db.session.commit()
+            identifier = entry.id
+            db.session.remove()
+            restored = db.session.get(model, identifier)
+            self.assertEqual(restored.detalle.id, detail_id)
+            self.assertEqual(restored.detalle.diagnostico.visita_id, self.visit_ids[0])
+            self.assertEqual(restored.paciente.id, self.patient_ids[0])
+            self.assertEqual(restored.confirmador.id, self.user_ids['ophthalmologist'])
+            self.assertIsNone(restored.revocador)
+            self.assertEqual(restored.fecha_confirmacion, confirmed_at)
+        finally:
+            db.session.rollback()
+            if entry.id is not None:
+                db.session.query(model).filter_by(id=entry.id).delete()
+                db.session.commit()
+            db.session.remove()
+
     def token(self, profile="ophthalmologist", *, expires=True, expired=False, claims_roles=None):
         claims = {
             "user_id": self.user_ids[profile], "roles": claims_roles or ["Admin"],
