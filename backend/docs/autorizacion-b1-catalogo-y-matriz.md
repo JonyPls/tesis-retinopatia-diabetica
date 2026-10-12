@@ -455,13 +455,64 @@ truncan archivos previos ante una colisión de nombre. Si solo había un ojo val
 pendiente devuelve el estado agregado a `PROCESADO` conservando íntegro el
 primero. Registros antiguos incompletos tampoco se reparan sobrescribiendo.
 
-**Riesgo que persiste hasta 27B:** el repositorio confirma MySQL antes de
-publicar ambos JPEG. Un fallo de disco o del proceso puede dejar registros
-con archivos ausentes o archivos parciales; una colisión de nombre después
-del commit tampoco se revierte en MySQL. MySQL y disco aún no tienen
-compensación, conciliación ni atomicidad conjunta. OD y OI siguen siendo
-peticiones independientes. La presentación de predicciones pendientes y la
-recuperación frontend de éxitos parciales quedan para 27D.
+El riesgo identificado en 27A (commit antes de guardar los JPEG) se trata en
+27B, a continuación. La recuperación frontend de éxitos parciales queda para
+27D.
+
+## Persistencia coordinada del POST (Prompt 27B)
+
+Se sustituye la descripción anterior de riesgo de *fallo controlado*: ahora
+`DiagnosisRepository.crear_diagnostico_y_detalle` solo hace `flush`; el
+servicio coordina el único `commit` o `rollback` de visita, diagnóstico y ojo.
+Tras cerrar la transacción de lectura de autorización/prechequeo, CLIP e IA
+generan en memoria; se escriben dos JPEG provisionales en
+`uploads/retinas/.pending/` (mismo filesystem), se sincronizan y se vuelven a
+decodificar. La lectura B1 solo permite nombres de archivo registrados en una
+fila **confirmada** y no expone `.pending`. Después se vuelve a bloquear
+visita/diagnóstico con `FOR UPDATE` y se hace `flush` antes de publicar ambos
+JPEG; al final, `commit`. Cada petición solo gestiona su propio par de nombres
+UUID; no toca archivos preexistentes. `os.link` publica sin reemplazo de manera
+atómica en un filesystem compatible; cuando el sistema no admite enlaces duros,
+la alternativa usa apertura `xb` y copia sincronizada, exclusiva pero **no
+atómica**. En este último caso un archivo parcial aún no confirmado no será
+servido por la ruta registrada; otros lectores con acceso directo al disco
+podrían observarlo. Nunca se usa `os.replace`.
+
+En error anterior al commit se hace rollback y después se retiran los archivos
+publicados **solo si el inode coincide con el creado por esa petición** y los
+provisionales propios. Si se intentó confirmar, una lectura con conexión
+independiente comprueba si la fila quedó confirmada; si existe, o falla la
+comprobación/rollback, **no** borra los JPEG definitivos. Se responde 500 sin
+exponer detalles internos y se requiere conciliación si no se puede determinar
+el estado. Un fallo en la limpieza final de provisionales no invalida una
+transacción ya confirmada; queda para inspección. OD y OI siguen siendo
+peticiones/transacciones distintas.
+
+**No existe atomicidad distribuida ni durabilidad absoluta entre MySQL y
+filesystem**: una caída después de publicar el primero o ambos archivos y
+antes de confirmar puede dejar archivos definitivos sin fila; una caída
+durante el commit puede dejar resultado incierto; una pérdida física de disco
+o acceso directo externo puede dejar una fila confirmada sin JPEG. La copia
+exclusiva de reserva puede dejar un JPEG parcial al caer el proceso. No hay
+`fsync` de los directorios tras crear enlaces, por lo que fallos de energía
+mantienen una ventana de durabilidad incluso con `fsync` de cada archivo.
+
+Conciliación conservadora: `utils.diagnosis_storage.inspect_database_candidates`
+en contexto Flask consulta **todas** las referencias del detalle y devuelve
+solo nombres del patrón generado, sin borrar. Solo propone provisionales
+`diagnosis-*.part` y definitivos UUID sin referencia tras un mínimo de 24 h;
+excluye operaciones activas en el mismo proceso; un error MySQL aborta la
+inspección. También lista referencias a archivos faltantes. No se ejecuta al
+arrancar ni borra nada. La memoria local no
+identifica trabajo activo en otros workers o servidores.
+Un operador autorizado debe comprobar que no hay solicitudes activas en ninguna
+instancia, validar la identidad del MySQL y la carpeta de uploads correctos,
+repetir la consulta y contraste de referencias, investigar registros con JPEG
+ausentes y conservar copia antes de cualquier acción manual. Sin tabla de
+operaciones ni coordinación entre procesos no es seguro automatizar borrados
+ni afirmar que un candidato es un huérfano definitivo. El cliente que reciba
+un 500 por commit incierto no debe repetir a ciegas: consultar primero la
+visita/ojo; una segunda solicitud del mismo ojo dará 409 si se confirmó.
 
 ## Dependencias antes de activar B1
 

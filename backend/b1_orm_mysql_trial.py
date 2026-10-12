@@ -16,6 +16,7 @@ import re
 import secrets
 import sys
 import tempfile
+import time
 from threading import Barrier
 from types import ModuleType
 import unittest
@@ -40,6 +41,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     from src.repositories.patient_repository import PatientRepository
     from src.repositories.diagnosis_repository import DiagnosisRepository
     from test_diagnosis_input import validator as real_validator, image_bytes
+    from utils import diagnosis_storage  # Mantener clase única tras patch.dict(sys.modules).
     import numpy as np
     from src.models import diagnosis_entities, informe_entities  # Registrar metadatos ORM.
     from src.repositories.auth_repository import AuthRepository
@@ -517,6 +519,10 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             headers={"Authorization": "Bearer " + (token or self.token())})
         db.session.remove()
         return response
+
+    @staticmethod
+    def published_files(folder):
+        return list(Path(folder).glob('*.jpg'))
 
     def test_orm_columns_and_relationship_provenance(self):
         inspector = inspect(db.engine)
@@ -1294,20 +1300,26 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
     def test_real_creation_first_both_eyes_retries_and_validated_preserved(self):
         with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
             statements = []
+            lock_started = []
             def count_sql(conn, cursor, statement, parameters, context, executemany):
                 statements.append(statement)  # No parámetros ni información clínica.
+                if 'FOR UPDATE' in statement.upper() and not lock_started:
+                    lock_started.append(time.perf_counter())
             event.listen(db.engine, 'before_cursor_execute', count_sql)
             try:
                 first = self.create_image(visit=visit_id)
+                elapsed_lock = time.perf_counter() - lock_started[0]
             finally:
                 event.remove(db.engine, 'before_cursor_execute', count_sql)
             self.assertEqual(first.status_code, 200, first.json)
             counts = Counter(sql.lstrip().split(None, 1)[0].upper() for sql in statements)
             print('ORM POST diagnóstico legacy (visita existente, primer ojo): '
-                  f'SELECT={counts["SELECT"]}, INSERT={counts["INSERT"]}, UPDATE={counts["UPDATE"]}')
+                  f'SELECT={counts["SELECT"]}, INSERT={counts["INSERT"]}, UPDATE={counts["UPDATE"]}; '
+                  f'primer FOR UPDATE a respuesta={elapsed_lock:.3f}s')
             od_id = first.json['data']['detalle_id']
             self.assertEqual(first.json['data']['visita_id'], visit_id)
-            self.assertEqual(len(list(Path(folder).iterdir())), 2)
+            self.assertEqual(len(self.published_files(folder)), 2)
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
             db.session.remove()
             od = db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id)
             self.assertEqual((od.ojo_evaluado, od.resultado_ia_id, od.estado_validacion),
@@ -1324,7 +1336,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertFalse(any(sql.lstrip().upper().startswith(('INSERT', 'UPDATE'))
                                  for sql in statements))
             self.assertEqual(model.call_count, 1)
-            self.assertEqual(len(list(Path(folder).iterdir())), 2)
+            self.assertEqual(len(self.published_files(folder)), 2)
             other = self.create_image(eye='Izquierdo', alias=visit_id)
             self.assertEqual(other.status_code, 200, other.json)
             self.assertEqual(model.call_count, 2)
@@ -1354,7 +1366,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                               od.motivo_correccion, od.imagen_original_url,
                               od.imagen_gradcam_url, od.resultado_completo), medical)
             self.assertEqual((od.imagen_original_url, od.imagen_gradcam_url, od.resultado_completo), original)
-            self.assertEqual(len(list(Path(folder).iterdir())), 4)
+            self.assertEqual(len(self.published_files(folder)), 4)
             details, _ = self.call(f'/api/diagnosticar/visita/{visit_id}/detalles', token=self.token())
             self.assertEqual(details.status_code, 200)
             self.assertEqual({d['ojo'] for d in details.json['data']['ojos']}, {'OD', 'OI'})
@@ -1406,14 +1418,14 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 headers={'Authorization': 'Bearer ' + bearer})
             self.assertEqual(url_token.status_code, 401)
             self.assertEqual(model.call_count, 0)
-            self.assertEqual(list(Path(folder).iterdir()), [])
+            self.assertEqual(self.published_files(folder), [])
             db.session.remove()
             self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
         with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation(
                 semantic=lambda *_: {'valido': False, 'error': 'Imagen no retiniana.'}) as (folder, model):
             self.assertEqual(self.create_image(visit=visit_id).status_code, 422)
             model.assert_not_called()
-            self.assertEqual(list(Path(folder).iterdir()), [])
+            self.assertEqual(self.published_files(folder), [])
         with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation(
                 semantic=lambda *_: {'valido': False, 'status': 503,
                                       'error': 'Synthetic private error'}) as (folder, model):
@@ -1421,7 +1433,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertEqual(rejected.status_code, 503)
             self.assertNotIn('Synthetic private error', rejected.get_data(as_text=True))
             model.assert_not_called()
-            self.assertEqual(list(Path(folder).iterdir()), [])
+            self.assertEqual(self.published_files(folder), [])
         with patch.object(real_validator, '_get_clip', side_effect=RuntimeError('synthetic model path')):
             with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation(
                     semantic=real_validator.validar_contenido_semantico) as (folder, model):
@@ -1429,7 +1441,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 self.assertEqual(rejected.status_code, 503)
                 self.assertNotIn('synthetic model path', rejected.get_data(as_text=True))
                 model.assert_not_called()
-                self.assertEqual(list(Path(folder).iterdir()), [])
+                self.assertEqual(self.published_files(folder), [])
 
     def test_real_creation_supported_formats_and_concurrent_same_eye(self):
         with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
@@ -1473,8 +1485,9 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             diagnosis = diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).one()
             self.assertEqual(len(diagnosis.detalles), 1)
             self.assertEqual(diagnosis.detalles[0].estado_validacion, 'PENDIENTE')
-            self.assertEqual(len(list(Path(folder).iterdir())), 2)
+            self.assertEqual(len(self.published_files(folder)), 2)
             self.assertEqual(model.call_count, 2)  # Prechequeos pueden cruzarse; INSERT solo uno.
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
 
         for fmt, filename, mime in (('PNG', 'synthetic.png', 'image/png'),
                                     ('TIFF', 'synthetic.tif', 'image/tiff')):
@@ -1492,13 +1505,211 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                           return_value=SimpleNamespace(hex='f' * 32)):
             first = self.create_image(visit=first_visit)
             self.assertEqual(first.status_code, 200, first.json)
-            snapshots = {file.name: file.read_bytes() for file in Path(folder).iterdir()}
+            snapshots = {file.name: file.read_bytes() for file in self.published_files(folder)}
             self.assertEqual(len(snapshots), 2)
             with patch.object(self.app.logger, 'error'):
                 second = self.create_image(visit=second_visit)
             self.assertEqual(second.status_code, 500)
-            self.assertEqual({file.name: file.read_bytes() for file in Path(folder).iterdir()},
+            self.assertEqual({file.name: file.read_bytes() for file in self.published_files(folder)},
                              snapshots)
+            db.session.remove()
+            self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=second_visit).first())
+
+    def test_real_creation_new_visit_single_commit_and_readable_jpegs(self):
+        from PIL import Image
+        with self.stubbed_creation() as (folder, model):
+            prepared = []
+            original_prepare = diagnosis_service.DiagnosisFiles.prepare
+            original_publish = diagnosis_service.DiagnosisFiles.publish
+            published = []
+            def prepare(files, image):
+                prepared.append(True)
+                return original_prepare(files, image)
+            def publish(files, temporary, name):
+                published.append(name)
+                return original_publish(files, temporary, name)
+            commits = []
+            original_commit = db.session.commit
+            def commit():
+                commits.append(True)
+                return original_commit()
+            with patch.object(diagnosis_service.DiagnosisFiles, 'prepare', prepare), \
+                 patch.object(diagnosis_service.DiagnosisFiles, 'publish', publish), \
+                 patch.object(db.session, 'commit', commit):
+                response = self.create_image()
+            self.assertEqual(response.status_code, 200, response.json)
+            self.assertEqual((len(prepared), len(published), len(commits)), (2, 2, 1))
+            self.assertEqual(len(self.published_files(folder)), 2)
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
+            for file in self.published_files(folder):
+                with Image.open(file) as image:
+                    self.assertEqual(image.format, 'JPEG')
+                    image.load()
+            db.session.remove()
+            detail = db.session.get(diagnosis_entities.DiagnosticoDetalle,
+                                    response.json['data']['detalle_id'])
+            self.assertEqual({detail.imagen_original_url, detail.imagen_gradcam_url}, set(published))
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico,
+                                            detail.diagnostico_retinopatia_id).visita_id,
+                             response.json['data']['visita_id'])
+            visit = db.session.get(VisitaClinica, response.json['data']['visita_id'])
+            self.assertEqual(visit.paciente_id, self.patient_ids[1])
+            db.session.delete(detail.diagnostico)
+            db.session.flush()
+            db.session.delete(visit)
+            db.session.commit()
+            db.session.remove()
+
+    def test_real_creation_faults_roll_back_and_clean_only_owned_files(self):
+        from utils import diagnosis_storage
+        original_prepare = diagnosis_storage.DiagnosisFiles.prepare
+        original_verify = diagnosis_storage.DiagnosisFiles.verify
+        original_publish = diagnosis_storage.DiagnosisFiles.publish
+        for stage in ('prepare_original', 'prepare_gradcam', 'verify', 'flush',
+                      'publish_original', 'publish_gradcam', 'commit'):
+            with self.subTest(stage=stage), self.empty_diagnosis_visit() as visit_id, \
+                 self.stubbed_creation() as (folder, model):
+                counters = Counter()
+                def prepare(files, image):
+                    counters['prepare'] += 1
+                    if stage == 'prepare_original' and counters['prepare'] == 1:
+                        raise OSError('synthetic disk error')
+                    if stage == 'prepare_gradcam' and counters['prepare'] == 2:
+                        raise OSError('synthetic disk error')
+                    return original_prepare(files, image)
+                def verify(path):
+                    if stage == 'verify':
+                        raise ValueError('synthetic invalid jpeg')
+                    return original_verify(path)
+                def publish(files, temporary, name):
+                    counters['publish'] += 1
+                    if stage == 'publish_original' and counters['publish'] == 1:
+                        raise OSError('synthetic publish error')
+                    if stage == 'publish_gradcam' and counters['publish'] == 2:
+                        raise OSError('synthetic publish error')
+                    return original_publish(files, temporary, name)
+                def inject_flush(conn, cursor, statement, parameters, context, executemany):
+                    if stage == 'flush' and 'INSERT INTO diagnosticos_retinopatia_detalle' in statement:
+                        raise RuntimeError('synthetic insert error')
+                original_commit = db.session.commit
+                def commit():
+                    if stage == 'commit':
+                        raise RuntimeError('synthetic commit error')
+                    return original_commit()
+                db.session.remove()
+                event.listen(db.engine, 'before_cursor_execute', inject_flush)
+                try:
+                    with patch.object(diagnosis_storage.DiagnosisFiles, 'prepare', prepare), \
+                         patch.object(diagnosis_storage.DiagnosisFiles, 'verify', verify), \
+                         patch.object(diagnosis_storage.DiagnosisFiles, 'publish', publish), \
+                         patch.object(db.session, 'commit', commit), \
+                         patch.object(self.app.logger, 'error'):
+                        response = self.create_image(visit=visit_id)
+                finally:
+                    event.remove(db.engine, 'before_cursor_execute', inject_flush)
+                self.assertEqual(response.status_code, 500, response.json)
+                self.assertEqual(self.published_files(folder), [])
+                pending = Path(folder) / '.pending'
+                if pending.exists():
+                    self.assertEqual(list(pending.iterdir()), [])
+                db.session.remove()
+                self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
+
+    def test_real_creation_commit_ambiguous_keeps_confirmed_images(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            original_commit = db.session.commit
+            def commit_then_raise():
+                original_commit()
+                raise OSError('synthetic lost acknowledgement')
+            with patch.object(db.session, 'commit', commit_then_raise), \
+                 patch.object(self.app.logger, 'error'):
+                response = self.create_image(visit=visit_id)
+            self.assertEqual(response.status_code, 500)
+            db.session.remove()
+            diagnosis = diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).one()
+            detail = diagnosis.detalles[0]
+            self.assertEqual({file.name for file in self.published_files(folder)},
+                             {detail.imagen_original_url, detail.imagen_gradcam_url})
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
+
+    def test_real_creation_rollback_preserves_validated_other_eye_and_files(self):
+        from utils import diagnosis_storage
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            first = self.create_image(visit=visit_id)
+            self.assertEqual(first.status_code, 200)
+            od_id = first.json['data']['detalle_id']
+            checked, _ = self.call(f'/api/diagnosticar/detalle/{od_id}/validar',
+                                   method='PUT', token=self.token(),
+                                   json_data={'diagnostico_final': 3,
+                                              'motivo_correccion': 'Justificación sintética'})
+            self.assertEqual(checked.status_code, 200)
+            db.session.remove()
+            od = db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id)
+            prior = (od.resultado_ia_id, od.resultado_final_id, od.estado_validacion,
+                     od.validado_por, od.fecha_validacion, od.motivo_correccion)
+            snapshot = {file.name: file.read_bytes() for file in self.published_files(folder)}
+            db.session.remove()
+            original_publish = diagnosis_storage.DiagnosisFiles.publish
+            def publish(files, temporary, name):
+                if name.endswith('_gradcam.jpg'):
+                    raise OSError('synthetic disk error')
+                return original_publish(files, temporary, name)
+            with patch.object(diagnosis_storage.DiagnosisFiles, 'publish', publish), \
+                 patch.object(self.app.logger, 'error'):
+                rejected = self.create_image(eye='Izquierdo', visit=visit_id)
+                self.assertEqual(rejected.status_code, 500, rejected.json)
+            db.session.remove()
+            od = db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id)
+            self.assertEqual((od.resultado_ia_id, od.resultado_final_id, od.estado_validacion,
+                              od.validado_por, od.fecha_validacion, od.motivo_correccion), prior)
+            self.assertEqual(od.diagnostico.estado, 'VALIDADO')
+            self.assertEqual(len(od.diagnostico.detalles), 1)
+            self.assertEqual({file.name: file.read_bytes() for file in self.published_files(folder)}, snapshot)
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
+
+    def test_real_creation_new_visit_failure_does_not_leave_visit(self):
+        from utils import diagnosis_storage
+        db.session.remove()
+        before = (db.session.query(VisitaClinica).count(),
+                  db.session.query(diagnosis_entities.Diagnostico).count(),
+                  db.session.query(diagnosis_entities.DiagnosticoDetalle).count())
+        db.session.remove()
+        with self.stubbed_creation() as (folder, model):
+            def fail_second(files, temporary, name):
+                if name.endswith('_gradcam.jpg'):
+                    raise OSError('synthetic disk failure')
+                return original_publish(files, temporary, name)
+            original_publish = diagnosis_storage.DiagnosisFiles.publish
+            with patch.object(diagnosis_storage.DiagnosisFiles, 'publish', fail_second), \
+                 patch.object(self.app.logger, 'error'):
+                response = self.create_image()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(self.published_files(folder), [])
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
+        db.session.remove()
+        self.assertEqual((db.session.query(VisitaClinica).count(),
+                          db.session.query(diagnosis_entities.Diagnostico).count(),
+                          db.session.query(diagnosis_entities.DiagnosticoDetalle).count()), before)
+
+    def test_real_creation_reconciliation_inspects_database_without_deleting(self):
+        from utils.diagnosis_storage import inspect_database_candidates
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            response = self.create_image(visit=visit_id)
+            self.assertEqual(response.status_code, 200, response.json)
+            stray = Path(folder) / ('P7_Derecho_' + 'e' * 32 + '.jpg')
+            stray.write_bytes(b'synthetic orphan candidate')
+            old = time.time() - 90000
+            os.utime(stray, (old, old))
+            db.session.remove()
+            candidates = inspect_database_candidates(folder)
+            self.assertEqual(candidates['unreferenced_candidates'], [stray.name])
+            self.assertEqual(candidates['temporary_candidates'], [])
+            db.session.remove()
+            detail = db.session.get(diagnosis_entities.DiagnosticoDetalle,
+                                    response.json['data']['detalle_id'])
+            self.assertNotIn(detail.imagen_original_url, candidates['missing_referenced'])
+            self.assertNotIn(detail.imagen_gradcam_url, candidates['missing_referenced'])
+            self.assertEqual(len(self.published_files(folder)), 3)
 
     def test_b1_real_retina_file_requires_bearer_and_registered_resource(self):
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg"):

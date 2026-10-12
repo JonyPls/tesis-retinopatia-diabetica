@@ -103,7 +103,8 @@ class DiagnosisRepository:
         # Solo se crea un detalle nuevo. Nunca reiniciar una decisión anterior.
         diag.estado = 'PROCESADO'
 
-        db.session.commit()
+        # El servicio coordina commit/rollback después de publicar ambos JPEG.
+        db.session.flush()
         return visita_id, diag.id, detalle.id
 
     @staticmethod

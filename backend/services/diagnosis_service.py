@@ -12,6 +12,8 @@ from dl_model.inference import predecir_imagen_bytes
 from src.repositories.diagnosis_repository import DiagnosisRepository, DiagnosisValidationError
 from database import db
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
+from utils.diagnosis_storage import DiagnosisFiles
 
 RD_LABELS = {
     0: "Normal",
@@ -28,6 +30,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_id: int,
                         ojo_evaluado: str, visita_id: int = None,
                         *, require_existing_diagnosis=False) -> tuple[dict, int]:
+    files = None
+    commit_attempted = False
+    detalle_id = None
+    nombre_unico = nombre_gradcam = None
     try:
         # Las lecturas baratas preceden a CLIP/ResNet50; el repositorio las
         # repite con bloqueo al escribir para cerrar la carrera entre peticiones.
@@ -35,6 +41,9 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             paciente_id, ojo_evaluado, visita_id,
             require_existing_diagnosis=require_existing_diagnosis,
         )
+        # Auth/preflight inician una transacción de lectura. Soltar su snapshot
+        # antes de ejecutar modelos o crear provisionales; revalidar bajo lock.
+        db.session.rollback()
         max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)
         image_bytes = archivo_imagen.stream.read(max_bytes + 1)
         if len(image_bytes) > max_bytes:
@@ -74,9 +83,6 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         nombre_unico = f"P{paciente_id}_{ojo_evaluado}_{uuid.uuid4().hex}.jpg"
         nombre_gradcam = nombre_unico.replace('.jpg', '_gradcam.jpg')
 
-        ruta_guardado = os.path.join(UPLOAD_FOLDER, nombre_unico)
-        ruta_gradcam = os.path.join(UPLOAD_FOLDER, nombre_gradcam)
-
         imagen = Image.open(io.BytesIO(image_bytes))
 
         datos_bd = {
@@ -102,20 +108,26 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             "modelo_nombre": "ResNet50",
         }
 
+        # Preparar ambos JPEG fuera de la transacción de escritura.
+        files = DiagnosisFiles(UPLOAD_FOLDER)
+        if imagen.mode != 'RGB':
+            imagen = imagen.convert('RGB')
+        original_temp = files.prepare(imagen)
+        gradcam_temp = files.prepare(Image.fromarray(cam_image_array))
+
         visita_id, diagnostico_retinopatia_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(
             datos_bd, visita_id, require_existing_diagnosis=require_existing_diagnosis,
         )
-
-        # Convertir y guardar como JPG solo si el INSERT fue exitoso
-        if imagen.mode != 'RGB':
-            imagen = imagen.convert('RGB')  # .tif puede venir en modo RGBA o L
-        # No truncar un archivo previo, incluso ante colisión de nombre.
-        with open(ruta_guardado, 'xb') as output:
-            imagen.save(output, 'JPEG', quality=90)
-
-        # Guardar físicamente la imagen del Grad-CAM
-        with open(ruta_gradcam, 'xb') as output:
-            Image.fromarray(cam_image_array).save(output, 'JPEG', quality=90)
+        files.publish(original_temp, nombre_unico)
+        files.publish(gradcam_temp, nombre_gradcam)
+        commit_attempted = True
+        db.session.commit()
+        try:
+            files.cleanup()
+        except OSError:
+            current_app.logger.warning('Provisionales de diagnóstico pendientes de conciliación')
+        finally:
+            files.release()
 
         resultado_ia["visita_id"] = visita_id
         resultado_ia["diagnostico_id"] = visita_id
@@ -126,18 +138,51 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         return {"success": True, "data": resultado_ia}, 200
 
     except DiagnosisValidationError as error:
-        db.session.rollback()
+        _undo_creation(files, commit_attempted, detalle_id)
         return {"success": False, "message": str(error)}, error.status_code
     except IntegrityError as error:
-        db.session.rollback()
+        _undo_creation(files, commit_attempted, detalle_id)
         if getattr(error.orig, 'args', (None,))[0] == 1062:
             return {"success": False, "message": "Ya existe un resultado para este ojo."}, 409
         current_app.logger.error("Error de persistencia al procesar diagnostico")
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
     except Exception:
-        db.session.rollback()
+        _undo_creation(files, commit_attempted, detalle_id)
         current_app.logger.error("Error al procesar diagnostico")
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+
+
+def _undo_creation(files, commit_attempted, detalle_id):
+    """No borrar archivos si un COMMIT ambiguo pudo haber confirmado su fila."""
+    try:
+        db.session.rollback()
+        rollback_ok = True
+    except Exception:
+        rollback_ok = False
+        current_app.logger.error('Rollback de diagnóstico no confirmado; requiere conciliación')
+
+    safe_to_remove = rollback_ok and not commit_attempted
+    if commit_attempted and detalle_id is not None:
+        try:
+            # Conexión independiente: nunca decidir usando la sesión rota.
+            with db.engine.connect() as connection:
+                row = connection.execute(text(
+                    'SELECT imagen_original_url, imagen_gradcam_url '
+                    'FROM diagnosticos_retinopatia_detalle WHERE id = :id'
+                ), {'id': detalle_id}).first()
+            safe_to_remove = rollback_ok and row is None
+            if row is not None:
+                current_app.logger.warning('Commit de diagnóstico confirmado o ambiguo; conservar archivos')
+        except Exception:
+            safe_to_remove = False
+            current_app.logger.error('Estado del commit no verificable; conservar archivos')
+    if files is not None:
+        try:
+            files.cleanup(published=safe_to_remove)
+        except OSError:
+            current_app.logger.error('Limpieza incompleta; requiere conciliación')
+        finally:
+            files.release()
 
 
 def consultar_detalles_por_visita(visita_id: int) -> dict:
