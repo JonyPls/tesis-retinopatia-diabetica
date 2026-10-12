@@ -62,7 +62,8 @@ fake_report_service.ReportTemplateError = type("ReportTemplateError", (Exception
 fake_report_service.generar_reporte_diagnostico_pdf = Mock()
 fake_informe_service = types.ModuleType("services.informe_service")
 for name in ("obtener_tipos", "crear_nuevo_informe", "obtener_informe",
-             "actualizar_informe_existente", "eliminar_informe_existente",
+             "actualizar_informe_existente", "anular_informe_existente", "bloquear_informe_para_edicion",
+             "cancelar_edicion", "eliminar_informe_existente",
              "obtener_informes_por_paciente", "consultar_informes_por_diagnostico",
              "consultar_informes_por_visita"):
     setattr(fake_informe_service, name, Mock())
@@ -2088,6 +2089,133 @@ class AuthSecurityTests(unittest.TestCase):
             self.assertEqual(self.client.post(path, headers=headers, data='texto',
                                               content_type='text/plain').status_code, 400)
             self.assertEqual(create.call_count, 1)
+
+    def test_29c3_put_opt_in_is_off_before_any_clinical_lookup(self):
+        path = '/api/informes/123'
+        self.set_role_grants({'OFTALMOLOGO': ['informes.editar']})
+        token = self.token()
+        with (patch.object(informe_routes, 'bloquear_informe_para_edicion') as lookup,
+              patch.object(informe_routes, 'actualizar_informe_existente') as edit):
+            for headers, expected in (({}, 401), (self.headers('invalid'), 401),
+                                      (self.headers(token), 403)):
+                self.assertEqual(self.client.put(path, headers=headers).status_code, expected)
+            self.assertEqual(self.client.put(path + '?token=' + token,
+                                             headers=self.headers(token)).status_code, 401)
+            lookup.assert_not_called()
+            edit.assert_not_called()
+
+    def test_29c3_put_opt_in_enforces_role_grant_and_locked_ownership(self):
+        path = '/api/informes/123'
+        payload = {'datos_estructurados': {'nota': 'sintetica'},
+                   'motivo': 'Corrección sintética', 'revision_esperada': 1}
+        self.client.application.config['REPORTS_EDIT_ENABLED'] = True
+        headers = self.headers(self.token())
+        owned = SimpleNamespace(id=123, usuario_id=self.user.id)
+        with (patch.object(informe_routes, 'bloquear_informe_para_edicion', return_value=owned) as lookup,
+              patch.object(informe_routes, 'cancelar_edicion') as rollback,
+              patch.object(informe_routes, 'actualizar_informe_existente',
+                           return_value=({'success': True, 'data': {'revision_actual': 2}}, 200)) as edit):
+            for role in ('ADMINISTRADOR_SISTEMA', 'ENFERMERO', 'ASISTENTE_ADMINISTRATIVO'):
+                self.set_role_grants({role: ['informes.editar']})
+                self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.gestionar'],
+                                  'ADMINISTRADOR_SISTEMA': ['informes.editar']})
+            self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.editar']})
+            self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 200)
+            self.assertEqual(self.client.delete(path, headers=headers).status_code, 403)
+            edit.assert_called_once_with(123, payload, self.user.id, owned)
+            edit.reset_mock()
+            for body in ([], None, 'texto'):
+                self.assertEqual(self.client.put(path, headers=headers, json=body).status_code, 400)
+            self.assertEqual(self.client.put(path, headers=headers, data='{',
+                                             content_type='application/json').status_code, 400)
+            self.assertEqual(self.client.put(path, headers=headers, data='x' * 65537,
+                                             content_type='application/json').status_code, 413)
+            edit.assert_not_called()
+            lookup.return_value = SimpleNamespace(id=123, usuario_id=999)
+            self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 403)
+            edit.assert_not_called()
+            lookup.return_value = None
+            self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 404)
+            lookup.reset_mock()
+            roles = self.set_role_grants({'OFTALMOLOGO': ['informes.editar']})
+            roles['OFTALMOLOGO'].permisos_rel[0].permiso.estado = 'INACTIVO'
+            self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 403)
+            lookup.assert_not_called()
+            self.active = False
+            self.assertEqual(self.client.put(path, headers=headers, json=payload).status_code, 401)
+            self.assertGreaterEqual(rollback.call_count, 2)
+            self.assertEqual(self.client.delete(path, headers=self.headers(self.token())).status_code, 401)
+
+    def test_29c4_annul_opt_in_and_ownership(self):
+        path = '/api/informes/123/anulacion'
+        body = {'motivo': 'Corrección documental', 'revision_esperada': 1}
+        self.set_role_grants({'OFTALMOLOGO': ['informes.anular']})
+        token = self.token()
+        with (patch.object(informe_routes, 'bloquear_informe_para_edicion',
+                           return_value=SimpleNamespace(id=123, usuario_id=self.user.id)) as lookup,
+              patch.object(informe_routes, 'anular_informe_existente',
+                           return_value=({'success': True}, 200)) as annul,
+              patch.object(informe_routes, 'cancelar_edicion') as rollback):
+            for headers, status in (({}, 401), (self.headers('invalid'), 401),
+                                    (self.headers(token), 403)):
+                self.assertEqual(self.client.post(path, headers=headers, json=body).status_code, status)
+            self.client.application.config['REPORTS_EDIT_ENABLED'] = True
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 403)
+            self.assertEqual(self.client.post(path + '?token=' + token,
+                             headers=self.headers(token), json=body).status_code, 401)
+            lookup.assert_not_called()
+            annul.assert_not_called()
+            self.client.application.config['REPORTS_ANNUL_ENABLED'] = 1
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 403)
+            self.client.application.config['REPORTS_ANNUL_ENABLED'] = True
+            for role in ('ADMINISTRADOR_SISTEMA', 'ENFERMERO', 'ASISTENTE_ADMINISTRATIVO'):
+                self.set_role_grants({role: ['informes.anular']})
+                self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.editar', 'informes.gestionar'],
+                                  'ADMINISTRADOR_SISTEMA': ['informes.anular']})
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 403)
+            lookup.assert_not_called()
+            self.set_role_grants({'OFTALMOLOGO': ['informes.anular']})
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 200)
+            annul.assert_called_once()
+            annul.reset_mock()
+            lookup.return_value = SimpleNamespace(id=123, usuario_id=999)
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 403)
+            annul.assert_not_called()
+            lookup.return_value = None
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 404)
+            self.assertGreaterEqual(rollback.call_count, 2)
+            lookup.reset_mock()
+            grants = self.set_role_grants({'OFTALMOLOGO': ['informes.anular']})
+            grants['OFTALMOLOGO'].permisos_rel[0].permiso.estado = 'INACTIVO'
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 403)
+            lookup.assert_not_called()
+            self.active = False
+            self.assertEqual(self.client.post(path, headers=self.headers(token), json=body).status_code, 401)
+            self.assertEqual(self.client.delete('/api/informes/123', headers=self.headers(token)).status_code, 401)
+
+    def test_29c4_annul_route_malformed_json_and_independent_flags(self):
+        path = '/api/informes/123/anulacion'
+        self.set_role_grants({'OFTALMOLOGO': ['informes.anular']})
+        self.client.application.config['REPORTS_ANNUL_ENABLED'] = True
+        headers = self.headers(self.token())
+        with (patch.object(informe_routes, 'bloquear_informe_para_edicion',
+                           return_value=SimpleNamespace(id=123, usuario_id=self.user.id)),
+              patch.object(informe_routes, 'cancelar_edicion') as rollback,
+              patch.object(informe_routes, 'anular_informe_existente') as annul):
+            for body in ([], None, 'texto'):
+                self.assertEqual(self.client.post(path, headers=headers, json=body).status_code, 400)
+            self.assertEqual(self.client.post(path, headers=headers, data='{',
+                                             content_type='application/json').status_code, 400)
+            self.assertEqual(self.client.post(path, headers=headers, data='x' * 65537,
+                                             content_type='application/json').status_code, 413)
+            annul.assert_not_called()
+            self.assertEqual(rollback.call_count, 5)
+            self.assertEqual(self.client.put('/api/informes/123', headers=headers,
+                                            json={'motivo': 'x'}).status_code, 403)
+            self.assertEqual(self.client.delete('/api/informes/123', headers=headers).status_code, 403)
 
 
 if __name__ == "__main__":

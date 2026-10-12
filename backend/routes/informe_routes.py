@@ -9,6 +9,10 @@ from services.informe_service import (
     obtener_informes_por_paciente,
     consultar_informes_por_diagnostico,
     consultar_informes_por_visita,
+    actualizar_informe_existente,
+    anular_informe_existente,
+    bloquear_informe_para_edicion,
+    cancelar_edicion,
 )
 informe_bp = Blueprint("informe_bp", __name__)
 
@@ -32,6 +36,23 @@ def _report_requires_new_visit():
     return 'visita_id' not in data and 'diagnostico_id' not in data
 
 
+def _owned_report_for_edit(user, informe_id):
+    # El SELECT FOR UPDATE abre la misma transacción que completa el handler.
+    try:
+        informe = bloquear_informe_para_edicion(informe_id)
+    except Exception:
+        cancelar_edicion()
+        raise
+    if informe is None:
+        cancelar_edicion()
+        raise AuthorizationInputError(404, "Informe no encontrado.")
+    if informe.usuario_id != user.id:
+        cancelar_edicion()
+        return False
+    request.locked_report_for_edit = informe
+    return True
+
+
 @informe_bp.route("/api/tipos-informe", methods=["GET"])
 @strict_authorization_required("reports.catalog_read")
 def listar_tipos():
@@ -53,10 +74,57 @@ def obtener(informe_id):
     return jsonify(resp), status
 
 @informe_bp.route("/api/informes/<int:informe_id>", methods=["PUT"])
-@disabled_authenticated_operation
+@strict_authorization_required("reports.edit_own", resource_check=_owned_report_for_edit,
+                               enabled_config="REPORTS_EDIT_ENABLED")
 def actualizar(informe_id):
-    # Defensa adicional si se invoca el handler sin la guardia.
-    return jsonify({"success": False, "message": "No autorizado."}), 403
+    request.max_content_length = 65536
+    if request.content_length is not None and request.content_length > 65536:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud demasiado grande."}), 413
+    if not request.is_json:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud de informe inválida."}), 400
+    try:
+        data = request.get_json()
+    except RequestEntityTooLarge:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud demasiado grande."}), 413
+    except BadRequest:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud de informe inválida."}), 400
+    if type(data) is not dict:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud de informe inválida."}), 400
+    resp, status = actualizar_informe_existente(informe_id, data, request.current_user["user_id"],
+                                                request.locked_report_for_edit)
+    return jsonify(resp), status
+
+
+@informe_bp.route("/api/informes/<int:informe_id>/anulacion", methods=["POST"])
+@strict_authorization_required("reports.annul_own", resource_check=_owned_report_for_edit,
+                               enabled_config="REPORTS_ANNUL_ENABLED")
+def anular(informe_id):
+    request.max_content_length = 65536
+    if request.content_length is not None and request.content_length > 65536:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud demasiado grande."}), 413
+    if not request.is_json:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud de informe inválida."}), 400
+    try:
+        data = request.get_json()
+    except RequestEntityTooLarge:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud demasiado grande."}), 413
+    except BadRequest:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud de informe inválida."}), 400
+    if type(data) is not dict:
+        cancelar_edicion()
+        return jsonify({"success": False, "message": "Solicitud de informe inválida."}), 400
+    resp, status = anular_informe_existente(informe_id, data, request.current_user["user_id"],
+                                            request.locked_report_for_edit)
+    return jsonify(resp), status
 
 @informe_bp.route("/api/informes/<int:informe_id>", methods=["DELETE"])
 @disabled_authenticated_operation

@@ -3223,6 +3223,11 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             yield identifier
         finally:
             db.session.remove()
+            report_ids = [row.id for row in db.session.query(informe_entities.Informe.id)
+                          .filter_by(visita_id=identifier).all()]
+            if report_ids:
+                db.session.query(informe_entities.InformeVersion).filter(
+                    informe_entities.InformeVersion.informe_id.in_(report_ids)).delete(synchronize_session=False)
             db.session.query(informe_entities.Informe).filter_by(visita_id=identifier).delete()
             db.session.query(VisitaClinica).filter_by(id=identifier).delete()
             db.session.commit()
@@ -3307,7 +3312,10 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.json)
         self.assertEqual(sum('insert into visitas_clinicas' in q.lower().replace('`', '')
                              for q in sql), 1)
-        self.assertEqual(sum('insert into informes' in q.lower().replace('`', '') for q in sql), 1)
+        self.assertEqual(sum(bool(re.search(r'\binsert into informes\s*\(', q.lower().replace('`', '')))
+                             for q in sql), 1)
+        self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                             for q in sql), 1)
         new_visit, new_report = response.json['data']['visita_id'], response.json['data']['id']
         db.session.remove()
         self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
@@ -3316,6 +3324,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                          self.user_ids['ophthalmologist'])
         self.assertEqual(db.session.get(informe_entities.Informe, new_report).visita_id, new_visit)
         db.session.remove()
+        db.session.query(informe_entities.InformeVersion).filter_by(informe_id=new_report).delete()
         db.session.query(informe_entities.Informe).filter_by(id=new_report).delete()
         db.session.query(VisitaClinica).filter_by(id=new_visit).delete()
         db.session.commit()
@@ -3328,6 +3337,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         db.session.remove()
         self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
                               motivo_consulta='Registro de informe clinico').count(), before)
+        self.assertEqual(informe_entities.InformeVersion.query.count(), 0)
         with patch.object(db.session, 'commit', side_effect=RuntimeError('synthetic before commit')):
             failed, _ = self.call(path, method='POST', token=self.token(), json_data=payload)
         self.assertEqual(failed.status_code, 500)
@@ -3416,6 +3426,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             report = db.session.get(informe_entities.Informe, identifier)
             self.assertEqual({column.name: getattr(report, column.name)
                               for column in informe_entities.Informe.__table__.columns}, original)
+            self.assertEqual(len(report.versiones), 1)
             report.estado = 'INACTIVO'
             db.session.commit()  # Fixture sintética; DELETE HTTP continúa bloqueado.
             db.session.remove()
@@ -3450,7 +3461,11 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertNotIn('synthetic', result.get_data(as_text=True))
             db.session.remove()
-            self.assertEqual(informe_entities.Informe.query.filter_by(visita_id=visit_id).count(), 1)
+            reports = informe_entities.Informe.query.filter_by(visita_id=visit_id).all()
+            self.assertEqual(len(reports), 1)
+            self.assertEqual(len(reports[0].versiones), 1)
+            self.assertEqual(reports[0].versiones[0].datos_estructurados,
+                             reports[0].datos_estructurados)
 
     def test_29b_real_post_concurrent_duplicate_unique_wins(self):
         path = '/api/informes'
@@ -3459,8 +3474,9 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             connections = set()
 
             def synchronize(conn, cursor, statement, parameters, context, executemany):
-                if ('FROM informes' in statement.replace('`', '') and
-                        'tipo_informe_id' in statement and 'SELECT' in statement.upper()):
+                sql = statement.lower().replace('`', '')
+                if ('from informes ' in sql and 'where informes.visita_id' in sql and
+                        'informes.tipo_informe_id' in sql and 'select ' in sql):
                     connections.add(conn.connection.driver_connection.thread_id())
                     barrier.wait()
 
@@ -3493,6 +3509,603 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertEqual(len(reports), 1)
             self.assertEqual(reports[0].usuario_id, self.user_ids[winner])
             self.assertEqual(reports[0].datos_estructurados['nota'], winner)
+            self.assertEqual(len(reports[0].versiones), 1)
+            self.assertEqual(reports[0].versiones[0].datos_estructurados['nota'], winner)
+
+    def test_29c3_post_initial_snapshot_and_atomic_failures(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            response, sql = self.call(path, method='POST', token=self.token(),
+                                      json_data=self.report_payload(visit_id=visit_id), measure=True)
+            self.assertEqual(response.status_code, 201, response.json)
+            self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                                 for q in sql), 1)
+            report_id = response.json['data']['id']
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            self.assertEqual(report.revision_actual, 1)
+            self.assertEqual(len(report.versiones), 1)
+            initial = report.versiones[0]
+            self.assertEqual((initial.numero_version, initial.operacion, initial.autor_operacion_id),
+                             (1, 'CREACION', self.user_ids['ophthalmologist']))
+            self.assertEqual((initial.datos_estructurados, initial.conclusion, initial.estado,
+                              initial.schema_version),
+                             (report.datos_estructurados, report.conclusion, report.estado,
+                              report.schema_version))
+            self.assertIsNotNone(initial.fecha_operacion)
+            detail, _ = self.call(f'{path}/{report_id}', token=self.token('colleague'))
+            self.assertEqual(detail.status_code, 200)
+            self.assertEqual(detail.json['data']['revision_actual'], 1)
+            self.assertEqual(detail.json['data']['schema_version'], report.schema_version)
+
+        payload = self.report_payload()
+        for failure in (RuntimeError('synthetic version failure'),
+                        IntegrityError('INSERT', {}, MySQLIntegrityError(1452, 'synthetic FK error'))):
+            db.session.remove()
+            before = VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                          motivo_consulta='Registro de informe clinico').count()
+            with patch.object(InformeRepository, 'crear_version_inicial', side_effect=failure):
+                result, sql = self.call(path, method='POST', token=self.token(),
+                                        json_data=payload, measure=True)
+            self.assertEqual(result.status_code, 500)
+            self.assertNotIn('synthetic', result.get_data(as_text=True))
+            self.assertTrue(any('insert into informes' in q.lower().replace('`', '') for q in sql))
+            db.session.remove()
+            self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                              motivo_consulta='Registro de informe clinico').count(), before)
+            self.assertEqual(informe_entities.InformeVersion.query.count(), 0)
+
+        before = VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                                               motivo_consulta='Registro de informe clinico').count()
+        result, sql = self.call(path, method='POST', token=self.token(),
+                                json_data=payload, measure=True)
+        self.assertEqual(result.status_code, 201, result.json)
+        self.assertEqual(sum('insert into visitas_clinicas' in q.lower().replace('`', '')
+                             for q in sql), 1)
+        self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                             for q in sql), 1)
+        visit_id, report_id = result.json['data']['visita_id'], result.json['data']['id']
+        db.session.remove()
+        self.assertEqual(db.session.get(informe_entities.Informe, report_id).versiones[0].operacion,
+                         'CREACION')
+        self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                         motivo_consulta='Registro de informe clinico').count(), before + 1)
+        db.session.remove()
+        db.session.query(informe_entities.InformeVersion).filter_by(informe_id=report_id).delete()
+        db.session.query(informe_entities.Informe).filter_by(id=report_id).delete()
+        db.session.query(VisitaClinica).filter_by(id=visit_id).delete()
+        db.session.commit()
+        db.session.remove()
+
+    def test_29c3_edit_opt_in_ownership_and_payload(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            created, _ = self.call(path, method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201)
+            report_id = created.json['data']['id']
+            target = f'{path}/{report_id}'
+            payload = {'datos_estructurados': {'nota': 'Corrección sintética'},
+                       'motivo': 'Aclaración posterior', 'revision_esperada': 1}
+            denied, sql = self.call(target, method='PUT', token=self.token(),
+                                    json_data=payload, measure=True)
+            self.assertEqual(denied.status_code, 403)
+            self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True}):
+                for bearer in (None, 'invalid', self.token(expired=True)):
+                    denied, sql = self.call(target, method='PUT', token=bearer,
+                                            json_data=payload, measure=True)
+                    self.assertEqual(denied.status_code, 401)
+                    self.assertEqual(sql, [])
+                self.assertEqual(self.call(target + '?token=' + self.token(), method='PUT',
+                                           token=self.token(), json_data=payload)[0].status_code, 401)
+                for profile in ('administrator', 'nurse', 'assistant', 'colleague'):
+                    denied, sql = self.call(target, method='PUT', token=self.token(profile),
+                                            json_data=payload, measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    if profile != 'colleague':
+                        self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+                with self.temporary_grant('OFTALMOLOGO', 'informes.editar', present=False):
+                    for profile in ('ophthalmologist', 'dual', 'assistant_dual'):
+                        denied, sql = self.call(target, method='PUT', token=self.token(profile),
+                                                json_data=payload, measure=True)
+                        self.assertEqual(denied.status_code, 403)
+                        self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+                with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+                    self.assertEqual(self.call(target, method='PUT', token=self.token(),
+                                               json_data=payload)[0].status_code, 401)
+                bad = (
+                    ({'datos_estructurados': {'nota': 'x'}, 'motivo': 'x'}, 400),
+                    ({**payload, 'revision_esperada': False}, 400),
+                    ({**payload, 'revision_esperada': 0}, 400),
+                    ({**payload, 'revision_esperada': '1'}, 400),
+                    ({**payload, 'revision_esperada': -1}, 400),
+                    ({**payload, 'motivo': ''}, 400),
+                    ({**payload, 'motivo': '  \t '}, 400),
+                    ({**payload, 'motivo': 'x' * 1001}, 400),
+                    ({**payload, 'usuario_id': self.user_ids['colleague']}, 400),
+                    ({**payload, 'autor_operacion_id': self.user_ids['colleague']}, 400),
+                    ({**payload, 'schema_version': 99}, 400),
+                    ({**payload, 'estado': 'ANULADO'}, 400),
+                    ({**payload, 'revision_actual': 9}, 400),
+                    ({**payload, 'datos_estructurados': {'estado': 'ANULADO'}}, 422),
+                    ({**payload, 'datos_estructurados': []}, 422),
+                )
+                for body, expected in bad:
+                    with self.subTest(body=body):
+                        denied, sql = self.call(target, method='PUT', token=self.token(),
+                                                json_data=body, measure=True)
+                        self.assertEqual(denied.status_code, expected, denied.json)
+                        self.assertFalse(any(q.lstrip().lower().startswith(('update ', 'insert '))
+                                             for q in sql))
+                self.assertEqual(self.call(f'{path}/999999999', method='PUT',
+                                           token=self.token(), json_data=payload)[0].status_code, 404)
+                self.assertEqual(self.call(target, method='DELETE', token=self.token(),
+                                           json_data=payload)[0].status_code, 403)
+            db.session.remove()
+            self.assertEqual(db.session.get(informe_entities.Informe, report_id).revision_actual, 1)
+            multi, _ = self.call(path, method='POST', token=self.token('dual'),
+                                 json_data=self.report_payload(visit_id=visit_id, type_id=3))
+            self.assertEqual(multi.status_code, 201)
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True}):
+                edited, _ = self.call(f"{path}/{multi.json['data']['id']}", method='PUT',
+                                      token=self.token('dual'), json_data=payload)
+                self.assertEqual(edited.status_code, 200, edited.json)
+            db.session.remove()
+            self.assertEqual(db.session.get(informe_entities.Informe,
+                                            multi.json['data']['id']).versiones[1].autor_operacion_id,
+                             self.user_ids['dual'])
+
+    def test_29c3_edit_revisions_closed_visit_and_stale_conflict(self):
+        path = '/api/informes'
+        for visit_state in ('ACTIVA', 'CERRADA'):
+            with self.subTest(visit_state=visit_state), self.report_visit(state=visit_state) as visit_id:
+                created, _ = self.call(path, method='POST', token=self.token(),
+                                       json_data=self.report_payload(visit_id=visit_id))
+                self.assertEqual(created.status_code, 201)
+                report_id = created.json['data']['id']
+                db.session.remove()
+                original_visit = db.session.get(VisitaClinica, visit_id)
+                visit_columns = {column.name: getattr(original_visit, column.name)
+                                 for column in VisitaClinica.__table__.columns}
+                db.session.remove()
+                target = f'{path}/{report_id}'
+                with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True}):
+                    for revision in (1, 2):
+                        payload = {'datos_estructurados': {'nota': f'Corrección {revision}',
+                                                          'conclusion': [f'Conclusión {revision}']},
+                                   'motivo': f'Corrección documentada {revision}',
+                                   'revision_esperada': revision}
+                        response, sql = self.call(target, method='PUT', token=self.token(),
+                                                  json_data=payload, measure=True)
+                        self.assertEqual(response.status_code, 200, response.json)
+                        self.assertEqual(response.json['data']['revision_actual'], revision + 1)
+                        self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                                             for q in sql), 1)
+                        stale, _ = self.call(target, method='PUT', token=self.token(),
+                                             json_data=payload)
+                        self.assertEqual(stale.status_code, 409)
+                    detail, _ = self.call(target, token=self.token('colleague'))
+                    self.assertEqual(detail.json['data']['revision_actual'], 3)
+                    self.assertEqual(detail.json['data']['schema_version'], 1)
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual(report.usuario_id, self.user_ids['ophthalmologist'])
+                self.assertEqual(report.estado, 'ACTIVO')
+                self.assertEqual(report.revision_actual, 3)
+                self.assertEqual([v.numero_version for v in report.versiones], [1, 2, 3])
+                self.assertEqual([v.operacion for v in report.versiones],
+                                 ['CREACION', 'CORRECCION', 'CORRECCION'])
+                self.assertEqual(report.versiones[0].datos_estructurados,
+                                 self.report_payload(visit_id=visit_id)['datos_estructurados'])
+                self.assertEqual(report.versiones[1].datos_estructurados['nota'], 'Corrección 1')
+                self.assertEqual(report.versiones[2].datos_estructurados, report.datos_estructurados)
+                self.assertEqual(report.versiones[2].conclusion, report.conclusion)
+                self.assertEqual(report.versiones[2].schema_version, report.schema_version)
+                self.assertEqual(report.versiones[2].estado, report.estado)
+                self.assertEqual({v.autor_operacion_id for v in report.versiones},
+                                 {self.user_ids['ophthalmologist']})
+                self.assertEqual([v.motivo for v in report.versiones],
+                                 [None, 'Corrección documentada 1', 'Corrección documentada 2'])
+                visit = db.session.get(VisitaClinica, visit_id)
+                self.assertEqual({column.name: getattr(visit, column.name)
+                                  for column in VisitaClinica.__table__.columns}, visit_columns)
+                self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
+
+    def test_29c3_edit_inconsistent_history_states_and_rollbacks(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            created, _ = self.call(path, method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201)
+            report_id = created.json['data']['id']
+            target = f'{path}/{report_id}'
+            payload = {'datos_estructurados': {'nota': 'Nuevo resultado sintético'},
+                       'revision_esperada': 1, 'motivo': 'Corrección explicada'}
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True}):
+                with self.temporary_state(VisitaClinica, visit_id, 'ANULADA'):
+                    self.assertEqual(self.call(target, method='PUT', token=self.token(),
+                                               json_data=payload)[0].status_code, 409)
+                for estado in ('INACTIVO', 'ANULADO'):
+                    with self.temporary_state(informe_entities.Informe, report_id, estado):
+                        self.assertEqual(self.call(target, method='PUT', token=self.token(),
+                                                   json_data=payload)[0].status_code, 409)
+                db.session.remove()
+                initial = informe_entities.InformeVersion.query.filter_by(informe_id=report_id).one()
+                initial_id = initial.id
+                db.session.delete(initial)  # Solo fixture; nunca a través de HTTP.
+                db.session.commit()
+                db.session.remove()
+                self.assertEqual(self.call(target, method='PUT', token=self.token(),
+                                           json_data=payload)[0].status_code, 409)
+                db.session.add(informe_entities.InformeVersion(
+                    id=initial_id, informe_id=report_id, numero_version=1, operacion='CREACION',
+                    schema_version=1, datos_estructurados=self.report_payload()['datos_estructurados'],
+                    conclusion='Conclusión sintética', estado='ACTIVO',
+                    autor_operacion_id=self.user_ids['ophthalmologist']))
+                db.session.commit()
+                db.session.remove()
+
+                with patch.object(InformeRepository, 'corregir_informe',
+                                  side_effect=RuntimeError('synthetic before flush')):
+                    response, _ = self.call(target, method='PUT', token=self.token(), json_data=payload)
+                self.assertEqual(response.status_code, 500)
+                with patch.object(db.session, 'commit', side_effect=RuntimeError('synthetic before commit')):
+                    response, _ = self.call(target, method='PUT', token=self.token(), json_data=payload)
+                self.assertEqual(response.status_code, 500)
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual((report.revision_actual, len(report.versiones),
+                                  report.datos_estructurados['nota']),
+                                 (1, 1, 'Resultado sintético'))
+
+                actual_commit = db.session.commit
+                attempts = []
+
+                def acknowledged_late():
+                    attempts.append(1)
+                    actual_commit()
+                    raise OperationalError('COMMIT', {}, RuntimeError('synthetic lost ACK'),
+                                           connection_invalidated=True)
+
+                with patch.object(db.session, 'commit', side_effect=acknowledged_late):
+                    response, _ = self.call(target, method='PUT', token=self.token(), json_data=payload)
+                self.assertEqual(response.status_code, 500)
+                self.assertNotIn('synthetic', response.get_data(as_text=True))
+                self.assertEqual(attempts, [1])
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual((report.revision_actual, len(report.versiones)), (2, 2))
+                self.assertEqual(report.versiones[1].datos_estructurados, report.datos_estructurados)
+                self.assertEqual(self.call(target, method='PUT', token=self.token(),
+                                           json_data=payload)[0].status_code, 409)
+
+    def test_29c3_two_puts_compete_on_independent_connections(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            created, _ = self.call(path, method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201)
+            report_id = created.json['data']['id']
+            barrier = Barrier(2, timeout=15)
+            connections = set()
+
+            def synchronize(conn, cursor, statement, parameters, context, executemany):
+                sql = statement.lower().replace('`', '')
+                if 'from informes ' in sql and 'for update' in sql:
+                    connections.add(conn.connection.driver_connection.thread_id())
+                    barrier.wait()
+
+            def submit(note):
+                with self.app.app_context():
+                    try:
+                        with self.app.test_client() as client:
+                            response = client.put(f'{path}/{report_id}', json={
+                                'datos_estructurados': {'nota': note},
+                                'motivo': 'Competencia sintética', 'revision_esperada': 1,
+                            }, headers={'Authorization': 'Bearer ' + self.token()})
+                            return note, response.status_code
+                    finally:
+                        db.session.remove()
+
+            db.session.remove()
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True}):
+                event.listen(db.engine, 'before_cursor_execute', synchronize)
+                try:
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        first = pool.submit(submit, 'primero')
+                        second = pool.submit(submit, 'segundo')
+                        results = [first.result(timeout=25), second.result(timeout=25)]
+                finally:
+                    event.remove(db.engine, 'before_cursor_execute', synchronize)
+            self.assertEqual(len(connections), 2)
+            self.assertEqual(sorted(code for _, code in results), [200, 409])
+            winner = next(note for note, code in results if code == 200)
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            self.assertEqual(report.revision_actual, 2)
+            self.assertEqual(len(report.versiones), 2)
+            self.assertEqual(report.versiones[0].datos_estructurados['nota'], 'Resultado sintético')
+            self.assertEqual(report.versiones[1].datos_estructurados['nota'], winner)
+            self.assertEqual(report.datos_estructurados['nota'], winner)
+
+    def test_29c4_annul_lifecycle_and_closed_visit(self):
+        for state in ('ACTIVA', 'CERRADA'):
+            with self.subTest(state=state), self.report_visit(state=state) as visit_id:
+                created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                       json_data=self.report_payload(visit_id=visit_id))
+                self.assertEqual(created.status_code, 201)
+                report_id = created.json['data']['id']
+                target = f'/api/informes/{report_id}'
+                annul = target + '/anulacion'
+                body = {'motivo': '  Error documental confirmado  ', 'revision_esperada': 2}
+                db.session.remove()
+                visit = db.session.get(VisitaClinica, visit_id)
+                before = {column.name: getattr(visit, column.name)
+                          for column in VisitaClinica.__table__.columns}
+                db.session.remove()
+                with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
+                                                  'REPORTS_ANNUL_ENABLED': True}):
+                    corrected, _ = self.call(target, method='PUT', token=self.token(), json_data={
+                        'datos_estructurados': {'nota': 'Aclaración sintética'},
+                        'motivo': 'Corrección sintética', 'revision_esperada': 1,
+                    })
+                    self.assertEqual(corrected.status_code, 200, corrected.json)
+                    result, sql = self.call(annul, method='POST', token=self.token(),
+                                            json_data=body, measure=True)
+                    self.assertEqual(result.status_code, 200, result.json)
+                    self.assertEqual(result.json['data'], {'id': report_id, 'estado': 'ANULADO',
+                                                            'revision_actual': 3})
+                    self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                                         for q in sql), 1)
+                    self.assertEqual(self.call(annul, method='POST', token=self.token(),
+                                               json_data=body)[0].status_code, 409)
+                    self.assertEqual(self.call(target, method='PUT', token=self.token(), json_data={
+                        'datos_estructurados': {'nota': 'No admitido'}, 'motivo': 'x',
+                        'revision_esperada': 3})[0].status_code, 409)
+                    self.assertEqual(self.call(target, method='DELETE', token=self.token())[0].status_code, 403)
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual((report.usuario_id, report.estado, report.revision_actual),
+                                 (self.user_ids['ophthalmologist'], 'ANULADO', 3))
+                versions = report.versiones
+                self.assertEqual([(v.numero_version, v.operacion, v.estado) for v in versions],
+                                 [(1, 'CREACION', 'ACTIVO'), (2, 'CORRECCION', 'ACTIVO'),
+                                  (3, 'ANULACION', 'ANULADO')])
+                self.assertEqual(versions[0].datos_estructurados,
+                                 self.report_payload(visit_id=visit_id)['datos_estructurados'])
+                self.assertEqual(versions[1].datos_estructurados, {'nota': 'Aclaración sintética'})
+                self.assertEqual(versions[1].motivo, 'Corrección sintética')
+                self.assertEqual((versions[2].datos_estructurados, versions[2].conclusion,
+                                  versions[2].schema_version),
+                                 (report.datos_estructurados, report.conclusion, report.schema_version))
+                self.assertEqual(versions[2].motivo, 'Error documental confirmado')
+                self.assertEqual(versions[2].autor_operacion_id, self.user_ids['ophthalmologist'])
+                self.assertIsNotNone(versions[2].fecha_operacion)
+                self.assertEqual({column.name: getattr(db.session.get(VisitaClinica, visit_id),
+                                                       column.name)
+                                  for column in VisitaClinica.__table__.columns}, before)
+                for path in (target, f'/api/informes/visita/{visit_id}',
+                             f'/api/informes/paciente/{self.patient_ids[1]}'):
+                    response, _ = self.call(path, token=self.token())
+                    self.assertEqual(response.status_code, 404 if path == target else 200)
+                    if path != target:
+                        self.assertNotIn(report_id, [r['id'] for r in response.json['data']])
+
+    def test_29c4_annul_authorization_states_and_validation(self):
+        with self.report_visit() as visit_id:
+            created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201)
+            report_id = created.json['data']['id']
+            target = f'/api/informes/{report_id}/anulacion'
+            body = {'motivo': 'Motivo sintético', 'revision_esperada': 1}
+            denied, sql = self.call(target, method='POST', token=self.token(), json_data=body,
+                                    measure=True)
+            self.assertEqual(denied.status_code, 403)
+            self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+            with patch.dict(self.app.config, {'REPORTS_ANNUL_ENABLED': 1}):
+                self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                           json_data=body)[0].status_code, 403)
+            with patch.dict(self.app.config, {'REPORTS_ANNUL_ENABLED': True}):
+                for bearer in (None, 'invalid', self.token(expired=True)):
+                    denied, sql = self.call(target, method='POST', token=bearer,
+                                            json_data=body, measure=True)
+                    self.assertEqual(denied.status_code, 401)
+                    self.assertEqual(sql, [])
+                self.assertEqual(self.call(target + '?token=' + self.token(), method='POST',
+                                           token=self.token(), json_data=body)[0].status_code, 401)
+                for profile in ('administrator', 'nurse', 'assistant', 'colleague'):
+                    denied, sql = self.call(target, method='POST', token=self.token(profile),
+                                            json_data=body, measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    if profile != 'colleague':
+                        self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+                with self.temporary_grant('OFTALMOLOGO', 'informes.anular', present=False):
+                    for profile in ('ophthalmologist', 'dual', 'assistant_dual'):
+                        denied, sql = self.call(target, method='POST', token=self.token(profile),
+                                                json_data=body, measure=True)
+                        self.assertEqual(denied.status_code, 403)
+                        self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+                    with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'informes.anular', present=True):
+                        self.assertEqual(self.call(target, method='POST', token=self.token('dual'),
+                                                   json_data=body)[0].status_code, 403)
+                role_id = Rol.query.filter_by(codigo='OFTALMOLOGO').one().id
+                with self.temporary_state(Rol, role_id, 'INACTIVO'):
+                    self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                               json_data=body)[0].status_code, 403)
+                permission_id = Permiso.query.filter_by(codigo='informes.anular').one().id
+                with self.temporary_state(Permiso, permission_id, 'INACTIVO'):
+                    self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                               json_data=body)[0].status_code, 403)
+                with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+                    self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                               json_data=body)[0].status_code, 401)
+                with self.temporary_state(VisitaClinica, visit_id, 'ANULADA'):
+                    self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                               json_data=body)[0].status_code, 409)
+                for state in ('INACTIVO', 'ANULADO'):
+                    with self.temporary_state(informe_entities.Informe, report_id, state):
+                        self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                                   json_data=body)[0].status_code, 409)
+                invalid = (
+                    ({'motivo': 'x'}, 400), ({'revision_esperada': 1}, 400),
+                    ({**body, 'motivo': ''}, 400), ({**body, 'motivo': ' \t '}, 400),
+                    ({**body, 'motivo': 'x' * 1001}, 400), ({**body, 'motivo': 2}, 400),
+                    ({**body, 'revision_esperada': False}, 400),
+                    ({**body, 'revision_esperada': '1'}, 400),
+                    ({**body, 'revision_esperada': 0}, 400),
+                    ({**body, 'revision_esperada': -1}, 400),
+                    ({**body, 'revision_esperada': 2}, 409),
+                ) + tuple(({**body, field: 'falsificado'}, 400) for field in (
+                    'usuario_id', 'autor_operacion_id', 'estado', 'numero_version',
+                    'revision_actual', 'fecha_operacion', 'datos_estructurados',
+                    'conclusion', 'visita_id', 'paciente_id'))
+                for payload, expected in invalid:
+                    with self.subTest(payload=payload):
+                        denied, _ = self.call(target, method='POST', token=self.token(),
+                                              json_data=payload)
+                        self.assertEqual(denied.status_code, expected, denied.json)
+                self.assertEqual(self.call('/api/informes/99999999/anulacion', method='POST',
+                                           token=self.token(), json_data=body)[0].status_code, 404)
+                db.session.remove()
+                initial = informe_entities.InformeVersion.query.filter_by(informe_id=report_id).one()
+                initial.operacion = 'CORRECCION'
+                initial.motivo = 'alteración sintética del historial'
+                db.session.commit()
+                self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                           json_data=body)[0].status_code, 409)
+                db.session.remove()
+                initial = informe_entities.InformeVersion.query.filter_by(informe_id=report_id).one()
+                initial.operacion = 'CREACION'
+                initial.motivo = None
+                db.session.commit()
+                db.session.delete(initial)  # Fixture sintético aislado; no es ruta HTTP.
+                db.session.commit()
+                self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                           json_data=body)[0].status_code, 409)
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual((report.estado, report.revision_actual, len(report.versiones)),
+                                 ('ACTIVO', 1, 0))
+                # No reparar implicitamente; fixture se elimina al salir de report_visit.
+            dual, _ = self.call('/api/informes', method='POST', token=self.token('dual'),
+                                json_data=self.report_payload(visit_id=visit_id, type_id=3))
+            self.assertEqual(dual.status_code, 201, dual.json)
+            with patch.dict(self.app.config, {'REPORTS_ANNUL_ENABLED': True}):
+                response, _ = self.call(f"/api/informes/{dual.json['data']['id']}/anulacion",
+                                        method='POST', token=self.token('dual'), json_data=body)
+                self.assertEqual(response.status_code, 200, response.json)
+            db.session.remove()
+            self.assertEqual(db.session.get(informe_entities.Informe,
+                                            dual.json['data']['id']).versiones[1].autor_operacion_id,
+                             self.user_ids['dual'])
+
+    def test_29c4_annul_rollback_and_lost_commit_ack(self):
+        with self.report_visit() as visit_id:
+            created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201)
+            report_id = created.json['data']['id']
+            target = f'/api/informes/{report_id}/anulacion'
+            body = {'motivo': 'Anulación sintética', 'revision_esperada': 1}
+            real_write = InformeRepository.anular_informe
+
+            def after_flush(*args):
+                real_write(*args)
+                raise RuntimeError('synthetic after flush')
+
+            with patch.dict(self.app.config, {'REPORTS_ANNUL_ENABLED': True}):
+                for failure in (RuntimeError('synthetic before flush'), after_flush):
+                    with patch.object(InformeRepository, 'anular_informe', side_effect=failure):
+                        result, _ = self.call(target, method='POST', token=self.token(),
+                                              json_data=body)
+                    self.assertEqual(result.status_code, 500)
+                    self.assertNotIn('synthetic', result.get_data(as_text=True))
+                    db.session.remove()
+                    report = db.session.get(informe_entities.Informe, report_id)
+                    self.assertEqual((report.estado, report.revision_actual, len(report.versiones)),
+                                     ('ACTIVO', 1, 1))
+                actual_commit = db.session.commit
+                calls = []
+
+                def acknowledged_late():
+                    calls.append(1)
+                    actual_commit()
+                    raise OperationalError('COMMIT', {}, RuntimeError('synthetic lost ACK'),
+                                           connection_invalidated=True)
+
+                with patch.object(db.session, 'commit', side_effect=acknowledged_late):
+                    result, _ = self.call(target, method='POST', token=self.token(),
+                                          json_data=body)
+                self.assertEqual(result.status_code, 500)
+                self.assertEqual(calls, [1])
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual((report.estado, report.revision_actual, len(report.versiones)),
+                                 ('ANULADO', 2, 2))
+                self.assertEqual(report.versiones[1].operacion, 'ANULACION')
+                self.assertEqual(self.call(target, method='POST', token=self.token(),
+                                           json_data=body)[0].status_code, 409)
+
+    def test_29c4_concurrent_annul_and_competing_edit(self):
+        for competitor in ('anulacion', 'edicion'):
+            with self.subTest(competitor=competitor), self.report_visit() as visit_id:
+                created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                       json_data=self.report_payload(visit_id=visit_id))
+                self.assertEqual(created.status_code, 201)
+                report_id = created.json['data']['id']
+                barrier = Barrier(2, timeout=15)
+                connections = set()
+
+                def synchronize(conn, cursor, statement, parameters, context, executemany):
+                    sql = statement.lower().replace('`', '')
+                    if 'from informes ' in sql and 'for update' in sql:
+                        connections.add(conn.connection.driver_connection.thread_id())
+                        barrier.wait()
+
+                def submit(kind):
+                    with self.app.app_context():
+                        try:
+                            with self.app.test_client() as client:
+                                target = f'/api/informes/{report_id}'
+                                body = {'motivo': 'Competencia sintética', 'revision_esperada': 1}
+                                if kind == 'anulacion':
+                                    target += '/anulacion'
+                                    method = 'POST'
+                                else:
+                                    method = 'PUT'
+                                    body['datos_estructurados'] = {'nota': 'Corrección competidora'}
+                                response = client.open(target, method=method, json=body,
+                                    headers={'Authorization': 'Bearer ' + self.token()})
+                                return kind, response.status_code
+                        finally:
+                            db.session.remove()
+
+                db.session.remove()
+                with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
+                                                  'REPORTS_ANNUL_ENABLED': True}):
+                    event.listen(db.engine, 'before_cursor_execute', synchronize)
+                    try:
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            futures = [pool.submit(submit, kind)
+                                       for kind in ('anulacion', competitor)]
+                            results = [future.result(timeout=25) for future in futures]
+                    finally:
+                        event.remove(db.engine, 'before_cursor_execute', synchronize)
+                self.assertEqual(len(connections), 2)
+                self.assertEqual(sorted(code for _, code in results), [200, 409])
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                self.assertEqual(report.revision_actual, 2)
+                self.assertEqual(len(report.versiones), 2)
+                self.assertEqual(report.versiones[0].datos_estructurados,
+                                 self.report_payload(visit_id=visit_id)['datos_estructurados'])
+                winner = next(kind for kind, code in results if code == 200)
+                self.assertEqual(report.versiones[1].operacion,
+                                 'ANULACION' if winner == 'anulacion' else 'CORRECCION')
+                self.assertEqual(report.versiones[1].estado, report.estado)
+                self.assertEqual(report.versiones[1].datos_estructurados, report.datos_estructurados)
 
 
 def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_available=True):

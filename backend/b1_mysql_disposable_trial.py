@@ -45,6 +45,7 @@ EXPECTED_FINAL_COUNTS = {
     "ADMINISTRADOR_SISTEMA": 7, "OFTALMOLOGO": 13,
     "ENFERMERO": 6, "ASISTENTE_ADMINISTRATIVO": 6,
 }
+EXPECTED_MASTER_COUNTS = {**EXPECTED_FINAL_COUNTS, "OFTALMOLOGO": 14}
 ORIGINAL_PERMISSIONS = {
     "dashboard.ver", "pacientes.ver", "pacientes.crear", "pacientes.editar",
     "visitas.ver", "visitas.crear", "diagnostico_retinopatia.crear",
@@ -62,7 +63,7 @@ FINAL_GRANTS = {
         "dashboard.ver", "pacientes.ver", "pacientes.crear", "pacientes.editar",
         "visitas.ver", "visitas.crear", "diagnostico_retinopatia.crear",
         "diagnostico_retinopatia.validar", "informes.ver", "informes.crear",
-        "informes.editar", "diagnostico_retinopatia.ver", "imagenes.ver",
+        "informes.editar", "informes.anular", "diagnostico_retinopatia.ver", "imagenes.ver",
     },
     "ENFERMERO": {
         "dashboard.ver", "pacientes.ver", "pacientes.crear", "visitas.ver",
@@ -76,7 +77,7 @@ FINAL_GRANTS = {
 SEED_COUNTS = {
     "tipos_documento": 3, "roles": 4, "cargos": 4, "permisos": 21,
     "grados_retinopatia": 5, "tipos_informe": 6, "usuarios": 2,
-    "usuario_rol": 3, "rol_permiso": 32, "pacientes": 20,
+    "usuario_rol": 3, "rol_permiso": 33, "pacientes": 20,
     "visitas_clinicas": 0, "diagnosticos_retinopatia": 0,
     "diagnosticos_retinopatia_detalle": 0, "informes": 0,
 }
@@ -198,7 +199,7 @@ def verify_seed(connection, *, historical=False):
                 "Las asignaciones de rol originales difieren de v2.")
         original_links = ({
             (role, code) for role, codes in FINAL_GRANTS.items() for code in codes
-            if code not in NEW_PERMISSIONS
+            if code not in NEW_PERMISSIONS and code != "informes.anular"
         } | {("ADMINISTRADOR_SISTEMA", code) for code in ADMIN_REMOVALS}
           | {("ASISTENTE_ADMINISTRATIVO", "informes.crear")})
         require(grants(connection) == original_links,
@@ -210,14 +211,14 @@ def verify_seed(connection, *, historical=False):
                 "El maestro no debe sembrar versiones clínicas ficticias.")
         require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS | NEW_PERMISSIONS},
                 "El maestro B1 no contiene exactamente los 21 códigos aprobados.")
-        require(counts(grants(connection)) == EXPECTED_FINAL_COUNTS,
+        require(counts(grants(connection)) == EXPECTED_MASTER_COUNTS,
                 "La semilla B1 no tiene los totales de grants aprobados.")
         require(grants(connection) == {
             (role, code) for role, codes in FINAL_GRANTS.items() for code in codes
         }, "Los grants del maestro B1 difieren de la matriz de códigos aprobada.")
         require(rows(connection, "SELECT COUNT(*) FROM permisos")[0][0] == 21,
                 "Existen permisos duplicados en la semilla B1.")
-        require(rows(connection, "SELECT COUNT(*) FROM rol_permiso")[0][0] == 32,
+        require(rows(connection, "SELECT COUNT(*) FROM rol_permiso")[0][0] == 33,
                 "Existen grants duplicados en la semilla B1.")
         require(set(rows(connection, "SELECT id FROM permisos")) == {(i,) for i in range(1, 22)},
                 "Los ID de permisos B1 no son los esperados.")
@@ -438,7 +439,7 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
             require(seed_signature(connection) == original_signature,
                     "La segunda reconstrucción B1 difiere en tablas o datos semilla.")
             print("MAESTRO B1: 16 tablas y semilla conservada en dos reconstrucciones; "
-                   "21 permisos, grants 7/13/6/6 por código; sin duplicados.")
+                  "21 permisos, grants 7/14/6/6 por código; sin duplicados.")
             from b1_retinograph_schema_trial import check_confirmation_integrity
 
             check_confirmation_integrity(connection)

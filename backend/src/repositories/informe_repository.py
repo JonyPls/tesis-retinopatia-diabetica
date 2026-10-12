@@ -1,6 +1,6 @@
 from database import db
 from src.models.auth_entities import Usuario
-from src.models.informe_entities import Informe, TipoInforme
+from src.models.informe_entities import Informe, InformeVersion, TipoInforme
 from src.models.patient_entities import Paciente, VisitaClinica
 
 class InformeRepository:
@@ -78,12 +78,90 @@ class InformeRepository:
             tipo_informe_id=tipo_informe_id,
             usuario_id=usuario_id,
             schema_version=schema_version,
+            revision_actual=1,
             datos_estructurados=datos_estructurados,
             conclusion=conclusion,
         )
         db.session.add(informe)
         db.session.flush()
         return informe.id
+
+    @staticmethod
+    def crear_version_inicial(informe_id: int, usuario_id: int):
+        informe = db.session.get(Informe, informe_id)
+        # Recuperar el JSON y valores realmente persistidos tras el flush.
+        db.session.refresh(informe)
+        version = InformeVersion(
+            informe_id=informe.id, numero_version=informe.revision_actual,
+            operacion='CREACION', schema_version=informe.schema_version,
+            datos_estructurados=informe.datos_estructurados, conclusion=informe.conclusion,
+            estado=informe.estado, autor_operacion_id=usuario_id,
+        )
+        db.session.add(version)
+        db.session.flush()
+
+    @staticmethod
+    def bloquear_informe(informe_id: int):
+        return (Informe.query.filter_by(id=informe_id)
+                .with_for_update().populate_existing().first())
+
+    @staticmethod
+    def bloquear_visita_de_informe(informe):
+        return (VisitaClinica.query.filter_by(id=informe.visita_id)
+                .with_for_update().populate_existing().first())
+
+    @staticmethod
+    def version_actual_consistente(informe):
+        # Lecturas bloqueantes: los SELECT ordinarios podrían ver un snapshot
+        # REPEATABLE READ anterior al SELECT FOR UPDATE del informe principal.
+        numeros = [numero for (numero,) in db.session.query(InformeVersion.numero_version)
+                   .filter_by(informe_id=informe.id)
+                   .order_by(InformeVersion.numero_version).with_for_update().all()]
+        if (not numeros or len(numeros) != informe.revision_actual or numeros[0] != 1 or
+                numeros[-1] != informe.revision_actual):
+            return False
+        inicial = (InformeVersion.query.filter_by(informe_id=informe.id, numero_version=1)
+                   .with_for_update().populate_existing().first())
+        if inicial is None or inicial.operacion not in ('CREACION', 'MIGRACION_INICIAL'):
+            return False
+        ultima = (InformeVersion.query.filter_by(informe_id=informe.id,
+                                                 numero_version=informe.revision_actual)
+                  .with_for_update().populate_existing().first())
+        if ultima is None:
+            return False
+        return (ultima.datos_estructurados == informe.datos_estructurados and
+                ultima.conclusion == informe.conclusion and
+                ultima.estado == informe.estado and
+                ultima.schema_version == informe.schema_version)
+
+    @staticmethod
+    def corregir_informe(informe, datos_estructurados, conclusion, usuario_id, motivo):
+        informe.datos_estructurados = datos_estructurados
+        informe.conclusion = conclusion
+        informe.revision_actual += 1
+        db.session.flush()
+        db.session.refresh(informe)
+        db.session.add(InformeVersion(
+            informe_id=informe.id, numero_version=informe.revision_actual,
+            operacion='CORRECCION', schema_version=informe.schema_version,
+            datos_estructurados=informe.datos_estructurados, conclusion=informe.conclusion,
+            estado=informe.estado, autor_operacion_id=usuario_id, motivo=motivo,
+        ))
+        db.session.flush()
+
+    @staticmethod
+    def anular_informe(informe, usuario_id, motivo):
+        informe.estado = 'ANULADO'
+        informe.revision_actual += 1
+        db.session.flush()
+        db.session.refresh(informe)
+        db.session.add(InformeVersion(
+            informe_id=informe.id, numero_version=informe.revision_actual,
+            operacion='ANULACION', schema_version=informe.schema_version,
+            datos_estructurados=informe.datos_estructurados, conclusion=informe.conclusion,
+            estado=informe.estado, autor_operacion_id=usuario_id, motivo=motivo,
+        ))
+        db.session.flush()
 
     @staticmethod
     def obtener_informe_por_id(informe_id: int):
@@ -112,16 +190,6 @@ class InformeRepository:
             inf, ti, visita, paciente, usuario = row
             return InformeRepository._to_dict(inf, ti, visita, paciente, usuario)
         return None
-
-    @staticmethod
-    def actualizar_informe(informe_id: int, datos_estructurados, conclusion=None):
-        informe = Informe.query.filter_by(id=informe_id, estado='ACTIVO').first()
-        if informe:
-            informe.datos_estructurados = datos_estructurados
-            informe.conclusion = conclusion
-            db.session.commit()
-            return 1
-        return 0
 
     @staticmethod
     def eliminar_informe(informe_id: int):
@@ -176,6 +244,7 @@ class InformeRepository:
             "tipo_informe_id": inf.tipo_informe_id,
             "tipo_informe_nombre": ti.nombre,
             "schema_version": inf.schema_version,
+            "revision_actual": inf.revision_actual,
             "datos_estructurados": inf.datos_estructurados,
             "conclusion": inf.conclusion,
             "estado": inf.estado,

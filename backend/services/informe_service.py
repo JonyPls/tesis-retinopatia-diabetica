@@ -28,7 +28,8 @@ def obtener_tipos():
 
 _FIELDS = {'paciente_id', 'tipo_informe_id', 'datos_estructurados', 'visita_id', 'diagnostico_id'}
 _RESERVED = {'id', 'usuario_id', 'user_id', 'creador', 'estado', 'fecha_creado', 'fecha_actualizado',
-             'paciente_id', 'tipo_informe_id', 'visita_id', 'diagnostico_id', 'schema_version'}
+             'paciente_id', 'tipo_informe_id', 'visita_id', 'diagnostico_id', 'schema_version',
+             'revision_actual', 'numero_version', 'editor_id', 'autor_operacion_id', 'fecha_operacion'}
 
 
 class InvalidReportData(Exception):
@@ -150,6 +151,7 @@ def crear_nuevo_informe(datos, usuario_id):
             conclusion=_extraer_conclusion(datos['datos_estructurados']),
             schema_version=tipo.get("schema_version_actual") or 1,
         )
+        InformeRepository.crear_version_inicial(informe_id, usuario_id)
         commit_started = True
         db.session.commit()
     except InformeRepository.NotFound:
@@ -201,21 +203,127 @@ def obtener_informe(informe_id):
         return {"success": False, "message": "Informe no encontrado."}, 404
     return {"success": True, "data": _parsear_datos(informe)}, 200
 
-def actualizar_informe_existente(informe_id, datos):
-    datos_estructurados = datos.get("datos_estructurados")
 
-    if not datos_estructurados:
-        return {"success": False, "message": "No hay datos para actualizar."}, 400
+def bloquear_informe_para_edicion(informe_id):
+    return InformeRepository.bloquear_informe(informe_id)
 
-    filas = InformeRepository.actualizar_informe(
-        informe_id,
-        datos_estructurados,
-        _extraer_conclusion(datos_estructurados),
-    )
-    if filas == 0:
-        return {"success": False, "message": "Informe no encontrado o inactivo."}, 404
 
-    return {"success": True, "message": "Informe actualizado correctamente."}, 200
+def cancelar_edicion():
+    _rollback_informe()
+
+
+def actualizar_informe_existente(informe_id, datos, usuario_id, informe_bloqueado):
+    """El recurso llega bloqueado por la guardia B1 y conserva esa transacción."""
+    informe = informe_bloqueado
+    if informe is None or informe.id != informe_id or informe.usuario_id != usuario_id:
+        _rollback_informe()
+        return {"success": False, "message": "No autorizado."}, 403
+    if (type(datos) is not dict or set(datos) !=
+            {'datos_estructurados', 'motivo', 'revision_esperada'}):
+        _rollback_informe()
+        return {"success": False, "message": "Solicitud de informe inválida."}, 400
+    revision = datos['revision_esperada']
+    motivo = datos['motivo']
+    if not _positive_id(revision, 18446744073709551615) or type(motivo) is not str or not motivo.strip() or len(motivo) > 1000:
+        _rollback_informe()
+        return {"success": False, "message": "Revisión o motivo inválido."}, 400
+    motivo = motivo.strip()
+
+    commit_started = False
+    try:
+        visita = InformeRepository.bloquear_visita_de_informe(informe)
+        if (visita is None or visita.estado not in ('ACTIVA', 'CERRADA') or
+                informe.estado != 'ACTIVO' or revision != informe.revision_actual or
+                revision == 18446744073709551615):
+            raise InformeRepository.Conflict()
+        if not InformeRepository.version_actual_consistente(informe):
+            current_app.logger.error("Historial inconsistente; corrección de informe rechazada")
+            raise InformeRepository.Conflict()
+        try:
+            _validar_datos_estructurados(datos['datos_estructurados'])
+        except (InvalidReportData, ValueError, OverflowError, TypeError):
+            _rollback_informe()
+            return {"success": False, "message": "Datos estructurados inválidos."}, 422
+        InformeRepository.corregir_informe(
+            informe, datos['datos_estructurados'],
+            _extraer_conclusion(datos['datos_estructurados']), usuario_id, motivo,
+        )
+        nueva_revision = informe.revision_actual
+        commit_started = True
+        db.session.commit()
+    except InformeRepository.Conflict:
+        _rollback_informe()
+        return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+    except IntegrityError as error:
+        _rollback_informe()
+        if not commit_started and _is_duplicate_version(error):
+            return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+        current_app.logger.warning("Resultado de commit de corrección incierto" if commit_started
+                                   else "Error de integridad al corregir informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+    except Exception:
+        _rollback_informe()
+        current_app.logger.warning("Resultado de commit de corrección incierto" if commit_started
+                                   else "Error de persistencia al corregir informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+    return {"success": True, "message": "Informe actualizado correctamente.",
+            "data": {"id": informe_id, "revision_actual": nueva_revision}}, 200
+
+
+def _is_duplicate_version(error):
+    original = getattr(error, 'orig', None)
+    args = getattr(original, 'args', ())
+    return (len(args) > 1 and args[0] == 1062 and
+            'uq_informes_versiones_informe_numero' in str(args[1]))
+
+
+def anular_informe_existente(informe_id, datos, usuario_id, informe_bloqueado):
+    """El informe se bloqueó y verificó como propio antes de entrar aquí."""
+    informe = informe_bloqueado
+    if informe is None or informe.id != informe_id or informe.usuario_id != usuario_id:
+        _rollback_informe()
+        return {"success": False, "message": "No autorizado."}, 403
+    if type(datos) is not dict or set(datos) != {'motivo', 'revision_esperada'}:
+        _rollback_informe()
+        return {"success": False, "message": "Solicitud de informe inválida."}, 400
+    revision, motivo = datos['revision_esperada'], datos['motivo']
+    if (not _positive_id(revision, 18446744073709551615) or type(motivo) is not str or
+            not motivo.strip() or len(motivo) > 1000):
+        _rollback_informe()
+        return {"success": False, "message": "Revisión o motivo inválido."}, 400
+    motivo = motivo.strip()
+
+    commit_started = False
+    try:
+        visita = InformeRepository.bloquear_visita_de_informe(informe)
+        if (visita is None or visita.estado not in ('ACTIVA', 'CERRADA') or
+                informe.estado != 'ACTIVO' or revision != informe.revision_actual or
+                revision == 18446744073709551615):
+            raise InformeRepository.Conflict()
+        if not InformeRepository.version_actual_consistente(informe):
+            current_app.logger.error("Historial inconsistente; anulación de informe rechazada")
+            raise InformeRepository.Conflict()
+        InformeRepository.anular_informe(informe, usuario_id, motivo)
+        nueva_revision = informe.revision_actual
+        commit_started = True
+        db.session.commit()
+    except InformeRepository.Conflict:
+        _rollback_informe()
+        return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+    except IntegrityError as error:
+        _rollback_informe()
+        if not commit_started and _is_duplicate_version(error):
+            return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+        current_app.logger.warning("Resultado de commit de anulación incierto" if commit_started
+                                   else "Error de integridad al anular informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+    except Exception:
+        _rollback_informe()
+        current_app.logger.warning("Resultado de commit de anulación incierto" if commit_started
+                                   else "Error de persistencia al anular informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+    return {"success": True, "message": "Informe anulado correctamente.",
+            "data": {"id": informe_id, "estado": "ANULADO", "revision_actual": nueva_revision}}, 200
 
 def eliminar_informe_existente(informe_id):
     filas = InformeRepository.eliminar_informe(informe_id)

@@ -83,7 +83,7 @@ OPERATION_RULES = MappingProxyType({
     "reports.inactivate": _rule(
         "specialist", (OFTALMOLOGO,), "informes.inactivar", needs_resource_check=True,
     ),
-    "reports.annul": _rule(
+    "reports.annul_own": _rule(
         "specialist", (OFTALMOLOGO,), "informes.anular", needs_resource_check=True,
     ),
 })
@@ -156,7 +156,8 @@ class AuthorizationInputError(Exception):
 
 
 def strict_authorization_required(operation, *, resource_check=None,
-                                  conditional_operation=None, requires_conditional_operation=None):
+                                  conditional_operation=None, requires_conditional_operation=None,
+                                  enabled_config=None):
     """Decorador opt-in; envuelve el handler en token_required y deniega por defecto.
 
     Para reglas con needs_resource_check se exige un verificador real del
@@ -168,6 +169,9 @@ def strict_authorization_required(operation, *, resource_check=None,
             claims = getattr(request, "current_user", None) or {}
             if not claims.get("user_id"):
                 return jsonify({"success": False, "message": "No autorizado."}), 401
+            # Opt-in: nunca consultar el recurso si la operación aún no fue activada.
+            if enabled_config is not None and current_app.config.get(enabled_config) is not True:
+                return jsonify({"success": False, "message": "No autorizado."}), 403
             rule = OPERATION_RULES.get(operation)
             if rule is None:
                 return jsonify({"success": False, "message": "No autorizado."}), 403
