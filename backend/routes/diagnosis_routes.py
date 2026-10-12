@@ -20,13 +20,42 @@ from services.report_service import (
     generar_reporte_diagnostico_pdf,
 )
 from utils.security import clinical_access_required, token_required
-from utils.strict_authorization import strict_authorization_required
+from utils.strict_authorization import AuthorizationInputError, strict_authorization_required
 
 diagnosis_bp = Blueprint('diagnosis', __name__)
 
+
+def _requires_new_diagnosis_visit():
+    """Solo estructura multipart: nunca consulta pacientes, visitas ni imágenes."""
+    max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)
+    request.max_content_length = max_bytes + 64 * 1024
+    try:
+        if request.content_length is not None and request.content_length > request.max_content_length:
+            raise RequestEntityTooLarge()
+        form = request.form
+    except RequestEntityTooLarge:
+        raise AuthorizationInputError(413, "Archivo demasiado grande.") from None
+    values = []
+    for key in ('visita_id', 'diagnostico_id'):
+        identifiers = form.getlist(key)
+        if len(identifiers) > 1:
+            raise AuthorizationInputError(400, "Datos de diagnóstico inválidos.")
+        if identifiers:
+            value = identifiers[0]
+            if (not value or not value.isascii() or not value.isdecimal() or len(value) > 20
+                    or not 1 <= int(value) <= 2**64 - 1):
+                raise AuthorizationInputError(400, "Datos de diagnóstico inválidos.")
+            values.append(int(value))
+    if len(values) == 2 and values[0] != values[1]:
+        raise AuthorizationInputError(400, "Datos de diagnóstico inválidos.")
+    return not values
+
+
 @diagnosis_bp.route('/api/diagnosticar', methods=['POST'])
-@token_required
-@clinical_access_required('diagnosticos.crear', 'diagnosticos.gestionar')
+@strict_authorization_required(
+    'diagnosis.create', conditional_operation='diagnosis.create_with_visit',
+    requires_conditional_operation=_requires_new_diagnosis_visit,
+)
 def diagnosticar_retina():
     # Límite por petición, sin afectar a otras rutas ni leer el archivo entero.
     max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)

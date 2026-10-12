@@ -1,4 +1,4 @@
-# B1: catálogo canónico y matriz de autorización (siete rutas activadas)
+# B1: catálogo canónico y matriz de autorización (doce rutas activadas)
 
 Referencia de estructura y códigos sembrados: `backend/db/centro-oftalmologico-db-v2.sql`.
 Desde Prompt 21 ese maestro contiene directamente el catálogo y grants B1;
@@ -72,7 +72,7 @@ provenir de su rol y habilitación clínica vigentes, no de los grants del rol
 administrativo. Los permisos individuales heredados/concedidos/denegados son
 una fase posterior: este documento no implementa `usuario_permiso`.
 
-**Salvo las siete rutas B1 marcadas como activas**, las filas
+**Salvo las doce rutas B1 marcadas como activas**, las filas
 siguientes están pendientes de implementación: sus permisos no se exigen hoy
 con la semántica estricta. Los códigos marcados `[nuevo]` faltaban en el v2
 histórico, pero están sembrados en el maestro B1. `+` representa AND; `o` representa OR explícito solo
@@ -88,7 +88,7 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/pacientes/buscar` | Buscar / pacientes | `pacientes.ver` | O, E, S | Activa B1; proyección por rol. S no recibe última visita ni orden clínico. |
 | GET `/api/pacientes/recientes` | Recientes / pacientes | `pacientes.ver` | O, E, S | Activa B1; S recibe altas recientes, no visitas recientes ni fecha de visita. |
 | GET `/api/documentos` | Tipos de documento / catálogo | `pacientes.ver` | O, E, S | Catálogo para registro de pacientes; pendiente. |
-| POST `/api/diagnosticar` | Crear IA / diagnósticos | `diagnostico_retinopatia.crear` | O | No equivale a validación médica; pendiente. |
+| POST `/api/diagnosticar` | Crear IA / diagnósticos | `diagnostico_retinopatia.crear` + `imagenes.ver`; también `visitas.crear` solo si crea visita | O | **Activa B1 (27C)**: todos los grants del mismo rol habilitante; no equivale a validación médica. |
 | GET `/api/diagnosticar/visita/<int:visita_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: referencias de retinas y Grad-CAM; 404 si no hay diagnóstico, 200 con `ojos: []` si existe sin detalles. |
 | GET `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: conserva fallback histórico al ID de visita cuando no existe ID de diagnóstico; misma política para ambos. |
 | GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` [nuevo] + `imagenes.ver` [nuevo] | O | Incluye identidad, predicción, decisión e imágenes; pendiente de decisión contractual. |
@@ -136,7 +136,7 @@ incluyen IA, imágenes referenciadas e informes completos; (2) listados y
 detalles de `/api/informes/*`, PDF diagnóstico y archivos protegidos pueden
 exponer clínica según su decorador antiguo. Evaluar individualmente tanto
 la autorización como la proyección antes de activar B1 en cada ruta: minimizar
-solo estas siete rutas no protege el resto del sistema.
+solo estas doce rutas no protege el resto del sistema.
 
 ## Activación del listado y detalle (Prompt 18)
 
@@ -422,8 +422,8 @@ bloqueo verifica 200/409 y un único resultado persistido.
 
 ## Bloqueos inmediatos del POST de inferencia (Prompt 27A)
 
-`POST /api/diagnosticar` **continúa con autorización legacy**. No aumenta el
-número de rutas B1 (11). La regla de 27C aprobada pero **no aplicada** exige
+En 27A `POST /api/diagnosticar` continuaba con autorización legacy (11 rutas
+B1). Desde 27C se aplica la regla aprobada, que exige
 `OFTALMOLOGO` activo con `diagnostico_retinopatia.crear` e `imagenes.ver`
 procedentes de ese rol y, cuando crea visita, `visitas.crear` adicionalmente.
 
@@ -513,6 +513,36 @@ operaciones ni coordinación entre procesos no es seguro automatizar borrados
 ni afirmar que un candidato es un huérfano definitivo. El cliente que reciba
 un 500 por commit incierto no debe repetir a ciegas: consultar primero la
 visita/ojo; una segunda solicitud del mismo ojo dará 409 si se confirmó.
+
+## Autorización del POST (Prompt 27C)
+
+La ruta usa `strict_authorization_required('diagnosis.create',
+conditional_operation='diagnosis.create_with_visit', ...)`; ya no apila
+`token_required` ni `clinical_access_required`. El motor B1 autentica Bearer,
+carga la cuenta/roles/grants actuales y comprueba `diagnostico_retinopatia.crear`
++ `imagenes.ver` **desde OFTALMOLOGO activo**, antes de analizar multipart o
+consultar información clínica. No exige `pacientes.ver`. Si falla, responde 401
+o 403 sin ejecutar CLIP, inferencia ni persistencia y sin consultar pacientes,
+visitas o diagnósticos. No hay caché de permisos entre solicitudes.
+
+Después del chequeo común se limita el tamaño de la petición y se inspeccionan
+solo `visita_id` y `diagnostico_id` del multipart; ambos son IDs de visita
+positivos (el segundo es un **alias histórico**, no la PK del diagnóstico).
+Si faltan ambos, se evalúa la política completa `diagnosis.create_with_visit`,
+que además requiere `visitas.crear` del **mismo** rol O. Si hay alguno, no se
+exige ese grant. Vacíos, cero, no numéricos, duplicados, fuera de rango o
+contradictorios devuelven 400; exceso de cuerpo, 413. Nunca pasan a modalidad
+de creación por ser falsy. Sin imagen ni datos clínicos adicionales, las
+validaciones del handler conservan sus códigos previos. El cambio de nombre
+`diagnostico_id` se reserva para una corrección funcional posterior.
+
+Un administrador solo, enfermero o asistente sigue en 403; dos roles no pueden
+completar los grants que le faltan al OFTALMOLOGO. Un administrador+oftalmólogo
+solo opera si el rol médico aporta la política completa. Revocar un grant o
+desactivar el rol/cuenta afecta a la solicitud siguiente. Se conservan la
+atomicidad limitada de 27B, los 409 por ojo y visita, y las 11 rutas B1 previas;
+ahora son **12**. La recuperación de OD/OI parcialmente completados y las
+etiquetas médicas siguen pendientes para 27D.
 
 ## Dependencias antes de activar B1
 

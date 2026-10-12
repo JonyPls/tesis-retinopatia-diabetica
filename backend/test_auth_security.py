@@ -1,6 +1,7 @@
 """Pruebas de autenticación con Flask aislado, sin app.py, BD ni modelos de IA."""
 
 import datetime
+from io import BytesIO
 import os
 import sys
 import tempfile
@@ -1033,9 +1034,107 @@ class AuthSecurityTests(unittest.TestCase):
         self.assertEqual(result.status_code, 403)
 
     def test_strict_ophthalmologist_with_create_permission_can_process_ia(self):
-        self.set_role_grants({"OFTALMOLOGO": ["diagnostico_retinopatia.crear"]})
+        self.set_role_grants({"OFTALMOLOGO": ["diagnostico_retinopatia.crear", "imagenes.ver"]})
         result = self.client.post("/api/_strict_diagnosis", headers=self.headers(self.token()))
         self.assertEqual(result.status_code, 201)
+
+    def _post_diagnosis_b1(self, *, fields=None, token=None, query_string=None):
+        data = {"paciente_id": "101", "ojo_evaluado": "Derecho",
+                "imagen": (BytesIO(b"synthetic-not-a-retina"), "synthetic.jpg", "image/jpeg")}
+        data.update(fields or {})
+        return self.client.post('/api/diagnosticar', data=data, content_type='multipart/form-data',
+                                headers=self.headers(token) if token else {},
+                                query_string=query_string)
+
+    def test_b1_real_post_requires_clinical_grants_before_service_and_image(self):
+        base = ["diagnostico_retinopatia.crear", "imagenes.ver", "visitas.crear"]
+        with patch.object(diagnosis_routes, "procesar_diagnostico",
+                          return_value=({"success": True, "data": {"visita_id": 301}}, 200)) as service:
+            cases = (
+                ({"OFTALMOLOGO": base}, {"visita_id": "301"}, 200),
+                ({"OFTALMOLOGO": base}, {}, 200),
+                ({"OFTALMOLOGO": base[:2]}, {"visita_id": "301"}, 200),
+                ({"OFTALMOLOGO": base[:2]}, {}, 403),
+                ({"OFTALMOLOGO": base[1:]}, {"visita_id": "301"}, 403),
+                ({"OFTALMOLOGO": [base[0], base[2]]}, {"visita_id": "301"}, 403),
+                ({"ADMINISTRADOR_SISTEMA": base}, {"visita_id": "301"}, 403),
+                ({"ENFERMERO": base}, {"visita_id": "301"}, 403),
+                ({"ASISTENTE_ADMINISTRATIVO": base}, {"visita_id": "301"}, 403),
+                ({"ADMINISTRADOR_SISTEMA": base, "OFTALMOLOGO": base}, {}, 200),
+                ({"ADMINISTRADOR_SISTEMA": [base[1], base[2]],
+                  "OFTALMOLOGO": base[:1]}, {}, 403),
+                ({"ADMINISTRADOR_SISTEMA": [base[2]],
+                  "OFTALMOLOGO": base[:2]}, {}, 403),
+            )
+            for roles, fields, status in cases:
+                with self.subTest(roles=roles, fields=fields):
+                    self.set_role_grants(roles)
+                    service.reset_mock()
+                    response = self._post_diagnosis_b1(fields=fields, token=self.token())
+                    self.assertEqual(response.status_code, status, response.json)
+                    if status == 200:
+                        service.assert_called_once()
+                    else:
+                        service.assert_not_called()
+
+    def test_b1_real_post_alias_validation_and_revocation(self):
+        base = ["diagnostico_retinopatia.crear", "imagenes.ver", "visitas.crear"]
+        roles = self.set_role_grants({"OFTALMOLOGO": base[:2]})
+        with patch.object(diagnosis_routes, "procesar_diagnostico",
+                          return_value=({"success": True, "data": {"visita_id": 301}}, 200)) as service:
+            bearer = self.token()
+            for fields, status in (({"diagnostico_id": "301"}, 200),
+                                   ({"visita_id": "301", "diagnostico_id": "301"}, 200),
+                                   ({"visita_id": "301", "diagnostico_id": "302"}, 400),
+                                   ({"visita_id": ""}, 400),
+                                   ({"diagnostico_id": "0"}, 400),
+                                   ({"visita_id": "9" * 4301}, 400),
+                                   ({"visita_id": "abc"}, 400),
+                                   ({"diagnostico_id": "-1"}, 400)):
+                with self.subTest(fields=fields):
+                    service.reset_mock()
+                    response = self._post_diagnosis_b1(fields=fields, token=bearer)
+                    self.assertEqual(response.status_code, status, response.json)
+                    self.assertEqual(service.call_count, int(status == 200))
+            service.reset_mock()
+            duplicate = self._post_diagnosis_b1(fields={"visita_id": ["301", "302"]}, token=bearer)
+            self.assertEqual(duplicate.status_code, 400)
+            service.assert_not_called()
+            with patch.dict(self.client.application.config, {'DIAGNOSIS_MAX_IMAGE_BYTES': 1}):
+                oversized = self.client.post('/api/diagnosticar',
+                    data={'imagen': (BytesIO(b'x' * 70000), 'synthetic.jpg', 'image/jpeg')},
+                    headers=self.headers(bearer), content_type='multipart/form-data')
+                self.assertEqual(oversized.status_code, 413)
+                service.assert_not_called()
+            for field in ('diagnostico_retinopatia.crear', 'imagenes.ver'):
+                with self.subTest(revoked=field):
+                    roles['OFTALMOLOGO'].permisos_rel = [grant for grant in roles['OFTALMOLOGO'].permisos_rel
+                        if grant.permiso.codigo != field]
+                    service.reset_mock()
+                    self.assertEqual(self._post_diagnosis_b1(fields={"visita_id": "301"},
+                                                              token=bearer).status_code, 403)
+                    service.assert_not_called()
+                    roles = self.set_role_grants({"OFTALMOLOGO": base[:2]})
+            roles['OFTALMOLOGO'].estado = 'INACTIVO'
+            self.assertEqual(self._post_diagnosis_b1(fields={"visita_id": "301"}, token=bearer).status_code, 403)
+            service.assert_not_called()
+
+    def test_b1_real_post_authentication_precedes_multipart_processing(self):
+        self.set_role_grants({"OFTALMOLOGO": ["diagnostico_retinopatia.crear",
+                                              "imagenes.ver", "visitas.crear"]})
+        with patch.object(diagnosis_routes, "procesar_diagnostico") as service:
+            token = self.token()
+            self.assertEqual(self._post_diagnosis_b1().status_code, 401)
+            self.assertEqual(self._post_diagnosis_b1(token=self.token(key='different-signature')).status_code, 401)
+            self.assertEqual(self._post_diagnosis_b1(token=jwt.encode(
+                {"user_id": self.user.id, "exp": datetime.datetime.now(datetime.timezone.utc)
+                 - datetime.timedelta(seconds=1)}, TEST_KEY, algorithm='HS256')).status_code, 401)
+            self.active = False
+            self.assertEqual(self._post_diagnosis_b1(token=token).status_code, 401)
+            self.active = True
+            for bearer, query in ((token, {'token': token}), (None, {'token': token})):
+                self.assertEqual(self._post_diagnosis_b1(token=bearer, query_string=query).status_code, 401)
+            service.assert_not_called()
 
     def test_strict_reading_does_not_grant_inactivation_or_creation(self):
         self.set_role_grants({"OFTALMOLOGO": ["informes.ver", "diagnostico_retinopatia.ver"]})

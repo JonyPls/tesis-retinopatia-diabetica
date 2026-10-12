@@ -91,10 +91,12 @@ describe("primera validación médica por ojo", () => {
     hook.unmount();
   });
 
-  it("el POST rechazado con 409 o 503 no muestra un diagnóstico nuevo ni rechazo clínico", async () => {
-    for (const status of [409, 503]) {
+  it("el POST rechazado con 403, 409 o 503 no muestra un diagnóstico nuevo ni rechazo clínico", async () => {
+    for (const status of [403, 409, 503]) {
+      const message = status === 403 ? "No autorizado." : status === 409
+        ? "Ya existe un resultado para este ojo." : "Validación de imagen no disponible.";
       create.mockRejectedValueOnce({ response: { status,
-        data: { message: status === 409 ? "Ya existe un resultado para este ojo." : "Validación de imagen no disponible." } } });
+        data: { message } } });
       const hook = renderHook(() => useDiagnosis(), { wrapper });
       act(() => {
         hook.result.current.selectPatient({ id: 7, nombres: "Paciente", apellidos: "Ficticio" } as Parameters<typeof hook.result.current.selectPatient>[0]);
@@ -108,7 +110,7 @@ describe("primera validación médica por ojo", () => {
       expect(hook.result.current.results).toEqual({});
       expect(hook.result.current.validatedEyes).toEqual({});
       expect(notify).toHaveBeenCalledWith(expect.objectContaining({
-        description: status === 409 ? "Ya existe un resultado para este ojo." : "Validación de imagen no disponible.",
+        description: message,
       }));
       hook.unmount();
     }

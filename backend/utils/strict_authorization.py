@@ -54,7 +54,12 @@ OPERATION_RULES = MappingProxyType({
     "diagnosis.details_read": _rule(
         "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.ver", "imagenes.ver",
     ),
-    "diagnosis.create": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear"),
+    "diagnosis.create": _rule(
+        "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear", "imagenes.ver",
+    ),
+    "diagnosis.create_with_visit": _rule(
+        "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear", "imagenes.ver", "visitas.crear",
+    ),
     "diagnosis.validate": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.validar"),
     "images.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO), "imagenes.ver"),
     "diagnosis.pdf_read": _rule(
@@ -136,7 +141,16 @@ def patient_create_scope(user):
     return None
 
 
-def strict_authorization_required(operation, *, resource_check=None):
+class AuthorizationInputError(Exception):
+    """Error público de estructura de petición antes de autorizar su modalidad."""
+
+    def __init__(self, status_code, message):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def strict_authorization_required(operation, *, resource_check=None,
+                                  conditional_operation=None, requires_conditional_operation=None):
     """Decorador opt-in; envuelve el handler en token_required y deniega por defecto.
 
     Para reglas con needs_resource_check se exige un verificador real del
@@ -164,6 +178,21 @@ def strict_authorization_required(operation, *, resource_check=None):
                     allowed = evaluate_rule(
                         user, rule, resource_allowed=resource_check(user, *args, **kwargs)
                     )
+                if allowed and conditional_operation is not None:
+                    # El selector solo examina la estructura, nunca recursos.
+                    # Ambas políticas completas se evalúan en el mismo usuario
+                    # y con grants del rol habilitante, sin unión con otros roles.
+                    if requires_conditional_operation is None:
+                        allowed = False
+                    else:
+                        required = requires_conditional_operation()
+                        if type(required) is not bool:
+                            allowed = False
+                        elif required:
+                            conditional_rule = OPERATION_RULES.get(conditional_operation)
+                            allowed = bool(conditional_rule and evaluate_rule(user, conditional_rule))
+            except AuthorizationInputError as error:
+                return jsonify({"success": False, "message": str(error)}), error.status_code
             except Exception:
                 current_app.logger.exception("Error al evaluar autorización estricta")
                 return jsonify({"success": False, "message": "No se pudo procesar la solicitud."}), 500

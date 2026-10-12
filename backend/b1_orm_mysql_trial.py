@@ -520,6 +520,19 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         db.session.remove()
         return response
 
+    def measured_creation(self, **kwargs):
+        db.session.remove()
+        statements = []
+        def record(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+        event.listen(db.engine, 'before_cursor_execute', record)
+        try:
+            response = self.create_image(**kwargs)
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', record)
+        counts = Counter(sql.lstrip().split(None, 1)[0].upper() for sql in statements)
+        return response, statements, counts
+
     @staticmethod
     def published_files(folder):
         return list(Path(folder).glob('*.jpg'))
@@ -1313,7 +1326,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 event.remove(db.engine, 'before_cursor_execute', count_sql)
             self.assertEqual(first.status_code, 200, first.json)
             counts = Counter(sql.lstrip().split(None, 1)[0].upper() for sql in statements)
-            print('ORM POST diagnóstico legacy (visita existente, primer ojo): '
+            print('ORM POST diagnóstico B1 (visita existente, primer ojo): '
                   f'SELECT={counts["SELECT"]}, INSERT={counts["INSERT"]}, UPDATE={counts["UPDATE"]}; '
                   f'primer FOR UPDATE a respuesta={elapsed_lock:.3f}s')
             od_id = first.json['data']['detalle_id']
@@ -1333,6 +1346,10 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             finally:
                 event.remove(db.engine, 'before_cursor_execute', count_sql)
             self.assertEqual(same.status_code, 409)
+            retry_counts = Counter(sql.lstrip().split(None, 1)[0].upper() for sql in statements)
+            print('ORM POST B1 reintento mismo ojo: '
+                  f'SELECT={retry_counts["SELECT"]}, INSERT={retry_counts["INSERT"]}, '
+                  f'UPDATE={retry_counts["UPDATE"]}')
             self.assertFalse(any(sql.lstrip().upper().startswith(('INSERT', 'UPDATE'))
                                  for sql in statements))
             self.assertEqual(model.call_count, 1)
@@ -1710,6 +1727,143 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertNotIn(detail.imagen_original_url, candidates['missing_referenced'])
             self.assertNotIn(detail.imagen_gradcam_url, candidates['missing_referenced'])
             self.assertEqual(len(self.published_files(folder)), 3)
+
+    def test_real_post_b1_conditional_visit_grant_and_multirole_provenance(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            with self.temporary_grant('OFTALMOLOGO', 'visitas.crear', present=False):
+                denied, statements, counts = self.measured_creation(raw=b'not-image')
+                self.assertEqual(denied.status_code, 403)
+                self.assertEqual(counts['SELECT'], 3)
+                self.assertEqual(counts['INSERT'], 0)
+                self.assertFalse(any('pacientes' in sql.lower() or 'visitas_clinicas' in sql.lower()
+                                     or 'diagnosticos_retinopatia' in sql.lower() for sql in statements))
+                model.assert_not_called()
+                self.assertEqual(self.published_files(folder), [])
+                self.assertFalse((Path(folder) / '.pending').exists())
+
+                with self.temporary_grant('OFTALMOLOGO', 'pacientes.ver', present=False):
+                    existing, sql, counts = self.measured_creation(visit=visit_id)
+                self.assertEqual(existing.status_code, 200, existing.json)
+                print('ORM POST B1 sin visitas.crear (visita existente): '
+                      f'SELECT={counts["SELECT"]}, INSERT={counts["INSERT"]}, UPDATE={counts["UPDATE"]}; '
+                      'denegación de nueva visita: SELECT=3, INSERT=0')
+                self.assertEqual(len(self.published_files(folder)), 2)
+                alias = self.create_image(alias=visit_id)
+                self.assertEqual(alias.status_code, 409)  # Mismo ojo, misma autorización.
+                model.assert_called_once()
+                bad = self.create_image(eye='Izquierdo', alias='0', raw=b'not-image')
+                self.assertEqual(bad.status_code, 400)
+                model.assert_called_once()
+                # El rol administrativo no puede aportar visitas.crear al rol O.
+                with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'visitas.crear', present=True):
+                    denied = self.create_image(token=self.token('dual'), raw=b'not-image')
+                    self.assertEqual(denied.status_code, 403)
+                    model.assert_called_once()
+
+            for role, permission in (('OFTALMOLOGO', 'diagnostico_retinopatia.crear'),
+                                     ('OFTALMOLOGO', 'imagenes.ver')):
+                with self.subTest(revoked=permission), self.temporary_grant(role, permission, present=False):
+                    for profile in ('ophthalmologist', 'dual'):
+                        denied, statements, counts = self.measured_creation(
+                            eye='Izquierdo', visit=visit_id, token=self.token(profile), raw=b'invalid')
+                        self.assertEqual(denied.status_code, 403)
+                        self.assertEqual(counts['SELECT'], 3)
+                        self.assertEqual(counts['INSERT'], 0)
+                        self.assertFalse(any('visitas_clinicas' in sql.lower() for sql in statements))
+                        model.assert_called_once()
+            permission_id = Permiso.query.filter_by(codigo='imagenes.ver').one().id
+            with self.temporary_state(Permiso, permission_id, 'INACTIVO'):
+                self.assertEqual(self.create_image(eye='Izquierdo', visit=visit_id,
+                                                   raw=b'invalid').status_code, 403)
+                model.assert_called_once()
+            with self.temporary_grant('OFTALMOLOGO', 'imagenes.ver', present=False), \
+                 self.temporary_grant('ADMINISTRADOR_SISTEMA', 'imagenes.ver', present=True):
+                self.assertEqual(self.create_image(eye='Izquierdo', visit=visit_id,
+                                                   token=self.token('dual'), raw=b'invalid').status_code, 403)
+            # El multirrol solo funciona si O mantiene sus propios grants.
+            authorized = self.create_image(eye='Izquierdo', visit=visit_id,
+                                           token=self.token('dual'))
+            self.assertEqual(authorized.status_code, 200, authorized.json)
+
+    def test_real_post_b1_role_state_revocations_and_auth_fail_closed(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            for profile in ('administrator', 'nurse', 'assistant'):
+                with self.subTest(profile=profile):
+                    denied, statements, counts = self.measured_creation(
+                        visit=visit_id, token=self.token(profile), raw=b'invalid')
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertEqual(counts['SELECT'], 3)
+                    self.assertEqual(counts['INSERT'], 0)
+                    self.assertFalse(any('pacientes' in sql.lower() or 'visitas_clinicas' in sql.lower()
+                                         for sql in statements))
+            role_id = Rol.query.filter_by(codigo='OFTALMOLOGO').one().id
+            with self.temporary_state(Rol, role_id, 'INACTIVO'):
+                self.assertEqual(self.create_image(visit=visit_id, raw=b'invalid').status_code, 403)
+            user_id = self.user_ids['ophthalmologist']
+            link = UsuarioRol.query.filter_by(usuario_id=user_id, rol_id=role_id).one()
+            created_at = link.fecha_creado
+            db.session.delete(link)
+            db.session.commit()
+            db.session.remove()
+            try:
+                self.assertEqual(self.create_image(visit=visit_id, raw=b'invalid').status_code, 403)
+            finally:
+                db.session.add(UsuarioRol(usuario_id=user_id, rol_id=role_id,
+                                          fecha_creado=created_at))
+                db.session.commit()
+                db.session.remove()
+            with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+                self.assertEqual(self.create_image(visit=visit_id, raw=b'invalid').status_code, 401)
+            for token, path in ((None, '/api/diagnosticar'),
+                                (self.token(expired=True), '/api/diagnosticar'),
+                                (self.token(), '/api/diagnosticar?token=' + self.token())):
+                from io import BytesIO
+                response = self.client.post(path, data={
+                    'paciente_id': str(self.patient_ids[1]), 'visita_id': str(visit_id),
+                    'ojo_evaluado': 'Derecho', 'imagen': (BytesIO(b'invalid'), 'a.jpg', 'image/jpeg')},
+                    headers={'Authorization': 'Bearer ' + token} if token else None)
+                self.assertEqual(response.status_code, 401)
+            model.assert_not_called()
+            self.assertEqual(self.published_files(folder), [])
+
+    def test_real_post_b1_new_visit_authorized_files_and_contract(self):
+        from PIL import Image
+        with self.stubbed_creation() as (folder, model):
+            response, statements, counts = self.measured_creation()
+            self.assertEqual(response.status_code, 200, response.json)
+            print('ORM POST B1 (visita nueva): '
+                  f'SELECT={counts["SELECT"]}, INSERT={counts["INSERT"]}, UPDATE={counts["UPDATE"]}')
+            self.assertEqual(counts['INSERT'], 3)
+            self.assertEqual(len(self.published_files(folder)), 2)
+            self.assertEqual(list((Path(folder) / '.pending').iterdir()), [])
+            for file in self.published_files(folder):
+                with Image.open(file) as image:
+                    self.assertEqual(image.format, 'JPEG')
+                    image.load()
+            db.session.remove()
+            result = response.json['data']
+            detail = db.session.get(diagnosis_entities.DiagnosticoDetalle, result['detalle_id'])
+            self.assertEqual({detail.imagen_original_url, detail.imagen_gradcam_url},
+                             {file.name for file in self.published_files(folder)})
+            visit = db.session.get(VisitaClinica, result['visita_id'])
+            self.assertEqual(visit.paciente_id, self.patient_ids[1])
+            self.assertEqual(result['gradcam_url'], detail.imagen_gradcam_url)
+            with patch.object(files_routes, 'RETINAS_FOLDER', folder):
+                for name in (detail.imagen_original_url, detail.imagen_gradcam_url):
+                    served, _ = self.call('/uploads/retinas/' + name, token=self.token())
+                    self.assertEqual(served.status_code, 200)
+                    from io import BytesIO
+                    with Image.open(BytesIO(served.get_data())) as decoded:
+                        self.assertEqual(decoded.format, 'JPEG')
+                        decoded.load()
+                    served.close()
+            db.session.remove()
+            db.session.delete(db.session.get(diagnosis_entities.Diagnostico,
+                                             result['diagnostico_retinopatia_id']))
+            db.session.flush()
+            db.session.delete(db.session.get(VisitaClinica, result['visita_id']))
+            db.session.commit()
+            db.session.remove()
 
     def test_b1_real_retina_file_requires_bearer_and_registered_resource(self):
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg"):
