@@ -92,8 +92,8 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/diagnosticar/visita/<int:visita_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: referencias de retinas y Grad-CAM; 404 si no hay diagnóstico, 200 con `ojos: []` si existe sin detalles. |
 | GET `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: conserva fallback histórico al ID de visita cuando no existe ID de diagnóstico; misma política para ambos. |
 | GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` [nuevo] + `imagenes.ver` [nuevo] | O | Incluye identidad, predicción, decisión e imágenes; pendiente de decisión contractual. |
-| GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Pendiente 28B**: ambos grants vigentes del mismo rol oftalmológico; no ejecuta inferencia. |
-| GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Pendiente 28B**: ambos grants vigentes del mismo rol oftalmológico; el nombre solo propone una candidata. |
+| GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Activa B1 (28B)**: `retinograph.select`; ambos grants vigentes del mismo rol oftalmológico; no ejecuta inferencia. |
+| GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Activa B1 (28B)**: `retinograph.download`; el nombre solo propone una candidata, no acredita identidad. |
 | PUT `/api/diagnosticar/detalle/<int:detalle_id>/validar` | Primera validación por ojo | `diagnostico_retinopatia.validar` | O con habilitación médica | **Activa B1**: solo un detalle `PENDIENTE` de diagnóstico `PROCESADO`; 409 para revalidaciones; rectificación futura fuera de alcance. |
 | GET `/api/tipos-informe` | Leer tipos / catálogo informes | `informes.ver` **o** `informes.crear` | O, E, S según tarea | Solo catálogo; alternativa OR pendiente de confirmación. |
 | POST `/api/informes` | Registrar / informes | `informes.crear` | O | Ni asistente ni enfermero crean informes oftalmológicos por defecto. Si crea visita, verificar dependencia de `visitas.crear` antes del corte; pendiente. |
@@ -290,7 +290,7 @@ Inventario antes del cambio:
 | --- | --- |
 | `/uploads/retinas/<path:filename>`; `VisitDiagnosisTab.tsx` (historial, imagen original y Grad-CAM) | Antes añadía `?token=`; ahora obtiene Blob con Axios/Bearer y usa URL `blob:` revocada al cambiar recurso o sesión y al desmontar. |
 | `/uploads/retinas/<path:filename>`; `useDiagnosis.ts` / `DiagnosisResults.tsx` (resultado recién procesado, Grad-CAM) | Antes `useDiagnosis` construía URL con `?token=`; ahora conserva el nombre y `DiagnosisResults` carga Blob con Bearer. La imagen original recién seleccionada es una previsualización local independiente. |
-| `/api/diagnosticar/retinografo/imagen`; `descargarImagenRetinografo` en `diagnosisService.ts` | Ya descargaba Blob con Axios/Bearer; **endpoint legacy no migrado a B1**. Los archivos exportados del retinógrafo usan otra política de paciente/directorio; revisar independientemente sin concederles acceso a través de `/uploads/retinas`. |
+| `/api/diagnosticar/retinografo/imagen`; `descargarImagenRetinografo` en `diagnosisService.ts` | Ya descargaba Blob con Axios/Bearer; **desde 28B usa autorización B1 propia**, separada de `/uploads/retinas`. |
 | `/api/visitas/<int:visita_id>/reporte-diagnostico`; `PatientVisitDetail.tsx` | Descarga PDF con Axios/Bearer y URL blob local, pero su autorización backend y aceptación de JWT en URL siguen pendientes. No se modificó el PDF. |
 | Rutas de detalle de diagnóstico, informes, documentos y demás `@token_required` | El único lector de `request.args.get('token')` es `backend/utils/security.py`. Ese fallback global todavía acepta JWT en query en rutas legacy; ninguna construcción `?token=` permanece en el frontend fuente. |
 
@@ -578,17 +578,41 @@ maliciosos y origen real de la exportación requieren controles operativos.
 La prueba de junction y symlinks se ejecutó en Windows; POSIX se analizó en
 código, pero no se ejecutó en Linux en esta entrega.
 
-**No se ha migrado ninguna ruta B1:** ambas mantienen
-`@token_required`/`@clinical_access_required` y sus bypasses legacy hasta 28B.
-Política aprobada futura para **ambas**: `OFTALMOLOGO` activo con
-`pacientes.ver` + `imagenes.ver` del **mismo rol**, sin enfermero, asistente ni
-administrador solo; nunca sustituir `imagenes.ver` por
-`diagnostico_retinopatia.crear`. Siguen siendo 12 rutas B1. El nombre/documento
+**Estado histórico al concluir 28A:** ambas mantenían decoradores legacy y
+había 12 rutas B1. La migración posterior está documentada a continuación. El nombre/documento
 y `R/L` solamente proponen una candidata, y la decodificación solo comprueba
 validez técnica: no hay pertenencia clínica acreditada. El botón «Selección
 Auto» ya no habilita inferencia de archivos importados sin una confirmación
 trazable; definirla sin ampliar ni asumir el esquema corresponde a 28C. La carga
 manual permanece fuera de esta comprobación específica y debe revisarse allí.
+
+## Autorización de exportaciones (Prompt 28B)
+
+Ambos GET sustituyen `@token_required` +
+`@clinical_access_required('imagenes.ver', 'diagnosticos.crear')` por un solo
+`@strict_authorization_required` con políticas **independientes**:
+`retinograph.select` y `retinograph.download`. Cada una requiere cuenta activa,
+rol `OFTALMOLOGO` activo, y los grants activos `pacientes.ver` e `imagenes.ver`
+procedentes de ese rol. Sin propiedad médico–paciente. Administrador solo,
+enfermero, asistente, jerarquía, comodines y `diagnostico_retinopatia.crear` no
+habilitan acceso. `evaluate_rule` reúne permisos entre roles habilitantes;
+estas dos reglas habilitan **solo** `OFTALMOLOGO`, por lo que no hay unión entre
+roles diferentes ni cambio del evaluador compartido. Un usuario administrador
+y oftalmólogo accede únicamente si el rol oftalmológico aporta ambos grants.
+JWT en URL se rechaza aun con Bearer válido.
+
+La autenticación carga las relaciones ORM vigentes una vez por solicitud antes
+del handler. Pruebas Flask/ORM/MySQL 8 desechable: selección y descarga con
+datos sintéticos, 4 SELECT por solicitud aprobada (3 autorización + 1 paciente),
+3 SELECT y **ninguno clínico** ante 403; 2 aperturas en selección para dos
+candidatas, 1 en descarga, 0 ante 403. No hay caché de grants entre solicitudes.
+Las garantías de descriptor/contenido/no-store de 28A permanecen; symlinks y
+junctions fueron probados en Windows, no hay ejecución POSIX en Linux en 28B.
+El frontend distingue 401/403/404/red, descarta vistas Blob parciales y retira
+imágenes al denegarse una nueva selección. Sigue sin permitir inferencia desde
+una candidata no confirmada. **14 rutas B1**; no se han ampliado otras políticas.
+28C debe definir la confirmación humana trazable paciente–imagen–ojo sin tratar
+el nombre, R/L ni la decodificación como evidencia de asociación clínica.
 
 ## Dependencias antes de activar B1
 

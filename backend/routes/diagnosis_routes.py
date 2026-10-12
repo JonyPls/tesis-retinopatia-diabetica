@@ -153,8 +153,7 @@ def descargar_reporte_diagnostico(visita_id):
 
 
 @diagnosis_bp.route('/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>', methods=['GET'])
-@token_required
-@clinical_access_required('imagenes.ver', 'diagnosticos.crear')
+@strict_authorization_required('retinograph.select')
 def auto_seleccion_retinografo(paciente_id):
     resultado, status_code = obtener_seleccion_automatica(paciente_id)
     response = jsonify(resultado)
@@ -163,8 +162,7 @@ def auto_seleccion_retinografo(paciente_id):
 
 
 @diagnosis_bp.route('/api/diagnosticar/retinografo/imagen', methods=['GET'])
-@token_required
-@clinical_access_required('imagenes.ver', 'diagnosticos.crear')
+@strict_authorization_required('retinograph.download')
 def descargar_imagen_retinografo():
     paciente_id = request.args.get('paciente_id')
     filename = request.args.get('filename', '')

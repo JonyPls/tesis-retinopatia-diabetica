@@ -9,6 +9,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
+from io import BytesIO
 import inspect as python_inspect
 import os
 from pathlib import Path
@@ -28,6 +29,7 @@ from sqlalchemy import event, inspect
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import generate_password_hash
+from PIL import Image
 
 # database.py llama load_dotenv al importarse: impedir incluso su lectura.
 with patch("dotenv.load_dotenv", return_value=False):
@@ -70,6 +72,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     }):
         from routes import diagnosis_routes
         from services import diagnosis_service
+        from services import retinograph_import_service
 
 
 TEST_KEY = "b1-only-disposable-orm-integration-signing-key"
@@ -110,6 +113,13 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             files_routes, "RETINAS_FOLDER", cls.image_directory.name)
         cls.image_directory_patch.start()
         cls.addClassCleanup(cls.image_directory_patch.stop)
+        cls.retino_directory = tempfile.TemporaryDirectory(
+            prefix="b1-orm-retinograph-", dir=r"C:\Users\ricar\AppData\Local\Temp\opencode")
+        cls.addClassCleanup(cls.retino_directory.cleanup)
+        cls.retino_directory_patch = patch.object(
+            retinograph_import_service, "RETINOGRAPH_EXPORT_DIR", cls.retino_directory.name)
+        cls.retino_directory_patch.start()
+        cls.addClassCleanup(cls.retino_directory_patch.stop)
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg", "unregistered.jpg"):
             Path(cls.image_directory.name, name).write_bytes(b"\xff\xd8\xff\xd9")
 
@@ -208,6 +218,13 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             cls.make_fixtures()
         except Exception:
             raise RuntimeError("No se pudieron crear fixtures ORM sintéticas temporales.") from None
+        cls.retino_files = {}
+        for eye, format_name, extension in (("R", "JPEG", "jpg"), ("L", "PNG", "png")):
+            filename = f"{cls.patient_documents[0]}_01012026_101010_fundus_{eye}_1.{extension}"
+            buffer = BytesIO()
+            Image.new("RGB", (350, 350), (35, 60, 90)).save(buffer, format=format_name)
+            cls.retino_files[eye] = (filename, buffer.getvalue())
+            Path(cls.retino_directory.name, filename).write_bytes(buffer.getvalue())
         assert "app" not in sys.modules
         assert "dl_model.inference" not in sys.modules
         assert "dl_model.validator" not in sys.modules
@@ -536,6 +553,109 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
     @staticmethod
     def published_files(folder):
         return list(Path(folder).glob('*.jpg'))
+
+    def retinograph_paths(self, *, patient_id=None):
+        patient_id = patient_id or self.patient_ids[0]
+        name = self.retino_files["R"][0]
+        return (f"/api/diagnosticar/retinografo/auto-seleccion/{patient_id}",
+                f"/api/diagnosticar/retinografo/imagen?paciente_id={patient_id}&filename={name}")
+
+    def test_real_retinograph_authorized_contract_and_denial_before_resources(self):
+        select_path, download_path = self.retinograph_paths()
+        original_patient = PatientRepository.obtener_paciente_por_id
+        original_list = retinograph_import_service.list_export_names
+        original_read = retinograph_import_service.read_export
+        with (patch.object(PatientRepository, "obtener_paciente_por_id", wraps=original_patient) as patient,
+              patch.object(retinograph_import_service, "list_export_names", wraps=original_list) as listing,
+              patch.object(retinograph_import_service, "read_export", wraps=original_read) as opening):
+            for path, expected_opens in ((select_path, 2), (download_path, 1)):
+                with self.subTest(path=path):
+                    patient.reset_mock()
+                    listing.reset_mock()
+                    opening.reset_mock()
+                    response, sql = self.call(path, token=self.token(), measure=True)
+                    self.assertEqual(response.status_code, 200, response.json if response.is_json else None)
+                    self.assertEqual(patient.call_count, 1)
+                    self.assertEqual(listing.call_count, int(path == select_path))
+                    self.assertEqual(opening.call_count, expected_opens)
+                    self.assertEqual(len(sql), 4)  # 3 auth + 1 paciente, independiente de candidatas.
+                    self.assertEqual(sum("from pacientes" in s.lower().replace("`", "") for s in sql), 1)
+                    self.assertEqual(sum("from usuarios" in s.lower().replace("`", "") for s in sql), 1)
+                    if path == select_path:
+                        self.assertEqual(response.json["data"]["encontradas"], 2)
+                        self.assertEqual(response.json["data"]["imagenes"]["OD"]["filename"], self.retino_files["R"][0])
+                        self.assertEqual(response.json["data"]["imagenes"]["OI"]["filename"], self.retino_files["L"][0])
+                    else:
+                        self.assertEqual(response.get_data(), self.retino_files["R"][1])
+                        self.assertEqual(response.mimetype, "image/jpeg")
+                    self.assertNotIn(self.retino_directory.name, response.get_data(as_text=True) if response.is_json else str(response.headers))
+                    self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+                    print(f"ORM retinógrafo {'selección' if path == select_path else 'descarga'}: "
+                          f"SELECT={len(sql)}, clínicos=1, "
+                          f"aperturas={opening.call_count}, candidatos={2 if path == select_path else 0}.")
+                    response.close()
+                for profile in ("administrator", "nurse", "assistant"):
+                    patient.reset_mock()
+                    listing.reset_mock()
+                    opening.reset_mock()
+                    response, denied_sql = self.call(path, token=self.token(profile), measure=True)
+                    self.assertEqual(response.status_code, 403)
+                    self.assertEqual(len(denied_sql), 3)
+                    self.assertNotIn(self.retino_directory.name, response.get_data(as_text=True))
+                    self.assertFalse(any("from pacientes" in s.lower().replace("`", "") for s in denied_sql))
+                    patient.assert_not_called(); listing.assert_not_called(); opening.assert_not_called()
+                    response.close()
+                print(f"ORM retinógrafo denegaciones {'selección' if path == select_path else 'descarga'}: "
+                      "SELECT clínicos=0, aperturas=0.")
+            for path in self.retinograph_paths(patient_id=self.patient_ids[1]):
+                response, _ = self.call(path, token=self.token("colleague"))
+                self.assertEqual(response.status_code, 200 if "auto-seleccion" in path else 403)
+                if "auto-seleccion" in path:
+                    self.assertEqual(response.json["data"]["encontradas"], 0)
+                response.close()
+            for path in self.retinograph_paths(patient_id=max(self.patient_ids) + 1000000):
+                self.assertEqual(self.call(path, token=self.token())[0].status_code, 404)
+
+    def test_real_retinograph_grant_source_freshness_and_authentication(self):
+        valid = self.token("dual", claims_roles=["Administrador del sistema"])
+        for path in self.retinograph_paths():
+            with self.subTest(path=path):
+                for profile in ("ophthalmologist", "dual", "assistant_dual"):
+                    response, sql = self.call(path, token=self.token(profile), measure=True)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(len(sql), 4)  # Multirrol no aumenta consultas por grant.
+                    response.close()
+                self.assertEqual(self.call(path, token=valid)[0].status_code, 200)
+                for grant in ("pacientes.ver", "imagenes.ver"):
+                    with self.temporary_grant("OFTALMOLOGO", grant, present=False):
+                        with self.temporary_grant("ADMINISTRADOR_SISTEMA", grant, present=True):
+                            with (patch.object(PatientRepository, "obtener_paciente_por_id") as patient,
+                                  patch.object(retinograph_import_service, "list_export_names") as listing,
+                                  patch.object(retinograph_import_service, "read_export") as opening):
+                                response, sql = self.call(path, token=valid, measure=True)
+                                self.assertEqual(response.status_code, 403)
+                                self.assertFalse(any("from pacientes" in s.lower().replace("`", "") for s in sql))
+                                patient.assert_not_called(); listing.assert_not_called(); opening.assert_not_called()
+                        self.assertEqual(self.call(path, token=self.token())[0].status_code, 403)
+                    self.assertEqual(self.call(path, token=valid)[0].status_code, 200)
+                role = Rol.query.filter_by(codigo="OFTALMOLOGO").one()
+                with self.temporary_state(Rol, role.id, "INACTIVO"):
+                    self.assertEqual(self.call(path, token=valid)[0].status_code, 403)
+                user = self.user_ids["ophthalmologist"]
+                with self.temporary_state(Usuario, user, "INACTIVO"):
+                    self.assertEqual(self.call(path, token=self.token())[0].status_code, 401)
+                invalid = jwt.encode({"user_id": self.user_ids["ophthalmologist"],
+                                      "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                                     "invalid-orm-retinograph-signing-key", algorithm="HS256")
+                for bearer in (None, invalid, self.token(expired=True), self.token(expires=False)):
+                    denied, statements = self.call(path, token=bearer, measure=True)
+                    self.assertEqual(denied.status_code, 401)
+                    self.assertEqual(statements, [])
+                for bearer in (None, valid):
+                    denied, statements = self.call(f"{path}{'&' if '?' in path else '?'}token={valid}",
+                                                   token=bearer, measure=True)
+                    self.assertEqual(denied.status_code, 401)
+                    self.assertEqual(statements, [])
 
     def test_orm_columns_and_relationship_provenance(self):
         inspector = inspect(db.engine)

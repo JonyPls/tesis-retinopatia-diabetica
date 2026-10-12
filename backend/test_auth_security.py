@@ -556,9 +556,10 @@ class AuthSecurityTests(unittest.TestCase):
         self.active = False
         self.assertEqual(self.client.get("/api/_isolated_read", headers=headers).status_code, 401)
 
-    def test_a1_real_legacy_retinograph_pdf_and_report_transport(self):
+    def test_a1_retinograph_pdf_and_report_transport(self):
         token = self.token()
         headers = self.headers(token)
+        self.set_role_grants({"OFTALMOLOGO": ["pacientes.ver", "imagenes.ver"]})
         approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
         with tempfile.TemporaryDirectory(prefix="b1-transport-only-", dir=approved) as folder:
             Path(folder, "synthetic.jpg").write_bytes(b"\xff\xd8\xff\xd9")
@@ -596,6 +597,7 @@ class AuthSecurityTests(unittest.TestCase):
     def test_28a_real_retinograph_routes_with_synthetic_files(self):
         from test_retinograph_storage import service as real_service, synthetic_image
 
+        self.set_role_grants({"OFTALMOLOGO": ["pacientes.ver", "imagenes.ver"]})
         token = self.token()
         headers = self.headers(token)
         approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
@@ -642,15 +644,123 @@ class AuthSecurityTests(unittest.TestCase):
                     self.assertEqual(self.client.get(path, query_string={"token": token}, headers=headers).status_code, 401)
                     self.assertEqual(self.client.get(path, query_string={"token": token}).status_code, 401)
                 self.assertGreaterEqual(patient.call_count, 3)
-                # La autorización sigue siendo legacy: sin privilegios no llega al servicio.
-                self.user.roles = ["Sin rol clínico"]
-                self.user.permisos = []
+                # B1 deniega antes de resolver al paciente o leer la exportación.
+                self.set_role_grants({})
                 patient.reset_mock()
                 self.assertEqual(self.client.get("/api/diagnosticar/retinografo/auto-seleccion/101",
                                                  headers=headers).status_code, 403)
                 self.assertEqual(self.client.get("/api/diagnosticar/retinografo/imagen",
                     query_string={"paciente_id": 101, "filename": name}, headers=headers).status_code, 403)
                 patient.assert_not_called()
+
+    def _retinograph_routes(self):
+        return (("/api/diagnosticar/retinografo/auto-seleccion/101", {}),
+                ("/api/diagnosticar/retinografo/imagen",
+                 {"paciente_id": 101, "filename": "12345678_01012026_101010_fundus_R_1.jpg"}))
+
+    def test_28b_real_routes_require_single_ophthalmologist_grant_source(self):
+        both = ["pacientes.ver", "imagenes.ver"]
+        cases = (
+            ({"OFTALMOLOGO": both}, 200),
+            ({"OFTALMOLOGO": ["imagenes.ver", "diagnostico_retinopatia.crear"]}, 403),
+            ({"OFTALMOLOGO": ["pacientes.ver", "diagnostico_retinopatia.crear"]}, 403),
+            ({"ADMINISTRADOR_SISTEMA": both}, 403),
+            ({"ENFERMERO": both}, 403),
+            ({"ASISTENTE_ADMINISTRATIVO": both}, 403),
+            ({"ADMINISTRADOR_SISTEMA": both, "OFTALMOLOGO": both}, 200),
+            ({"ADMINISTRADOR_SISTEMA": ["imagenes.ver"],
+              "OFTALMOLOGO": ["pacientes.ver"]}, 403),
+            ({"ENFERMERO": ["imagenes.ver"],
+              "OFTALMOLOGO": ["pacientes.ver"]}, 403),
+            ({"OFTALMOLOGO": ["pacientes.ver", "imagenes.*",
+                              "diagnostico_retinopatia.crear"]}, 403),
+        )
+        token = self.token()
+        with (patch.object(diagnosis_routes, "obtener_seleccion_automatica",
+                           return_value=({"success": True, "data": {"imagenes": {}}}, 200)) as select,
+              patch.object(diagnosis_routes, "obtener_archivo_retinografo",
+                           return_value=({"success": True, "content": b"synthetic",
+                                          "mimetype": "image/jpeg"}, 200)) as download):
+            for grants, status in cases:
+                for path, params in self._retinograph_routes():
+                    with self.subTest(grants=grants, path=path):
+                        self.set_role_grants(grants)
+                        select.reset_mock()
+                        download.reset_mock()
+                        response = self.client.get(path, query_string=params, headers=self.headers(token))
+                        self.assertEqual(response.status_code, status, response.json if response.is_json else None)
+                        if status == 200:
+                            (select if not params else download).assert_called_once()
+                        else:
+                            select.assert_not_called()
+                            download.assert_not_called()
+                        response.close()
+
+    def test_28b_authentication_and_denial_precede_patient_and_filesystem(self):
+        from test_retinograph_storage import service as real_service
+        both = ["pacientes.ver", "imagenes.ver"]
+        self.set_role_grants({"OFTALMOLOGO": both})
+        token = self.token()
+        expired = jwt.encode({"user_id": self.user.id,
+                              "exp": datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)},
+                             TEST_KEY, algorithm="HS256")
+        invalid = self.token(key="different-synthetic-key-for-isolated-tests")
+        with (patch.object(real_service.PatientRepository, "obtener_paciente_por_id") as patient,
+              patch.object(real_service, "list_export_names") as listing,
+              patch.object(real_service, "read_export") as opening,
+              patch.object(diagnosis_routes, "obtener_seleccion_automatica", real_service.obtener_seleccion_automatica),
+              patch.object(diagnosis_routes, "obtener_archivo_retinografo", real_service.obtener_archivo_retinografo)):
+            for path, params in self._retinograph_routes():
+                for bearer, url_token, inactive, expected in (
+                    (None, None, False, 401), (invalid, None, False, 401),
+                    (expired, None, False, 401), (token, None, True, 401),
+                    (None, token, False, 401), (token, token, False, 401),
+                ):
+                    with self.subTest(path=path, bearer=bool(bearer), url=bool(url_token), inactive=inactive):
+                        self.active = not inactive
+                        response = self.client.get(path, query_string={**params, **({"token": url_token} if url_token else {})},
+                                                   headers=self.headers(bearer) if bearer else {})
+                        self.assertEqual(response.status_code, expected)
+                        self.assertNotIn("12345678", response.get_data(as_text=True))
+                        patient.assert_not_called()
+                        listing.assert_not_called()
+                        opening.assert_not_called()
+                self.active = True
+                for grants in ({"ADMINISTRADOR_SISTEMA": both},
+                               {"OFTALMOLOGO": ["pacientes.ver"]}):
+                    self.set_role_grants(grants)
+                    self.assertEqual(self.client.get(path, query_string=params,
+                        headers=self.headers(token)).status_code, 403)
+                    patient.assert_not_called()
+                    listing.assert_not_called()
+                    opening.assert_not_called()
+                self.set_role_grants({"OFTALMOLOGO": both})
+
+    def test_28b_revoked_grants_and_inactive_role_take_effect_with_same_jwt(self):
+        both = ["pacientes.ver", "imagenes.ver"]
+        roles = self.set_role_grants({"OFTALMOLOGO": both})
+        token = self.token()
+        with (patch.object(diagnosis_routes, "obtener_seleccion_automatica",
+                           return_value=({"success": True}, 200)) as select,
+              patch.object(diagnosis_routes, "obtener_archivo_retinografo",
+                           return_value=({"success": True, "content": b"synthetic", "mimetype": "image/jpeg"}, 200)) as download):
+            for path, params in self._retinograph_routes():
+                self.assertEqual(self.client.get(path, query_string=params,
+                    headers=self.headers(token)).status_code, 200)
+                for code in both:
+                    grant = next(g for g in roles["OFTALMOLOGO"].permisos_rel if g.permiso.codigo == code)
+                    grant.permiso.estado = "INACTIVO"
+                    select.reset_mock()
+                    download.reset_mock()
+                    self.assertEqual(self.client.get(path, query_string=params,
+                        headers=self.headers(token)).status_code, 403)
+                    select.assert_not_called()
+                    download.assert_not_called()
+                    grant.permiso.estado = "ACTIVO"
+                roles["OFTALMOLOGO"].estado = "INACTIVO"
+                self.assertEqual(self.client.get(path, query_string=params,
+                    headers=self.headers(token)).status_code, 403)
+                roles["OFTALMOLOGO"].estado = "ACTIVO"
 
     def test_b1_real_image_route_rejects_url_tokens_before_lookup(self):
         self.set_role_grants({"OFTALMOLOGO": ["imagenes.ver"]})

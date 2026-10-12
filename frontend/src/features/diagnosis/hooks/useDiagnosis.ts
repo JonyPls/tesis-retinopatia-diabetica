@@ -505,7 +505,7 @@ export function useDiagnosis(): DiagnosisHook {
         return;
       }
 
-      const loadedEntries = await Promise.all(
+      const downloads = await Promise.allSettled(
         availableEyes.map(async (eye) => {
           const image = selection.imagenes[eye]!;
           const blob = await descargarImagenRetinografo(
@@ -528,6 +528,15 @@ export function useDiagnosis(): DiagnosisHook {
           return [eye, { file, preview, isExistingImage: true }] as const;
         }),
       );
+      // Si falla un ojo, liberar también las vistas ya creadas para el otro.
+      const loadedEntries = downloads.flatMap((entry) =>
+        entry.status === "fulfilled" ? [entry.value] : [],
+      );
+      const failed = downloads.find((entry) => entry.status === "rejected");
+      if (failed?.status === "rejected") {
+        loadedEntries.forEach(([, state]) => revokePreviewUrl(state.preview));
+        throw failed.reason;
+      }
 
       if (version !== contextVersion.current) {
         loadedEntries.forEach(([, state]) => revokePreviewUrl(state.preview));
@@ -556,11 +565,15 @@ export function useDiagnosis(): DiagnosisHook {
       });
     } catch (err: any) {
       if (version !== contextVersion.current) return;
+      const status = err.response?.status;
+      if (status === 401 || status === 403 || status === 404) resetUploadedEyes();
       toast({
         title: "No se pudo hacer la selección automática",
-        description:
-          err.response?.data?.message ||
-          "Revise que la carpeta del retinógrafo exista y tenga imágenes válidas.",
+        description: status === 401 ? "Su sesión ya no es válida. Inicie sesión nuevamente."
+          : status === 403 ? "No tiene autorización para consultar exportaciones del retinógrafo."
+          : status === 404 ? "No se encontró el paciente o la exportación solicitada."
+          : !err.response ? "No se completó la operación. Compruebe su conexión e inténtelo de nuevo."
+          : "No se pudo completar la selección de exportaciones.",
         variant: "destructive",
       });
     } finally {
