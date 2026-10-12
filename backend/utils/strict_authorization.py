@@ -122,11 +122,22 @@ def patient_read_scope(user):
     return None
 
 
+def patient_create_scope(user):
+    """Procedencia de pacientes.crear independiente del alcance de lectura."""
+    rule = OPERATION_RULES["patients.create"]
+    for role_code, scope in ((OFTALMOLOGO, "clinical"),
+                             (ENFERMERO, "assistance"),
+                             (ASISTENTE, "administrative")):
+        if evaluate_rule(user, replace(rule, role_codes=frozenset({role_code}))):
+            return scope
+    return None
+
+
 def strict_authorization_required(operation, *, resource_check=None):
     """Decorador opt-in; envuelve el handler en token_required y deniega por defecto.
 
     Para reglas con needs_resource_check se exige un verificador real del
-    recurso. Ninguna ruta clínica existente usa este decorador todavía.
+    recurso. Solo las rutas activadas explícitamente usan este decorador.
     """
     def decorator(handler):
         @wraps(handler)

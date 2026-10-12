@@ -32,6 +32,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     from src.models.auth_entities import (Cargo, Permiso, Rol, RolPermiso,
                                           TipoDocumento, Usuario, UsuarioRol)
     from src.models.patient_entities import Paciente, VisitaClinica
+    from src.repositories.patient_repository import PatientRepository
     from src.models import diagnosis_entities, informe_entities  # Registrar metadatos ORM.
     from src.repositories.auth_repository import AuthRepository
     from utils.security import clinical_access_required, token_required
@@ -253,10 +254,26 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
 
     def setUp(self):
         db.session.remove()
+        self.created_documents = []
 
     def tearDown(self):
         db.session.rollback()
+        if self.created_documents:
+            for patient in Paciente.query.filter(Paciente.nro_documento.in_(self.created_documents)).all():
+                db.session.delete(patient)
+            db.session.commit()
         db.session.remove()
+
+    def registration(self, **extra):
+        document = str(10000000 + secrets.randbelow(89999999))
+        self.created_documents.append(document)
+        return {
+            "tipo_doc": "DNI", "nro_documento": document,
+            "nombres": "Persona", "apellidos": "Ficticia", "sexo": "Femenino",
+            "fecha_nacimiento": "2000-01-01", "telefono": "900000000",
+            "correo": "registro@example.invalid", "direccion": "Direccion ficticia",
+            "consentimiento_informado": True, **extra,
+        }
 
     def token(self, profile="ophthalmologist", *, expires=True, expired=False, claims_roles=None):
         claims = {
@@ -267,7 +284,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             claims["exp"] = datetime.now(timezone.utc) + timedelta(hours=offset)
         return jwt.encode(claims, TEST_KEY, algorithm="HS256")
 
-    def call(self, path, *, method="GET", token=None, measure=False):
+    def call(self, path, *, method="GET", token=None, measure=False, json_data=None):
         db.session.remove()  # Simula una solicitud real nueva sin cache entre requests.
         statements = []
         engine = db.engine
@@ -279,7 +296,8 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             event.listen(engine, "before_cursor_execute", count_sql)
         try:
             headers = {"Authorization": f"Bearer {token}"} if token else None
-            response = self.client.open(path, method=method, headers=headers)
+            response = self.client.open(path, method=method, headers=headers,
+                                        **({"json": json_data} if json_data is not None else {}))
         finally:
             if measure:
                 event.remove(engine, "before_cursor_execute", count_sql)
@@ -722,6 +740,123 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 self.assertEqual(sql, [])
             with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
                 self.assertEqual(self.call(path, token=self.token())[0].status_code, 401)
+
+    def test_b1_real_post_creates_by_role_without_leaking_fields(self):
+        payloads = {
+            "ophthalmologist": ("clinical", {"antecedentes_clinicos": "Antecedente ficticio",
+                                             "alergias": "Alergia ficticia"}),
+            "nurse": ("assistance", {"alergias": "Alergia ficticia"}),
+            "assistant": ("administrative", {}),
+            "dual": ("clinical", {"antecedentes_clinicos": "Antecedente ficticio"}),
+        }
+        for profile, (scope, extra) in payloads.items():
+            with self.subTest(profile=profile):
+                payload = self.registration(**extra)
+                response, sql = self.call("/api/pacientes", method="POST", token=self.token(profile),
+                                          json_data=payload, measure=True)
+                self.assertEqual(response.status_code, 201)
+                self.assertIsInstance(response.json["data"]["id"], int)
+                self.assertEqual(response.json["data"]["nro_documento"], payload["nro_documento"])
+                self.assertEqual(db.session.get(Paciente, response.json["data"]["id"]).nro_documento,
+                                 payload["nro_documento"])
+                self.assertEqual("antecedentes_clinicos" in response.json["data"], scope == "clinical")
+                self.assertEqual("alergias" in response.json["data"], scope != "administrative")
+                for field in ("diagnosticos", "informes", "imagenes", "ultima_visita", "maxima_gravedad"):
+                    self.assertNotIn(field, response.json["data"])
+                if scope == "administrative":
+                    self.assertNotIn("consentimiento_informado", response.json["data"])
+                    self.assertNotIn("antecedentes_clinicos", response.json["data"])
+                self.assertEqual(sum("insert into pacientes" in item.lower().replace("`", "")
+                                     for item in sql), 1)
+                selects = [item for item in sql if item.lstrip().lower().startswith("select")]
+                self.assertLessEqual(len(selects), 7)
+                self.assertFalse(any("visitas_clinicas" in item.lower() or
+                                     "diagnosticos_retinopatia" in item.lower() for item in sql))
+                print(f"ORM POST {profile}: SELECT={len(selects)}, INSERT pacientes=1")
+
+    def test_b1_real_post_rejects_forbidden_input_before_any_write(self):
+        attempts = (
+            ("assistant", {"antecedentes_clinicos": "Antecedente ficticio"}),
+            ("assistant", {"alergias": None}),
+            ("assistant", {"diagnosticos": [{"resultado_ia": 4}]}),
+            ("assistant", {"ultima_visita": "2030-01-01"}),
+            ("assistant", {"nombre_clinico": "extra"}),
+            ("assistant", {"nombres": {"alergias": "dato"}}),
+            ("nurse", {"antecedentes_clinicos": "Antecedente ficticio"}),
+            ("ophthalmologist", {"resultado_ia_id": 4}),
+            ("ophthalmologist", {"fecha_consentimiento": "2030-01-01"}),
+        )
+        for profile, extra in attempts:
+            with self.subTest(profile=profile, fields=tuple(extra)):
+                payload = self.registration(**extra)
+                rejected, sql = self.call("/api/pacientes", method="POST", token=self.token(profile),
+                                          json_data=payload, measure=True)
+                self.assertEqual(rejected.status_code, 400)
+                self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in sql), 3)
+                self.assertFalse(any("insert into pacientes" in item.lower().replace("`", "")
+                                     for item in sql))
+                self.assertFalse(any("from pacientes" in item.lower().replace("`", "")
+                                     for item in sql))
+                self.assertIsNone(Paciente.query.filter_by(nro_documento=payload["nro_documento"]).first())
+
+    def test_b1_real_post_authorization_revocation_read_independence_and_validation(self):
+        payload = self.registration()
+        for profile, status in (("administrator", 403),):
+            response, sql = self.call("/api/pacientes", method="POST", token=self.token(profile),
+                                      json_data=payload, measure=True)
+            self.assertEqual(response.status_code, status)
+            self.assertFalse(any("from pacientes" in item.lower() for item in sql))
+        self.assertEqual(self.call("/api/pacientes", method="POST", json_data=payload)[0].status_code, 401)
+        self.assertEqual(self.call("/api/pacientes", method="POST", token=self.token(expired=True),
+                                   json_data=payload)[0].status_code, 401)
+        with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
+            self.assertEqual(self.call("/api/pacientes", method="POST", token=self.token(),
+                                       json_data=payload)[0].status_code, 401)
+        with self.temporary_grant("OFTALMOLOGO", "pacientes.crear", present=False):
+            self.assertEqual(self.call("/api/pacientes", method="POST", token=self.token(),
+                                       json_data=payload)[0].status_code, 403)
+            self.assertEqual(self.call("/api/pacientes", method="POST", token=self.token("dual"),
+                                       json_data=payload)[0].status_code, 403)
+        with self.temporary_grant("OFTALMOLOGO", "pacientes.ver", present=False):
+            created, sql = self.call("/api/pacientes", method="POST", token=self.token(),
+                                     json_data=payload, measure=True)
+            self.assertEqual(created.status_code, 201)
+            self.assertEqual(set(created.json["data"]), {"id"})
+            self.assertEqual(sum("from pacientes" in item.lower().replace("`", "")
+                                 for item in sql), 1)  # Solo comprobación de duplicado.
+            self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in sql), 5)
+            with self.temporary_grant("ASISTENTE_ADMINISTRATIVO", "pacientes.ver", present=False):
+                assistant_payload = self.registration()
+                assistant_created, assistant_sql = self.call(
+                    "/api/pacientes", method="POST", token=self.token("assistant"),
+                    json_data=assistant_payload, measure=True)
+                self.assertEqual(assistant_created.status_code, 201)
+                self.assertEqual(set(assistant_created.json["data"]), {"id"})
+                self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in assistant_sql), 5)
+                self.assertFalse(any("antecedentes_clinicos" in item.lower() or "alergias" in item.lower()
+                                     for item in assistant_sql if item.lstrip().lower().startswith("select")))
+        duplicate, sql = self.call("/api/pacientes", method="POST", token=self.token(),
+                                   json_data=payload, measure=True)
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertFalse(any("insert into pacientes" in item.lower().replace("`", "") for item in sql))
+        incomplete = self.registration(nombres="")
+        result, sql = self.call("/api/pacientes", method="POST", token=self.token(),
+                                json_data=incomplete, measure=True)
+        self.assertEqual(result.status_code, 400)
+        self.assertFalse(any("insert into pacientes" in item.lower().replace("`", "") for item in sql))
+
+    def test_b1_real_post_rolls_back_when_response_lookup_fails(self):
+        payload = self.registration(antecedentes_clinicos="Sintético privado")
+        with patch.object(PatientRepository, "obtener_paciente_por_id",
+                          side_effect=RuntimeError("synthetic lookup failure")):
+            with patch.object(self.app.logger, "error") as logged:
+                response, _ = self.call("/api/pacientes", method="POST", token=self.token(),
+                                        json_data=payload)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json, {"success": False,
+                                         "message": "No se pudo procesar la solicitud."})
+        logged.assert_called_once_with("Error al registrar paciente")
+        self.assertIsNone(Paciente.query.filter_by(nro_documento=payload["nro_documento"]).first())
 
 
 def run_orm_integration(port, password, datadir, server_uuid):

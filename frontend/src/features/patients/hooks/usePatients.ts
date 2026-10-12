@@ -3,6 +3,9 @@ import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 import { Patient, PatientFormData, PatientReadScope } from "../types";
 import { patientRequestError, type PatientRequestError } from "../patientAccess";
+import { useAuthStore } from "@/features/auth/store/authStore";
+
+export type PatientRegistrationScope = "administrative" | "assistance" | "clinical";
 
 const INITIAL_FORM: PatientFormData = {
   tipo_doc: "DNI",
@@ -174,6 +177,11 @@ export function usePatients({
   autoFetch = true,
   onCreated,
 }: UsePatientsOptions = {}) {
+  const user = useAuthStore((state) => state.user);
+  // Orientación de la UI; el backend determina el grant y alcance reales.
+  const registrationScope: PatientRegistrationScope = user?.roles.some((role) =>
+    ["Oftalmologo", "Oftalmólogo"].includes(role)) ? "clinical"
+    : user?.roles.includes("Enfermero") ? "assistance" : "administrative";
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [scope, setScope] = useState<PatientReadScope>("administrative");
@@ -259,10 +267,12 @@ export function usePatients({
     e.preventDefault();
 
     const validationMessage = validatePatientForm(formData, consent);
-    if (validationMessage) {
+    const forbiddenField = (registrationScope !== "clinical" && formData.antecedentes_clinicos.trim()) ||
+      (registrationScope === "administrative" && formData.alergias.trim());
+    if (validationMessage || forbiddenField) {
       toast({
         title: "Revise los datos del paciente",
-        description: validationMessage,
+        description: forbiddenField ? "El perfil actual no puede registrar información clínica." : validationMessage,
         variant: "warning",
       });
       return;
@@ -280,8 +290,12 @@ export function usePatients({
         telefono: formData.telefono.replace(/\D/g, "") || null,
         correo: formData.correo.trim().toLowerCase() || null,
         direccion: normalizeSpaces(formData.direccion) || null,
-        antecedentes_clinicos: formData.antecedentes_clinicos.trim() || null,
-        alergias: formData.alergias.trim() || null,
+        ...(registrationScope === "clinical" ? {
+          antecedentes_clinicos: formData.antecedentes_clinicos.trim() || null,
+        } : {}),
+        ...(registrationScope !== "administrative" ? {
+          alergias: formData.alergias.trim() || null,
+        } : {}),
         consentimiento_informado: consent,
       };
 
@@ -293,13 +307,28 @@ export function usePatients({
         variant: "success",
       });
       if (res.data?.data) {
-        onCreated?.(res.data.data);
+        onCreated?.({
+          id: res.data.data.id,
+          tipo_doc: payload.tipo_doc,
+          tipo_doc_abrev: res.data.data.tipo_doc_abrev,
+          tipo_doc_id: res.data.data.tipo_doc_id,
+          nro_documento: payload.nro_documento,
+          nombres: payload.nombres,
+          apellidos: payload.apellidos,
+          sexo: payload.sexo,
+          fecha_nacimiento: payload.fecha_nacimiento,
+        });
       }
       setOpen(false);
       resetPatientForm();
       if (autoFetch) fetchPatients();
     } catch (error: any) {
-      const msg = error.response?.data?.message;
+      const status = error.response?.status;
+      const msg = status === 401 || status === 403
+        ? patientRequestError(error).message
+        : status === 400 || status === 409
+          ? error.response?.data?.message
+          : undefined;
       toast({
         title: "No se pudo registrar el paciente",
         description: msg || "Error de conexión con el servidor.",
@@ -314,6 +343,7 @@ export function usePatients({
     patients,
     isLoading,
     scope,
+    registrationScope,
     loadError,
     query,
     setQuery,

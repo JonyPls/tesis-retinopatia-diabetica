@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { PatientFormData } from "../types";
+import type { PatientRegistrationScope } from "../hooks/usePatients";
 
 interface CreatePatientDialogProps {
   open: boolean;
@@ -60,6 +61,7 @@ interface CreatePatientDialogProps {
   hasUnsavedChanges: boolean;
   onDiscard: () => void;
   triggerLabel?: string;
+  registrationScope: PatientRegistrationScope;
 }
 
 export function CreatePatientDialog({
@@ -77,6 +79,7 @@ export function CreatePatientDialog({
   hasUnsavedChanges,
   onDiscard,
   triggerLabel = "Nuevo Paciente",
+  registrationScope,
 }: CreatePatientDialogProps) {
   const [identificationOpen, setIdentificationOpen] = useState(true);
   const [contactOpen, setContactOpen] = useState(false);
@@ -127,7 +130,9 @@ export function CreatePatientDialog({
         <AppModalHeader
           icon={<UserPlus className="h-6 w-6" />}
           title="Registrar Nuevo Paciente"
-          subtitle="Complete los datos de identificación y la información clínica inicial."
+          subtitle={registrationScope === "administrative"
+            ? "Complete los datos de identificación y contacto."
+            : "Complete los datos de identificación y la información clínica inicial."}
         />
 
         <AppModalBody>
@@ -287,15 +292,15 @@ export function CreatePatientDialog({
             </div>
           </FormSection>
 
-          <FormSection
+          {registrationScope !== "administrative" && <FormSection
             title="Información clínica básica"
             open={clinicalOpen}
             onOpenChange={setClinicalOpen}
-            summary="Antecedentes y alergias"
+            summary={registrationScope === "clinical" ? "Antecedentes y alergias" : "Alergias"}
             icon={<ClipboardPlus className="h-4 w-4" />}
           >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
+              {registrationScope === "clinical" && <div className="space-y-2">
                 <Label htmlFor="antecedentes_clinicos">Antecedentes clínicos</Label>
                 <Textarea
                   id="antecedentes_clinicos"
@@ -307,7 +312,7 @@ export function CreatePatientDialog({
                   placeholder="Diabetes, hipertensión, cirugías previas..."
                   className="min-h-[92px] resize-none border-input"
                 />
-              </div>
+              </div>}
               <div className="space-y-2">
                 <Label htmlFor="alergias">Alergias</Label>
                 <Textarea
@@ -320,7 +325,7 @@ export function CreatePatientDialog({
                 />
               </div>
             </div>
-          </FormSection>
+          </FormSection>}
 
           <Collapsible open={consentOpen} onOpenChange={setConsentOpen}>
             <div

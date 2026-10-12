@@ -114,6 +114,7 @@ export default function Diagnosis() {
       open={patientRegistration.open}
       onOpenChange={patientRegistration.setOpen}
       formData={patientRegistration.formData}
+      registrationScope={patientRegistration.registrationScope}
       isSubmitting={patientRegistration.isSubmitting}
       consent={patientRegistration.consent}
       onConsentChange={patientRegistration.setConsent}

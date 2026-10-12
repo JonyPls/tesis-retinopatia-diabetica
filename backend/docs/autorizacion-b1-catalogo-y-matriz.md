@@ -1,4 +1,4 @@
-# B1: catálogo canónico y matriz de autorización (cuatro lecturas activadas)
+# B1: catálogo canónico y matriz de autorización (cinco rutas activadas)
 
 Referencia de estructura y códigos sembrados: `backend/db/centro-oftalmologico-db-v2.sql`.
 El script v2 y la instancia MySQL pueden diferir; esta matriz no verifica grants
@@ -69,7 +69,7 @@ provenir de su rol y habilitación clínica vigentes, no de los grants del rol
 administrativo. Los permisos individuales heredados/concedidos/denegados son
 una fase posterior: este documento no implementa `usuario_permiso`.
 
-**Salvo las cuatro rutas de pacientes marcadas como activas**, las filas
+**Salvo las cinco rutas de pacientes marcadas como activas**, las filas
 siguientes están pendientes de implementación: sus permisos no se exigen hoy
 con la semántica estricta. Los códigos marcados `[nuevo]` no
 están sembrados en v2. `+` representa AND; `o` representa OR explícito solo
@@ -78,7 +78,7 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | Método y ruta actual | Operación / dominio | Permiso(s) canónico(s) | Roles propuestos | Condición especial y estado |
 | --- | --- | --- | --- | --- |
 | GET `/api/pacientes` | Listar / pacientes | `pacientes.ver` | O, E, S | Activa B1; proyección según grant del rol; sin asignación médica exclusiva. |
-| POST `/api/pacientes` | Registrar / pacientes | `pacientes.crear` | O, E, S | Asistente autorizado; datos administrativos/clínicos requieren controles por campo posteriores. Pendiente. |
+| POST `/api/pacientes` | Registrar / pacientes | `pacientes.crear` | O, E, S | Activa B1; entrada según procedencia del grant de creación y salida según lectura independiente. |
 | GET `/api/pacientes/<int:id>` | Detalle / pacientes | `pacientes.ver` | O, E, S | Activa B1; proyección según rol y grant vigente, 404 si no existe. |
 | GET `/api/diagnosticos/paciente/<int:id>` | Historial / compuesto | `pacientes.ver` + `visitas.ver` + `diagnostico_retinopatia.ver` [nuevo] + `informes.ver` | O; E/S solo si habilitados para **todo** el contenido | La respuesta actual contiene IA e informes; alternativa: filtrar secciones por permiso. Pendiente de decisión. |
 | GET `/api/pacientes/<int:id>/visitas` | Historial / compuesto | `pacientes.ver` + `visitas.ver` + `diagnostico_retinopatia.ver` [nuevo] + `informes.ver` | O; E/S solo si habilitados para **todo** el contenido | Misma respuesta compuesta que la fila anterior; pendiente de decisión. |
@@ -127,15 +127,13 @@ privilegiados ni activar cuentas pendientes. Las funciones delegadas se
 resolverán en el futuro modelo híbrido de permisos individuales, sin crear
 ahora un rol Gerente ni permisos o tablas adicionales.
 
-**Siguiente prioridad de minimización:** (1) la respuesta de POST `/api/pacientes`
-incluye antecedentes y alergias, además de datos de contacto, y conserva el
-decorador antiguo; (2) GET
+**Siguiente prioridad de minimización:** (1) GET
 `/api/pacientes/<id>/visitas` y GET `/api/diagnosticos/paciente/<id>`
-incluyen IA, imágenes referenciadas e informes completos; (3) listados y
+incluyen IA, imágenes referenciadas e informes completos; (2) listados y
 detalles de `/api/informes/*`, PDF diagnóstico y archivos protegidos pueden
 exponer clínica según su decorador antiguo. Evaluar individualmente tanto
 la autorización como la proyección antes de activar B1 en cada ruta: minimizar
-solo las cuatro lecturas no protege el resto del sistema.
+solo estas cinco rutas no protege el resto del sistema.
 
 ## Activación del listado y detalle (Prompt 18)
 
@@ -187,18 +185,61 @@ clínicas no disponibles y el perfil solo solicita visitas cuando el backend
 indica alcance clínico + permiso compuesto `history.full_read`. La UI no
 sustituye la protección del endpoint heredado de visitas.
 
-**POST pendiente, no modificado:** `POST /api/pacientes` continúa con
-`@token_required` + `@clinical_access_required('pacientes.crear',
-'pacientes.gestionar')`. Acepta desde el formulario `antecedentes_clinicos`,
-`alergias` y `consentimiento_informado` y, tras insertar, llama
-`PatientRepository.obtener_paciente_por_id(id)` con alcance clínico por defecto:
-su JSON `data` devuelve ambos campos clínicos a quien consiga crear,
-incluido un asistente admitido por el decorador antiguo. El callback frontend
-`onCreated` recibe el objeto completo. Corregir en el siguiente bloque
-la **proyección de respuesta POST**, el control de campos de entrada y el
-alcance del callback; revisar también la lectura de historial y demás rutas
-legadas antes de presentarlas como seguras para el asistente. No se modificaron
-escrituras, migraciones, grants ni MySQL de desarrollo en esta activación.
+## Registro de pacientes B1 (Prompt 19)
+
+Antes, POST usaba `@token_required` +
+`@clinical_access_required('pacientes.crear', 'pacientes.gestionar')`. El
+servicio tomaba `tipo_doc`, `nro_documento`, `nombres`, `apellidos`, `sexo`,
+`fecha_nacimiento`, `telefono`, `correo`, `direccion`,
+`antecedentes_clinicos`, `alergias` y `consentimiento_informado`, ignorando
+otras claves. Generaba `tipo_doc_id` desde catálogo, `fecha_consentimiento`,
+ID, estado y fechas de registro; tras insertar leía el detalle **clínico** y
+lo devolvía completo en `data`. Se conservan 201 (`success`, `message`,
+`data`), 400 para entradas inválidas y 409 por duplicado.
+
+POST exige ahora `patients.create`: JWT y cuenta activos más
+`pacientes.crear` vigente aportado por rol O/E/S habilitante, sin bypass del
+administrador. El alcance de creación se evalúa por procedencia válida en
+cada petición, independiente de `patient_read_scope`.
+
+| Perfil creador | Claves de entrada admitidas | Claves prohibidas |
+| --- | --- | --- |
+| Asistente | `tipo_doc`, `nro_documento`, `nombres`, `apellidos`, `sexo`, `fecha_nacimiento`, `telefono`, `correo`, `direccion`, `consentimiento_informado` | Antecedentes, alergias, IA, visitas, imágenes, campos derivados y cualquier clave desconocida |
+| Enfermero | Las del asistente + `alergias` | Antecedentes, IA, visitas, imágenes y campos derivados |
+| Oftalmólogo | Las del enfermero + `antecedentes_clinicos` | IA, visitas, imágenes y campos derivados |
+| Administrador solo | Ninguna (403) | La jerarquía no sustituye la habilitación clínica |
+
+Las claves prohibidas se rechazan con 400 **aunque sean nulas o vacías**, antes
+de consultas o escrituras del servicio. Tampoco se aceptan estructuras
+anidadas, arrays, alias, claves desconocidas ni tipos inesperados. Solo el
+booleano explícito `consentimiento_informado` satisface la validación previa:
+el formulario lo identifica como **constancia del formulario físico firmado y
+archivado**, necesaria para el alta, no como permiso para consultar contenido
+clínico. El servidor no inventa dicha constancia. La clasificación definitiva
+de esa constancia para el asistente requiere confirmación institucional; si no
+es parte de su labor, habrá que rediseñar la precondición de alta antes de
+retirársela. `fecha_consentimiento`, `tipo_doc_id`, ID, estados y fechas los
+genera el sistema, no son entradas admitidas.
+
+La respuesta 201 se proyecta según **`pacientes.ver` independiente**: lector
+asistente recibe identidad/contacto sin consentimiento; lector enfermero suma
+consentimiento y alergias; lector oftalmólogo suma antecedentes. Si solo hay
+permiso de crear y no de leer, `data` contiene **únicamente el ID** y se evita
+la consulta de detalle. Ni el grant de creación ni el de un rol no habilitante
+elevan el alcance de respuesta. El callback frontend usa solo ID y la identidad
+introducida por el propio usuario, sin reenviar datos clínicos.
+
+En MySQL 8 desechable, POST con lectura usa **6 SELECT** (tres de
+autenticación/autorización, catálogo de documento, comprobación de duplicado y
+lectura de detalle) y un INSERT, sin N+1. Crear sin lectura omite el SELECT de
+detalle. Rechazos por autorización o por campos no permitidos no escriben.
+El arnés valida aislamiento y reversión de los grants de su instancia temporal;
+no se modificaron scripts SQL B1 ni MySQL habitual.
+
+Sigue pendiente la transición autorizada de `diagnostico_retinopatia.ver` en
+la BD habitual: su ausencia omite `maxima_gravedad` del listado médico y
+deja `history_available=false`. No se implementa bypass ni se activan rutas
+de historial, diagnóstico, PDF o imágenes en este bloque.
 
 ## Dependencias antes de activar B1
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -9,16 +9,35 @@ import { PatientInfoCard } from "../features/patients/components/PatientInfoCard
 import { usePatients } from "../features/patients/hooks/usePatients";
 import { usePatientProfile } from "../features/patients/hooks/usePatientProfile";
 import { usePatientVisitDetail } from "../features/patients/hooks/usePatientVisitDetail";
+import { useAuthStore } from "../features/auth/store/authStore";
+import { CreatePatientDialog } from "../features/patients/components/CreatePatientDialog";
 
-vi.mock("../lib/api", () => ({ default: { get: vi.fn() } }));
+vi.mock("../lib/api", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 const get = vi.mocked(api.get);
+const post = vi.mocked(api.post);
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 const patient = { id: 7, tipo_doc_abrev: "DNI", nro_documento: "00000007",
   nombres: "Paciente", apellidos: "Sintético", sexo: "F", fecha_nacimiento: "2000-01-01",
   antecedentes_clinicos: "antecedente sintético", alergias: "alergia sintética" };
 
-beforeEach(() => vi.clearAllMocks());
-afterEach(() => cleanup());
+beforeEach(() => { vi.clearAllMocks(); useAuthStore.getState().logout(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); useAuthStore.getState().logout(); });
+
+function login(roles: string[]) {
+  useAuthStore.getState().login("synthetic-only", {
+    id: 1, username: "ficticio", nombres: "Persona", apellidos: "Ficticia", roles,
+  });
+}
+
+function fillRegistration(result: { current: ReturnType<typeof usePatients> }) {
+  act(() => {
+    result.current.setFormData({ tipo_doc: "DNI", nro_documento: "90000001",
+      nombres: "Paciente", apellidos: "Ficticio", sexo: "Femenino",
+      fecha_nacimiento: "2000-01-01", telefono: "900000000", correo: "", direccion: "",
+      antecedentes_clinicos: "Antecedente sintético", alergias: "Alergia sintética" });
+    result.current.setConsent(true);
+  });
+}
 
 describe("B1 listado y detalle", () => {
   it("el listado administrativo no interpreta campos clínicos omitidos como Sin Evaluar", async () => {
@@ -108,5 +127,82 @@ describe("B1 listado y detalle", () => {
       expect(result.current.patient).toBeNull();
       unmount();
     }
+  });
+
+  it("asistente envía solo identificación, contacto y constancia física; callback no expone clínica", async () => {
+    login(["Asistente administrativo"]);
+    post.mockResolvedValue({ data: { success: true, data: { id: 77, nro_documento: "90000001" } } });
+    const onCreated = vi.fn();
+    const { result } = renderHook(() => usePatients({ autoFetch: false, onCreated }), { wrapper });
+    fillRegistration(result);
+    // La UI no debe registrar a escondidas datos clínicos escritos antes de un cambio de perfil.
+    await act(async () => { await result.current.handleSubmit({ preventDefault: vi.fn() } as unknown as React.FormEvent); });
+    expect(post).not.toHaveBeenCalled();
+    act(() => { result.current.setFormData((previous) => ({ ...previous,
+      antecedentes_clinicos: "", alergias: "" })); });
+    await act(async () => { await result.current.handleSubmit({ preventDefault: vi.fn() } as unknown as React.FormEvent); });
+    expect(post).toHaveBeenCalledWith("/pacientes", expect.not.objectContaining({
+      antecedentes_clinicos: expect.anything(), alergias: expect.anything(),
+    }));
+    expect(post.mock.calls[0][1]).toMatchObject({ consentimiento_informado: true });
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 77, nombres: "Paciente" }));
+    expect(onCreated.mock.calls[0][0]).not.toHaveProperty("antecedentes_clinicos");
+  });
+
+  it("enfermero no envía antecedentes y oftalmólogo conserva el registro clínico", async () => {
+    for (const [role, expectedScope] of [["Enfermero", "assistance"], ["Oftalmologo", "clinical"]] as const) {
+      login([role]);
+      post.mockResolvedValueOnce({ data: { data: { id: 77 } } });
+      const { result, unmount } = renderHook(() => usePatients({ autoFetch: false }), { wrapper });
+      expect(result.current.registrationScope).toBe(expectedScope);
+      fillRegistration(result);
+      if (role === "Enfermero") {
+        act(() => { result.current.setFormData((previous) => ({ ...previous, antecedentes_clinicos: "" })); });
+      }
+      await act(async () => { await result.current.handleSubmit({ preventDefault: vi.fn() } as unknown as React.FormEvent); });
+      const payload = post.mock.lastCall?.[1] as Record<string, unknown>;
+      expect(payload.alergias).toBe("Alergia sintética");
+      expect("antecedentes_clinicos" in payload).toBe(role === "Oftalmologo");
+      unmount();
+    }
+  });
+
+  it("401/403 del alta no invocan callback ni cierran el formulario", async () => {
+    login(["Asistente administrativo"]);
+    const onCreated = vi.fn();
+    const { result } = renderHook(() => usePatients({ autoFetch: false, onCreated }), { wrapper });
+    fillRegistration(result);
+    act(() => { result.current.setFormData((previous) => ({ ...previous,
+      antecedentes_clinicos: "", alergias: "" })); result.current.setOpen(true); });
+    for (const status of [401, 403]) {
+      post.mockRejectedValueOnce({ response: { status, data: { message: "secreto" } } });
+      await act(async () => { await result.current.handleSubmit({ preventDefault: vi.fn() } as unknown as React.FormEvent); });
+      expect(result.current.open).toBe(true);
+      expect(onCreated).not.toHaveBeenCalled();
+    }
+  });
+
+  it("el formulario oculta secciones clínicas según el perfil orientativo", () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const formData = { tipo_doc: "DNI", nro_documento: "", nombres: "", apellidos: "",
+      sexo: "", fecha_nacimiento: "", telefono: "", correo: "", direccion: "",
+      antecedentes_clinicos: "", alergias: "" };
+    const props = { open: true, onOpenChange: vi.fn(), formData, isSubmitting: false,
+      consent: false, onConsentChange: vi.fn(), onDocumentChange: vi.fn(),
+      onPhoneChange: vi.fn(), onFieldChange: vi.fn(), onSubmit: vi.fn(),
+      onTipoDocChange: vi.fn(), hasUnsavedChanges: false, onDiscard: vi.fn() };
+    const { rerender } = render(<CreatePatientDialog {...props} registrationScope="administrative" />);
+    expect(screen.queryByText("Información clínica básica")).not.toBeInTheDocument();
+    expect(screen.getByText("Consentimiento Informado Físico Archivado")).toBeInTheDocument();
+    rerender(<CreatePatientDialog {...props} registrationScope="assistance" />);
+    fireEvent.click(screen.getByRole("button", { name: /Información clínica básica/ }));
+    expect(screen.queryByText("Antecedentes clínicos")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Alergias")).toBeInTheDocument();
+    rerender(<CreatePatientDialog {...props} registrationScope="clinical" />);
+    expect(screen.getByLabelText("Antecedentes clínicos")).toBeInTheDocument();
   });
 });

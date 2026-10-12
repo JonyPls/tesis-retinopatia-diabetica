@@ -2,6 +2,7 @@ from src.repositories.patient_repository import PatientRepository
 from src.repositories.document_repository import DocumentRepository
 from src.models.patient_entities import Paciente
 from flask import current_app
+from database import db
 from datetime import date, datetime
 import re
 
@@ -13,6 +14,18 @@ DOCUMENT_PATTERNS = {
 NAME_PATTERN = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$")
 EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 MAX_PATIENT_AGE = 120
+PATIENT_REGISTRATION_FIELDS = frozenset({
+    'tipo_doc', 'nro_documento', 'nombres', 'apellidos', 'sexo',
+    'fecha_nacimiento', 'telefono', 'correo', 'direccion',
+    'consentimiento_informado',
+})
+PATIENT_ASSISTANCE_FIELDS = PATIENT_REGISTRATION_FIELDS | {'alergias'}
+PATIENT_CLINICAL_FIELDS = PATIENT_ASSISTANCE_FIELDS | {'antecedentes_clinicos'}
+PATIENT_CREATE_FIELDS = {
+    'administrative': PATIENT_REGISTRATION_FIELDS,
+    'assistance': PATIENT_ASSISTANCE_FIELDS,
+    'clinical': PATIENT_CLINICAL_FIELDS,
+}
 
 
 def _clean_text(value):
@@ -112,7 +125,21 @@ def obtener_todos_pacientes(*, scope='clinical', include_severity=True):
         current_app.logger.exception("Error al obtener pacientes")
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
-def registrar_nuevo_paciente(datos_paciente_dict):
+def registrar_nuevo_paciente(datos_paciente_dict, *, create_scope, read_scope):
+    allowed = PATIENT_CREATE_FIELDS.get(create_scope)
+    if not isinstance(datos_paciente_dict, dict) or allowed is None:
+        return {"success": False, "message": "Solicitud inválida."}, 400
+    if any(not isinstance(key, str) or key not in allowed for key in datos_paciente_dict):
+        return {"success": False, "message": "La solicitud contiene campos no permitidos."}, 400
+    if any(not isinstance(value, (str, type(None))) for key, value in
+           datos_paciente_dict.items() if key != 'consentimiento_informado'):
+        return {"success": False, "message": "La solicitud contiene valores no válidos."}, 400
+    if ('consentimiento_informado' in datos_paciente_dict and
+            not isinstance(datos_paciente_dict['consentimiento_informado'], bool)):
+        return {"success": False, "message": "La solicitud contiene valores no válidos."}, 400
+    if read_scope not in (None, 'administrative', 'assistance', 'clinical'):
+        return {"success": False, "message": "Solicitud inválida."}, 400
+
     tipo_doc_codigo = _clean_text(datos_paciente_dict.get('tipo_doc'))
     tipo_doc_codigo = tipo_doc_codigo.upper() if tipo_doc_codigo else None
     nro_documento = _normalize_document(datos_paciente_dict.get('nro_documento'), tipo_doc_codigo)
@@ -180,15 +207,22 @@ def registrar_nuevo_paciente(datos_paciente_dict):
             consentimiento_informado=consentimiento_informado,
             fecha_consentimiento=datetime.now() if consentimiento_informado else None
         )
-        PatientRepository.insertar_paciente(nuevo_paciente)
-        paciente_creado = PatientRepository.obtener_paciente_por_id(nuevo_paciente.id)
+        patient_id = PatientRepository.insertar_paciente(nuevo_paciente)
+        paciente_creado = ({'id': patient_id} if read_scope is None else
+                           PatientRepository.obtener_paciente_por_id(
+                               patient_id, scope=read_scope))
+        if not paciente_creado:
+            raise RuntimeError('Created patient lookup failed')
+        db.session.commit()
         return {
             "success": True,
             "message": "Paciente registrado correctamente",
             "data": paciente_creado,
         }, 201
     except Exception:
-        current_app.logger.exception("Error al registrar paciente")
+        db.session.rollback()
+        # No registrar SQL ni parámetros con identidad o contenido clínico.
+        current_app.logger.error("Error al registrar paciente")
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 def obtener_detalle_paciente(paciente_id, *, scope='clinical'):

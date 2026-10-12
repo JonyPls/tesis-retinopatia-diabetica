@@ -10,7 +10,8 @@ from services.patient_service import (
 )
 from utils.security import clinical_access_required, token_required
 from utils.strict_authorization import (
-    evaluate_operation, patient_read_scope, strict_authorization_required,
+    evaluate_operation, patient_create_scope, patient_read_scope,
+    strict_authorization_required,
 )
 
 SEARCH_FIELDS = (
@@ -107,6 +108,28 @@ def _project_patient_response(response, status, scope, *, listing=False,
     except (KeyError, TypeError, AttributeError):
         return jsonify({'success': False, 'message': 'No se pudo procesar la solicitud.'}), 500
 
+
+def _project_created_patient(response, status, read_scope):
+    if status != 201:
+        return jsonify(response), status
+    try:
+        if response['success'] is not True or not isinstance(response['data'], dict):
+            raise TypeError('Invalid patient creation response')
+        fields = ('id',) if read_scope is None else DETAIL_FIELDS
+        if read_scope in ('assistance', 'clinical'):
+            fields += CONSENT_FIELDS
+        if read_scope == 'assistance':
+            fields += ('alergias',)
+        elif read_scope == 'clinical':
+            fields += ('antecedentes_clinicos', 'alergias')
+        data = _project_patient_row(response['data'], fields)
+        if not isinstance(data.get('id'), int):
+            raise TypeError('Missing created patient ID')
+        return jsonify({'success': True, 'message': 'Paciente registrado correctamente',
+                        'data': data}), 201
+    except (KeyError, TypeError, AttributeError):
+        return jsonify({'success': False, 'message': 'No se pudo procesar la solicitud.'}), 500
+
 patient_bp = Blueprint('patient_bp', __name__)
 
 @patient_bp.route('/api/pacientes', methods=['GET'])
@@ -123,12 +146,16 @@ def get_pacientes():
                                      listing=True, include_severity=include_severity)
 
 @patient_bp.route('/api/pacientes', methods=['POST'])
-@token_required
-@clinical_access_required('pacientes.crear', 'pacientes.gestionar')
+@strict_authorization_required('patients.create')
 def register_paciente():
-    data = request.get_json() or {}
-    response_dict, status_code = registrar_nuevo_paciente(data)
-    return jsonify(response_dict), status_code
+    create_scope = patient_create_scope(request.authenticated_user)
+    if create_scope is None:
+        return jsonify({'success': False, 'message': 'No autorizado.'}), 403
+    data = request.get_json(silent=True)
+    read_scope = _patient_scope()
+    response_dict, status_code = registrar_nuevo_paciente(
+        data, create_scope=create_scope, read_scope=read_scope)
+    return _project_created_patient(response_dict, status_code, read_scope)
 
 @patient_bp.route('/api/pacientes/<int:id>', methods=['GET'])
 @strict_authorization_required('patients.read')

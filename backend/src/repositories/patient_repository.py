@@ -82,16 +82,18 @@ class PatientRepository:
         return [dict(row._mapping) for row in result]
 
     @staticmethod
-    def obtener_paciente_por_documento(tipo_doc_id: int, nro_documento: str) -> Paciente:
-        return Paciente.query.filter_by(
+    def obtener_paciente_por_documento(tipo_doc_id: int, nro_documento: str) -> int | None:
+        # La comprobación de duplicados no necesita cargar información clínica.
+        return db.session.query(Paciente.id).filter_by(
             tipo_doc_id=tipo_doc_id,
             nro_documento=nro_documento
-        ).first()
+        ).scalar()
 
     @staticmethod
     def insertar_paciente(paciente: Paciente):
         db.session.add(paciente)
-        db.session.commit()
+        db.session.flush()
+        return paciente.id
 
     @staticmethod
     def obtener_paciente_por_id(paciente_id: int, *, scope='clinical'):

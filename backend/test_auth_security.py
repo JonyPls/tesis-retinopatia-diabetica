@@ -133,10 +133,15 @@ class AuthSecurityTests(unittest.TestCase):
         }
         self.list_service = Mock(return_value=({"success": True, "data": [self.patient_row]}, 200))
         self.detail_service = Mock(return_value=({"success": True, "data": self.patient_row}, 200))
+        self.create_service = Mock(return_value=({
+            "success": True, "message": "Paciente registrado correctamente",
+            "data": self.patient_row,
+        }, 201))
         for name, fake in (("buscar_pacientes_dinamico", self.search_service),
                            ("obtener_recientes", self.recent_service),
                            ("obtener_todos_pacientes", self.list_service),
-                           ("obtener_detalle_paciente", self.detail_service)):
+                           ("obtener_detalle_paciente", self.detail_service),
+                           ("registrar_nuevo_paciente", self.create_service)):
             patched = patch.object(patient_routes, name, fake)
             patched.start()
             self.addCleanup(patched.stop)
@@ -1103,6 +1108,73 @@ class AuthSecurityTests(unittest.TestCase):
             response = self.client.get(path, headers=headers)
             self.assertEqual(response.status_code, 500)
             self.assertNotIn("secreto", response.get_data(as_text=True))
+
+    def test_b1_real_post_denies_before_handler_for_invalid_token_or_grant(self):
+        path = "/api/pacientes"
+        for token in (None, self.token(key="different-synthetic-key"), self.token(expires=False)):
+            result = self.client.post(path, headers=self.headers(token) if token else None, json={})
+            self.assertEqual(result.status_code, 401)
+        self.active = False
+        self.assertEqual(self.client.post(path, headers=self.headers(self.token()), json={}).status_code, 401)
+        self.active = True
+        for grants in ({"OFTALMOLOGO": []}, {"ADMINISTRADOR_SISTEMA": ["pacientes.crear"]},
+                       {"ADMINISTRADOR_SISTEMA": ["pacientes.crear"], "OFTALMOLOGO": []},
+                       {"ASISTENTE_ADMINISTRATIVO": ["clinico.*"]}):
+            with self.subTest(grants=grants):
+                self.set_role_grants(grants)
+                self.assertEqual(self.client.post(path, headers=self.headers(self.token()),
+                                                  json={}).status_code, 403)
+        self.create_service.assert_not_called()
+
+    def test_b1_real_post_projects_response_by_independent_read_grant(self):
+        for role, create_scope, read_scope in (
+            ("OFTALMOLOGO", "clinical", "clinical"),
+            ("ENFERMERO", "assistance", "assistance"),
+            ("ASISTENTE_ADMINISTRATIVO", "administrative", "administrative"),
+        ):
+            with self.subTest(role=role):
+                self.set_role_grants({role: ["pacientes.crear", "pacientes.ver"]})
+                response = self.client.post("/api/pacientes", json={"tipo_doc": "DNI"},
+                                            headers=self.headers(self.token(roles=["Admin"])))
+                self.assertEqual(response.status_code, 201)
+                self.create_service.assert_called_with({"tipo_doc": "DNI"},
+                                                       create_scope=create_scope, read_scope=read_scope)
+                fields = set(response.json["data"])
+                self.assertNotIn("diagnosticos", fields)
+                self.assertNotIn("informes", fields)
+                self.assertNotIn("imagenes", fields)
+                self.assertEqual("antecedentes_clinicos" in fields, role == "OFTALMOLOGO")
+                self.assertEqual("alergias" in fields, role != "ASISTENTE_ADMINISTRATIVO")
+                self.assertEqual("consentimiento_informado" in fields, role != "ASISTENTE_ADMINISTRATIVO")
+        self.set_role_grants({"OFTALMOLOGO": ["pacientes.crear"]})
+        response = self.client.post("/api/pacientes", json={},
+                                    headers=self.headers(self.token()))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["data"], {"id": 101})
+        self.create_service.assert_called_with({}, create_scope="clinical", read_scope=None)
+
+    def test_b1_real_post_multirole_never_merges_create_or_read_grants(self):
+        roles = self.set_role_grants({"ADMINISTRADOR_SISTEMA": ["pacientes.crear", "pacientes.ver"],
+                                     "OFTALMOLOGO": ["pacientes.ver"]})
+        headers = self.headers(self.token())
+        self.assertEqual(self.client.post("/api/pacientes", json={}, headers=headers).status_code, 403)
+        self.create_service.assert_not_called()
+        roles["OFTALMOLOGO"].permisos_rel.append(SimpleNamespace(
+            permiso=SimpleNamespace(codigo="pacientes.crear", estado="ACTIVO")))
+        self.assertEqual(self.client.post("/api/pacientes", json={}, headers=headers).status_code, 201)
+        roles["OFTALMOLOGO"].permisos_rel[-1].permiso.estado = "INACTIVO"
+        self.assertEqual(self.client.post("/api/pacientes", json={}, headers=headers).status_code, 403)
+        self.assertEqual(self.create_service.call_count, 1)
+
+    def test_b1_real_post_create_grant_never_elevates_read_from_other_role(self):
+        self.set_role_grants({"OFTALMOLOGO": ["pacientes.crear"],
+                              "ASISTENTE_ADMINISTRATIVO": ["pacientes.ver"]})
+        result = self.client.post("/api/pacientes", json={}, headers=self.headers(self.token()))
+        self.assertEqual(result.status_code, 201)
+        self.create_service.assert_called_once_with({}, create_scope="clinical", read_scope="administrative")
+        self.assertNotIn("antecedentes_clinicos", result.json["data"])
+        self.assertNotIn("alergias", result.json["data"])
+        self.assertNotIn("consentimiento_informado", result.json["data"])
 
 
 if __name__ == "__main__":

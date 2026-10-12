@@ -55,6 +55,7 @@ export default function Patients() {
           open={hook.open}
           onOpenChange={hook.setOpen}
           formData={hook.formData}
+          registrationScope={hook.registrationScope}
           isSubmitting={hook.isSubmitting}
           consent={hook.consent}
           onConsentChange={hook.setConsent}
