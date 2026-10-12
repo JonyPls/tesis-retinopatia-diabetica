@@ -81,6 +81,7 @@ SEED_COUNTS = {
     "diagnosticos_retinopatia_detalle": 0, "informes": 0,
 }
 CONFIRMATIONS = 'confirmaciones_exportacion_retinografo'
+REPORT_VERSIONS = 'informes_versiones'
 UNAFFECTED_TABLES = (
     "usuarios", "usuario_rol", "pacientes", "visitas_clinicas",
     "diagnosticos_retinopatia", "diagnosticos_retinopatia_detalle", "informes",
@@ -185,7 +186,7 @@ def verify_seed(connection, *, historical=False):
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = %s AND table_type = 'BASE TABLE'
     """, (SCHEMA,)))
-    expected_tables = set(SEED_COUNTS) if historical else set(SEED_COUNTS) | {CONFIRMATIONS}
+    expected_tables = set(SEED_COUNTS) if historical else set(SEED_COUNTS) | {CONFIRMATIONS, REPORT_VERSIONS}
     require(tables == {(table,) for table in expected_tables},
             "Las tablas del seed no coinciden con el maestro esperado.")
     require(set(rows(connection, "SELECT codigo FROM roles")) == {(r,) for r in ROLES},
@@ -205,6 +206,8 @@ def verify_seed(connection, *, historical=False):
     else:
         require(rows(connection, f"SELECT COUNT(*) FROM `{CONFIRMATIONS}`")[0][0] == 0,
                 "El maestro no debe sembrar confirmaciones clínicas.")
+        require(rows(connection, f"SELECT COUNT(*) FROM `{REPORT_VERSIONS}`")[0][0] == 0,
+                "El maestro no debe sembrar versiones clínicas ficticias.")
         require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS | NEW_PERMISSIONS},
                 "El maestro B1 no contiene exactamente los 21 códigos aprobados.")
         require(counts(grants(connection)) == EXPECTED_FINAL_COUNTS,
@@ -252,14 +255,14 @@ def verify_seed(connection, *, historical=False):
     require(rows(connection, """
         SELECT COUNT(*) FROM information_schema.referential_constraints
         WHERE constraint_schema=%s
-    """, (SCHEMA,))[0][0] == (18 if historical else 22),
+    """, (SCHEMA,))[0][0] == (18 if historical else 24),
             "Faltan claves foráneas del esquema esperado.")
 
 
 def seed_signature(connection):
     """Comparar reconstrucciones sin exponer valores semilla ni fechas automáticas."""
     signature = {}
-    for table in SEED_COUNTS:
+    for table in (*SEED_COUNTS, CONFIRMATIONS, REPORT_VERSIONS):
         columns = [name for (name,) in rows(connection, """
             SELECT column_name FROM information_schema.columns
             WHERE table_schema=%s AND table_name=%s
@@ -420,6 +423,9 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
             from b1_retinograph_schema_trial import check_confirmation_schema
 
             check_confirmation_schema(connection)
+            from b1_report_version_schema_trial import check_report_version_schema, check_report_version_integrity
+
+            check_report_version_schema(connection)
             original_signature = seed_signature(connection)
             # El maestro hace DROP TABLE; repetirlo solo tras confirmar UUID,
             # datadir y puerto de la instancia desechable propia.
@@ -428,15 +434,21 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
             client_script(port, password, v2)
             verify_seed(connection)
             check_confirmation_schema(connection)
+            check_report_version_schema(connection)
             require(seed_signature(connection) == original_signature,
                     "La segunda reconstrucción B1 difiere en tablas o datos semilla.")
-            print("MAESTRO B1: 15 tablas y semilla conservada en dos reconstrucciones; "
+            print("MAESTRO B1: 16 tablas y semilla conservada en dos reconstrucciones; "
                    "21 permisos, grants 7/13/6/6 por código; sin duplicados.")
             from b1_retinograph_schema_trial import check_confirmation_integrity
 
             check_confirmation_integrity(connection)
+            check_report_version_integrity(connection)
+            print("VERSIONES SQL: CHECK, FK, JSON, instantánea inicial/migración y borrado "
+                  "de informe/visita rechazado; datos sintéticos revertidos.")
             require(rows(connection, f"SELECT COUNT(*) FROM `{CONFIRMATIONS}`")[0][0] == 0,
                     "La prueba de integridad dejó confirmaciones sintéticas persistidas.")
+            require(rows(connection, f"SELECT COUNT(*) FROM `{REPORT_VERSIONS}`")[0][0] == 0,
+                    "La prueba de versiones dejó instantáneas sintéticas persistidas.")
             before_fingerprints = fingerprints(connection)
             if orm_integration:
                 from b1_orm_mysql_trial import run_orm_integration
@@ -446,6 +458,8 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                         "Las pruebas ORM dejaron datos en tablas clínicas/usuarios.")
                 require(rows(connection, f"SELECT COUNT(*) FROM `{CONFIRMATIONS}`")[0][0] == 0,
                         "Las pruebas ORM dejaron confirmaciones sintéticas persistidas.")
+                require(rows(connection, f"SELECT COUNT(*) FROM `{REPORT_VERSIONS}`")[0][0] == 0,
+                        "Las pruebas ORM dejaron versiones sintéticas persistidas.")
 
             if check_historical_idempotence:
                 # Ensayo histórico optativo; nunca forma parte de la carga B1 directa.

@@ -3168,6 +3168,49 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertEqual({column.name: getattr(after, column.name)
                           for column in informe_entities.Informe.__table__.columns}, before)
 
+    def test_29c2_orm_version_snapshot_and_restricted_parent(self):
+        report_id = self.report_ids[0]
+        db.session.remove()
+        report = db.session.get(informe_entities.Informe, report_id)
+        self.assertEqual(report.revision_actual, 1)
+        self.assertEqual(report.schema_version, 1)
+        self.assertEqual(report.versiones, [])  # 29C.3 aún no registra la inicial.
+        self.assertEqual(str(informe_entities.InformeVersion.__table__.c.informe_id.type
+                             .compile(dialect=db.engine.dialect)).upper(), 'BIGINT UNSIGNED')
+        try:
+            for number, operation, reason in ((1, 'MIGRACION_INICIAL', None),
+                                              (2, 'CORRECCION', 'Motivo sintético')):
+                snapshot = informe_entities.InformeVersion(
+                    informe_id=report_id, numero_version=number, operacion=operation,
+                    schema_version=report.schema_version, datos_estructurados={'nota': 'sintetica'},
+                    conclusion='Solo prueba', estado=report.estado,
+                    autor_operacion_id=None if number == 1 else self.user_ids['ophthalmologist'],
+                    motivo=reason)
+                db.session.add(snapshot)
+            db.session.commit()
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            self.assertEqual([item.numero_version for item in report.versiones], [1, 2])
+            self.assertEqual([item.operacion for item in report.versiones],
+                             ['MIGRACION_INICIAL', 'CORRECCION'])
+            self.assertEqual(report.versiones[1].informe.id, report_id)
+            self.assertEqual(report.versiones[1].autor_operacion.id,
+                             self.user_ids['ophthalmologist'])
+            self.assertIsNotNone(report.versiones[0].fecha_operacion)
+            self.assertEqual(report.versiones[0].datos_estructurados, {'nota': 'sintetica'})
+            self.assertEqual(report.versiones[1].conclusion, 'Solo prueba')
+            with self.assertRaises(IntegrityError):
+                db.session.delete(report)
+                db.session.flush()
+            db.session.rollback()
+            self.assertIsNotNone(db.session.get(informe_entities.Informe, report_id))
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            db.session.query(informe_entities.InformeVersion).filter_by(informe_id=report_id).delete()
+            db.session.commit()
+            db.session.remove()
+
     @contextmanager
     def report_visit(self, *, patient_index=1, state='ACTIVA'):
         visit = VisitaClinica(paciente_id=self.patient_ids[patient_index],
