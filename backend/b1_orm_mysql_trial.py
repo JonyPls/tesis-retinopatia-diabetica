@@ -26,7 +26,7 @@ from unittest.mock import patch
 
 from flask import Flask, jsonify, request
 import jwt
-from sqlalchemy import event, inspect
+from sqlalchemy import event, inspect, select
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import generate_password_hash
@@ -1207,13 +1207,30 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                     source.write_bytes(original)
                     infer.assert_not_called()
 
+                    db.session.remove()
+                    before_diagnoses = db.session.query(diagnosis_entities.Diagnostico).count()
+                    before_details = db.session.query(diagnosis_entities.DiagnosticoDetalle).count()
+                    before_jpegs = set(Path(folder).glob('*.jpg'))
                     with patch.object(diagnosis_service, 'validar_contenido_semantico',
-                                      return_value={'valido': False, 'status': 503}):
+                                       return_value={'valido': False, 'status': 503}):
                         unavailable = self.consume_export(secret, visit=visit_id)
                     self.assertEqual(unavailable.status_code, 503)
                     infer.assert_not_called()  # CLIP fail-closed también para bytes confirmados.
                     db.session.remove()
-                    self.assertEqual(db.session.get(model, record_id).estado, 'CONFIRMADA')
+                    retained = db.session.get(model, record_id)
+                    self.assertEqual(retained.estado, 'CONFIRMADA')
+                    self.assertIsNone(retained.detalle_id)
+                    self.assertIsNone(retained.fecha_consumo)
+                    self.assertEqual(db.session.query(diagnosis_entities.Diagnostico).count(), before_diagnoses)
+                    self.assertEqual(db.session.query(diagnosis_entities.DiagnosticoDetalle).count(), before_details)
+                    self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
+                    self.assertEqual(set(Path(folder).glob('*.jpg')), before_jpegs)
+                    self.assertEqual(copy_path.read_bytes(), original)
+                    self.assertEqual(unavailable.json.get('success'), False)
+                    self.assertNotIn(secret, unavailable.get_data(as_text=True))
+                    for sensitive in (name, retained.clave_copia, str(copy_path),
+                                      self.patient_documents[1]):
+                        self.assertNotIn(sensitive, unavailable.get_data(as_text=True))
 
                     # Cambio después de CLIP/IA: rechazo definitivo bajo lock.
                     def altered_source(data):
@@ -1324,7 +1341,34 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             detail = diagnosis_entities.DiagnosticoDetalle.query.filter_by(
                 diagnostico_retinopatia_id=self.diagnosis_ids[0], ojo_evaluado='Derecho').one()
             detail_id = detail.id
-            initial = (detail.estado_validacion, detail.resultado_final_id, detail.comentario_medico)
+            original_validation = (detail.validado_por, detail.fecha_validacion,
+                                   detail.motivo_correccion)
+            detail.validado_por = self.user_ids['colleague']
+            detail.fecha_validacion = datetime(2030, 1, 2, 12, 34, 56)
+            detail.motivo_correccion = 'Motivo sintético'
+            db.session.commit()
+            db.session.remove()
+            detail_table = diagnosis_entities.DiagnosticoDetalle.__table__
+            parent_table = diagnosis_entities.Diagnostico.__table__
+
+            def snapshot(table, identifier):
+                return dict(db.session.execute(
+                    select(table).where(table.c.id == identifier)).mappings().one())
+
+            initial_detail = snapshot(detail_table, detail_id)
+            initial_parent = snapshot(parent_table, self.diagnosis_ids[0])
+            initial_counts = (db.session.query(diagnosis_entities.Diagnostico).count(),
+                              db.session.query(diagnosis_entities.DiagnosticoDetalle).count())
+            originals = {filename: Path(self.image_directory.name, filename).read_bytes()
+                         for filename in (initial_detail['imagen_original_url'],
+                                          initial_detail['imagen_gradcam_url'])}
+            self.assertEqual((initial_detail['estado_validacion'], initial_detail['resultado_ia_id'],
+                              initial_detail['resultado_final_id'], initial_detail['validado_por'],
+                              initial_detail['fecha_validacion'], initial_detail['comentario_medico'],
+                              initial_detail['motivo_correccion']),
+                             ('CORREGIDO', 2, 3, self.user_ids['colleague'],
+                              datetime(2030, 1, 2, 12, 34, 56), 'Conclusion sintetica',
+                              'Motivo sintético'))
             try:
                 rejected = self.consume_export(secret, patient=self.patient_ids[0],
                                                visit=self.visit_ids[0])
@@ -1333,12 +1377,20 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 db.session.remove()
                 record = model.query.filter_by(token_verificador=digest).one()
                 self.assertEqual(record.estado, 'CONFIRMADA')
-                detail = db.session.get(diagnosis_entities.DiagnosticoDetalle, detail_id)
-                self.assertEqual((detail.estado_validacion, detail.resultado_final_id,
-                                  detail.comentario_medico), initial)
+                self.assertIsNone(record.detalle_id)
+                self.assertIsNone(record.fecha_consumo)
+                self.assertEqual(snapshot(detail_table, detail_id), initial_detail)
+                self.assertEqual(snapshot(parent_table, self.diagnosis_ids[0]), initial_parent)
+                self.assertEqual((db.session.query(diagnosis_entities.Diagnostico).count(),
+                                  db.session.query(diagnosis_entities.DiagnosticoDetalle).count()),
+                                 initial_counts)
+                for filename, content in originals.items():
+                    self.assertEqual(Path(self.image_directory.name, filename).read_bytes(), content)
                 self.assertEqual(list(Path(folder).glob('*.jpg')), [])
             finally:
                 db.session.rollback()
+                detail = db.session.get(diagnosis_entities.DiagnosticoDetalle, detail_id)
+                detail.validado_por, detail.fecha_validacion, detail.motivo_correccion = original_validation
                 db.session.query(model).filter_by(token_verificador=digest).delete()
                 db.session.commit()
                 db.session.remove()
