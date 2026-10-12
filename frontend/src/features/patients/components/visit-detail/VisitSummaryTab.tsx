@@ -104,6 +104,7 @@ export function VisitSummaryTab({ visit }: { visit: Diagnosis }) {
             Grado máximo registrado
           </h3>
           <RDLevelBadge level={visit.maxima_gravedad as RDLevel} size="sm" />
+          <p className="text-xs text-muted-foreground">Puede incluir predicciones IA pendientes; no representa necesariamente el grado médico confirmado.</p>
         </section>
       )}
 

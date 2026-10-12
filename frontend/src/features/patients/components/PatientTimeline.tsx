@@ -66,10 +66,9 @@ function VisitCard({
           </p>
           {visit.maxima_gravedad !== null &&
             visit.maxima_gravedad !== undefined && (
-              <RDLevelBadge
-                level={visit.maxima_gravedad as RDLevel}
-                size="sm"
-              />
+              <span title="Grado máximo registrado; puede incluir predicciones IA sin validación médica">
+                <RDLevelBadge level={visit.maxima_gravedad as RDLevel} size="sm" />
+              </span>
             )}
           <VisitStatusBadge status={visit.estado} />
         </div>

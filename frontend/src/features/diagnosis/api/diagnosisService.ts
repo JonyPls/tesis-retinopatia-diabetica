@@ -12,6 +12,9 @@ export interface DiagnosisResult {
   probabilidades_detalle: Record<string, number>;
   mensaje: string;
   gradcam_url?: string;
+  imagen_url?: string;
+  estado_validacion?: DetalleDiagnosticoExistente["estado_validacion"];
+  diagnostico_final?: number | null;
 }
 
 export const crearDiagnostico = async (
@@ -55,6 +58,26 @@ export const obtenerDetallesVisita = async (visitaId: number): Promise<DetalleDi
 };
 
 export const obtenerDetallesDiagnostico = obtenerDetallesVisita;
+
+/** El GET por visita devuelve únicamente ojos persistidos, nunca un POST nuevo. */
+export function resultadoPersistido(
+  visitaId: number,
+  detail: DetalleDiagnosticoExistente,
+): DiagnosisResult {
+  return {
+    visita_id: visitaId,
+    detalle_id: detail.detalle_id,
+    diagnostico_codigo: detail.resultado_ia,
+    diagnostico_texto: detail.diagnostico_texto,
+    confianza_general: detail.confianza_general,
+    probabilidades_detalle: detail.probabilidades_detalle ?? {},
+    mensaje: "Resultado consultado en la visita.",
+    imagen_url: detail.imagen_url,
+    gradcam_url: detail.gradcam_url ?? undefined,
+    estado_validacion: detail.estado_validacion,
+    diagnostico_final: detail.diagnostico_final,
+  };
+}
 
 export const validarDiagnostico = async (
   diagnosticoId: number,

@@ -6,6 +6,8 @@ import {
 import type { PatientRequestError } from "@/features/patients/patientAccess";
 
 export type EyeKey = "OD" | "OI";
+export type EyeProcessingStatus = "sin_procesar" | "procesando" | "pendiente_validacion" |
+  "validado" | "error" | "incierto";
 
 export interface EyeState {
   file: File | null;
@@ -57,6 +59,10 @@ export interface DiagnosisHook {
 
   // Paso 3 — Resultados
   results: Partial<Record<EyeKey, DiagnosisResult>>;
+  eyeProcessing: Record<EyeKey, EyeProcessingStatus>;
+  confirmedVisitId: number | null;
+  processingNotice: string | null;
+  reconcileResults: () => Promise<void>;
   activeEye: EyeKey;
   setActiveEye: (eye: EyeKey) => void;
   // Validación

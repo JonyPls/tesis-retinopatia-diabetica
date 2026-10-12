@@ -34,6 +34,15 @@ function GradcamImage({ filename }: { filename: string }) {
     src={src} overlay />;
 }
 
+function OriginalImage({ filename }: { filename: string }) {
+  const { src, error, isLoading } = useRetinaImage(filename);
+  if (!src) return <div role={error ? "alert" : undefined}
+    className="flex aspect-square items-center justify-center rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground">
+    {error ?? (isLoading ? "Cargando imagen clínica…" : "Imagen no disponible")}
+  </div>;
+  return <ImagePanel title="Imagen original" subtitle="Imagen registrada" src={src} />;
+}
+
 interface DiagnosisResultsProps {
   results: Partial<Record<EyeKey, DiagnosisResult>>;
   eyes: Record<EyeKey, EyeState>;
@@ -344,9 +353,11 @@ export function DiagnosisResults(
   if (available.length === 0 || !current) return null;
 
   const iaLevel = current.diagnostico_codigo;
-  const finalLevel = finalSelection?.[activeEye] ?? iaLevel;
-  const isCorrected = Number(finalLevel) !== Number(iaLevel);
   const confirmed = validatedEyes?.[activeEye];
+  const finalLevel = confirmed
+    ? current.diagnostico_final ?? finalSelection?.[activeEye] ?? iaLevel
+    : finalSelection?.[activeEye] ?? iaLevel;
+  const isCorrected = Number(finalLevel) !== Number(iaLevel);
   const originalFileName = eyes[activeEye].file?.name ?? "Imagen seleccionada";
   const finalInfo = RD_LEVELS[finalLevel as RDLevel];
 
@@ -372,7 +383,7 @@ export function DiagnosisResults(
               <div className="min-w-0">
                 <p className="text-sm font-semibold">Decisión médica</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  {confirmed ? "Decisión médica guardada para este ojo." : "Seleccione el grado final. Por defecto coincide con la predicción IA."}
+                   {confirmed ? "Decisión médica guardada para este ojo." : "Pendiente de validación médica. La selección propuesta aún no es una decisión confirmada."}
                 </p>
               </div>
             </div>
@@ -397,7 +408,7 @@ export function DiagnosisResults(
           />
 
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Seleccionado:{" "}
+             {confirmed ? "Grado médico confirmado:" : "Grado propuesto, sin confirmar:"}{" "}
             <span className="font-medium text-foreground">
               {finalLevel}: {finalInfo?.label}
             </span>
@@ -453,12 +464,14 @@ export function DiagnosisResults(
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ImagePanel
-            title="Imagen original"
-            subtitle={originalFileName}
-            src={eyes[activeEye].preview!}
-          />
-          <GradcamImage filename={current.gradcam_url} />
+          {current.imagen_url
+            ? <OriginalImage filename={current.imagen_url} />
+            : eyes[activeEye].preview
+              ? <ImagePanel title="Imagen original" subtitle={originalFileName} src={eyes[activeEye].preview} />
+              : <p className="text-sm text-muted-foreground">Imagen original no disponible.</p>}
+          {current.gradcam_url
+            ? <GradcamImage filename={current.gradcam_url} />
+            : <p className="text-sm text-muted-foreground">Grad-CAM no disponible.</p>}
         </div>
 
         <div className="flex items-start gap-2 rounded-md border border-info/30 bg-info/5 px-3 py-2.5">

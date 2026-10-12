@@ -146,4 +146,25 @@ describe("B1 imágenes clínicas con Bearer", () => {
     diagnosis.unmount();
     expect(revoked).toHaveBeenCalledTimes(3);
   });
+
+  it("el resultado recuperado descarga original y Grad-CAM con Bearer y revoca ambos Blob", async () => {
+    login();
+    get.mockResolvedValue(imageResponse());
+    const diagnosis = render(<DiagnosisResults
+      results={{ OI: { visita_id: 30, detalle_id: 12, diagnostico_codigo: 2,
+        diagnostico_texto: "Moderada", confianza_general: 80, probabilidades_detalle: {},
+        imagen_url: "persisted.jpg", gradcam_url: "persisted_gradcam.jpg", mensaje: "Consultado",
+        estado_validacion: "PENDIENTE", diagnostico_final: null } }}
+      activeEye="OI" setActiveEye={vi.fn()}
+      eyes={{ OD: { file: null, preview: null }, OI: { file: null, preview: null } }} />);
+    await waitFor(() => expect(screen.getByAltText("Imagen original")).toHaveAttribute("src", expect.stringMatching(/^blob:/)));
+    await waitFor(() => expect(screen.getByAltText("Grad-CAM")).toHaveAttribute("src", expect.stringMatching(/^blob:/)));
+    expect(get.mock.calls.map(([url]) => String(url))).toEqual(expect.arrayContaining([
+      "http://localhost:5000/uploads/retinas/persisted.jpg",
+      "http://localhost:5000/uploads/retinas/persisted_gradcam.jpg",
+    ]));
+    expect(get.mock.calls.every(([url]) => !String(url).includes("token"))).toBe(true);
+    diagnosis.unmount();
+    expect(revoked).toHaveBeenCalledTimes(2);
+  });
 });

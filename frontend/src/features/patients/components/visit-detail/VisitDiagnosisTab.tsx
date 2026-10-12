@@ -177,15 +177,16 @@ function EyeDiagnosisBlock({
   }) => void;
 }) {
   const iaLevel = detail.resultado_ia_id ?? extra?.resultado_ia ?? null;
-  const finalLevel =
-    detail.resultado_final_id ?? extra?.diagnostico_final ?? iaLevel;
+  const isValidated = detail.estado_validacion === "APROBADO" || detail.estado_validacion === "CORREGIDO";
+  const finalLevel = isValidated
+    ? detail.resultado_final_id ?? extra?.diagnostico_final ?? null : null;
   const iaLabel = levelLabel(
     iaLevel,
     detail.resultado_ia_nombre ?? extra?.diagnostico_texto,
   );
   const finalLabel = levelLabel(
     finalLevel,
-    detail.resultado_final_nombre ?? detail.resultado_ia_nombre,
+    isValidated ? detail.resultado_final_nombre : null,
   );
   const confidence = numericPercent(
     detail.probabilidad_ia ?? extra?.confianza_general,
@@ -213,7 +214,7 @@ function EyeDiagnosisBlock({
           type="button"
           className={cn(
             "flex w-full flex-col gap-4 border-l-4 px-5 py-5 text-left transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between sm:px-6 [&[data-state=open]_.chevron]:rotate-180",
-            rdHeaderTone(finalLevel),
+            rdHeaderTone(isValidated ? finalLevel : iaLevel),
           )}
         >
           <div className="flex min-w-0 items-start gap-4">
@@ -231,8 +232,8 @@ function EyeDiagnosisBlock({
                     validationTone(detail.estado_validacion),
                   )}
                 >
-                  {VALIDATION_STATUS_TEXT[detail.estado_validacion] ??
-                    detail.estado_validacion}
+                   {detail.estado_validacion === "PENDIENTE" ? "Pendiente de validación médica" :
+                     VALIDATION_STATUS_TEXT[detail.estado_validacion] ?? detail.estado_validacion}
                 </span>
                 {confidence !== null && (
                   <span className="inline-flex rounded-md border border-border bg-muted px-3 py-0.5 text-xs font-medium text-muted-foreground">
@@ -244,8 +245,11 @@ function EyeDiagnosisBlock({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            {finalLevel !== null && (
-              <RDLevelBadge level={finalLevel as RDLevel} size="sm" />
+            {(isValidated ? finalLevel : iaLevel) !== null && (
+              <span className="text-xs text-muted-foreground">{isValidated ? "Grado médico" : "Estimación IA"}</span>
+            )}
+            {(isValidated ? finalLevel : iaLevel) !== null && (
+              <RDLevelBadge level={(isValidated ? finalLevel : iaLevel) as RDLevel} size="sm" />
             )}
             <ChevronDown className="chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform" />
           </div>
@@ -259,7 +263,7 @@ function EyeDiagnosisBlock({
               <div className="rounded-lg border border-border bg-muted/40 p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   <Brain className="h-3.5 w-3.5" />
-                  Resultado IA
+                   Predicción del modelo IA
                 </div>
                 <p className="mt-2 text-sm font-medium text-foreground">
                   {iaLabel}
@@ -290,18 +294,16 @@ function EyeDiagnosisBlock({
                   )}
                 >
                   <Stethoscope className="h-3.5 w-3.5" />
-                  Decisión médica
+                   {isValidated ? "Decisión médica" : "Validación médica pendiente"}
                 </div>
-                <p className="mt-2 text-sm font-medium text-foreground">
-                  {finalLabel}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Grado: {finalLevel ?? "No disponible"}
-                </p>
+                 {isValidated && <>
+                   <p className="mt-2 text-sm font-medium text-foreground">{finalLabel}</p>
+                   <p className="mt-1 text-xs text-muted-foreground">Grado: {finalLevel ?? "No disponible"}</p>
+                 </>}
                 <p className="mt-2 text-xs font-medium text-muted-foreground">
-                  {isCorrected
-                    ? "Predicción corregida por el especialista"
-                    : "IA y resultado final coinciden"}
+                   {!isValidated ? "Pendiente de validación médica. La predicción IA no es una decisión clínica." :
+                     isCorrected ? "Predicción corregida por el especialista" :
+                     finalLevel !== null ? "IA y resultado final coinciden" : "Grado final no disponible"}
                 </p>
               </div>
             </div>
@@ -364,7 +366,7 @@ function EyeDiagnosisBlock({
                   {VALIDATION_STATUS_TEXT[detail.estado_validacion] ??
                     detail.estado_validacion}
                 </span>
-                {validatedAt && (
+                {isValidated && validatedAt && (
                   <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                     <CalendarCheck className="h-3.5 w-3.5" />
                     {validatedAt}
@@ -400,7 +402,7 @@ function EyeDiagnosisBlock({
                 </p>
               )}
 
-              {detail.comentario_medico && (
+              {isValidated && detail.comentario_medico && (
                 <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-primary">
                     Comentario médico
@@ -434,7 +436,7 @@ export function VisitDiagnosisTab({
     visitId: number;
     session: string | null;
   } | null>(null);
-  useEffect(() => setPreviewImage(null), [token, visit.visita_id]);
+  useEffect(() => setPreviewImage(null), [token, visit.visita_id, visit.diagnostico_ia]);
   const diagnosis = visit.diagnostico_ia;
 
   const details = useMemo(
@@ -505,7 +507,7 @@ export function VisitDiagnosisTab({
       <div className="space-y-6">
         {details.map((detail) => (
           <EyeDiagnosisBlock
-            key={detail.detalle_id}
+            key={`${visit.visita_id}-${detail.detalle_id}`}
             detail={detail}
             extra={mergeDetail(detail, diagnosisDetails)}
             onPreview={(image) => setPreviewImage({

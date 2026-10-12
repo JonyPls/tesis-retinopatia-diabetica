@@ -207,7 +207,7 @@ export default function Diagnosis() {
             )}
 
             {step === 2 && (
-              <ImageUploader
+              <><ImageUploader
                 embedded
                 eyes={diagnosisHook.eyes}
                 handleFile={diagnosisHook.handleFile}
@@ -215,9 +215,21 @@ export default function Diagnosis() {
                 onAutoSelect={diagnosisHook.autoSelectRetinographImages}
                 isAutoSelecting={diagnosisHook.isAutoSelectingImages}
               />
+              {diagnosisHook.processingNotice && (
+                <p role="alert" className="mt-4 text-sm text-muted-foreground">{diagnosisHook.processingNotice}</p>
+              )}</>
             )}
 
             {step === 3 && (
+              <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Visita confirmada: {diagnosisHook.confirmedVisitId ?? "No disponible"}. Los ojos se muestran por separado; el estado del diagnóstico padre no confirma cada ojo.</p>
+              {diagnosisHook.processingNotice && <div role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
+                <p>{diagnosisHook.processingNotice}</p>
+                {diagnosisHook.confirmedVisitId && <Button type="button" variant="outline" className="mt-2" onClick={diagnosisHook.reconcileResults}>Consultar estado de la visita</Button>}
+              </div>}
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {(["OD", "OI"] as const).map((eye) => <span key={eye}>{eye}: {diagnosisHook.eyeProcessing[eye] === "pendiente_validacion" ? "IA registrada · validación pendiente" : diagnosisHook.eyeProcessing[eye] === "validado" ? "Validado" : diagnosisHook.eyeProcessing[eye] === "incierto" ? "Persistencia sin confirmar" : diagnosisHook.eyeProcessing[eye] === "error" ? "No procesado · error" : diagnosisHook.eyeProcessing[eye] === "procesando" ? "Procesando" : "No procesado"}</span>)}
+              </div>
               <DiagnosisResults
                 results={diagnosisHook.results}
                 eyes={diagnosisHook.eyes}
@@ -233,6 +245,7 @@ export default function Diagnosis() {
                 isValidating={diagnosisHook.isValidating}
                 validatedEyes={diagnosisHook.validatedEyes}
               />
+              </div>
             )}
           </CardContent>
 

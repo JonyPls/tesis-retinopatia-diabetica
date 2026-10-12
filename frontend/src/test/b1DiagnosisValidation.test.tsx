@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDiagnosis } from "../features/diagnosis/hooks/useDiagnosis";
-import { crearDiagnostico, validarDetalleDiagnostico } from "../features/diagnosis/api/diagnosisService";
+import { crearDiagnostico, obtenerDetallesVisita, validarDetalleDiagnostico } from "../features/diagnosis/api/diagnosisService";
 import { toast } from "../hooks/use-toast";
 
 vi.mock("../features/patients/api/patientService", () => ({
@@ -11,7 +11,13 @@ vi.mock("../features/patients/api/patientService", () => ({
   obtenerVisitasPaciente: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("../features/diagnosis/api/diagnosisService", () => ({
-  crearDiagnostico: vi.fn(), validarDetalleDiagnostico: vi.fn(),
+  crearDiagnostico: vi.fn(), obtenerDetallesVisita: vi.fn(), validarDetalleDiagnostico: vi.fn(),
+  resultadoPersistido: (id: number, detail: { detalle_id: number; ojo: string; resultado_ia: number; diagnostico_texto: string; estado_validacion: string; diagnostico_final: number | null; confianza_general: number; probabilidades_detalle: Record<string, number>; imagen_url: string; gradcam_url: string }) => ({
+    visita_id: id, detalle_id: detail.detalle_id, diagnostico_codigo: detail.resultado_ia,
+    diagnostico_texto: detail.diagnostico_texto, confianza_general: detail.confianza_general,
+    probabilidades_detalle: detail.probabilidades_detalle, estado_validacion: detail.estado_validacion,
+    diagnostico_final: detail.diagnostico_final, imagen_url: detail.imagen_url, gradcam_url: detail.gradcam_url,
+  }),
 }));
 vi.mock("../lib/imageUtils", () => ({
   convertToPreviewUrl: vi.fn().mockResolvedValue("blob:synthetic-preview"),
@@ -22,6 +28,7 @@ vi.mock("../hooks/use-toast", () => ({ toast: vi.fn() }));
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 const create = vi.mocked(crearDiagnostico);
 const validate = vi.mocked(validarDetalleDiagnostico);
+const details = vi.mocked(obtenerDetallesVisita);
 const notify = vi.mocked(toast);
 
 async function prepared() {
@@ -42,6 +49,7 @@ async function prepared() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  details.mockResolvedValue([]);
   create.mockImplementation(async (_id, eye) => ({
     visita_id: 30, detalle_id: eye === "Derecho" ? 11 : 12, diagnostico_codigo: 2,
     diagnostico_texto: "RD Moderada", confianza_general: 0.8,
@@ -110,7 +118,7 @@ describe("primera validación médica por ojo", () => {
       expect(hook.result.current.results).toEqual({});
       expect(hook.result.current.validatedEyes).toEqual({});
       expect(notify).toHaveBeenCalledWith(expect.objectContaining({
-        description: message,
+        description: expect.stringContaining(status === 403 ? "autorización" : status === 409 ? "No se recibió un ID" : "validación de imagen"),
       }));
       hook.unmount();
     }
