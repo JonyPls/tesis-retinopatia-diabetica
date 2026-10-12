@@ -103,7 +103,7 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/informes/paciente/<int:paciente_id>` | Listar / informes | `informes.ver` | O, E, S según tarea | Lectura compartida sujeta a permiso; pendiente. |
 | GET `/api/informes/visita/<int:visita_id>` | Listar / informes | `informes.ver` | O, E, S según tarea | No basta `visitas.ver` por sí solo; pendiente. |
 | GET `/api/informes/diagnostico/<int:diagnostico_id>` | Listar / informes | `informes.ver` | O, E, S según tarea | El servicio actual interpreta el ID como visita; pendiente. |
-| GET `/uploads/retinas/<path:filename>` | Ver archivo protegido / imágenes | `imagenes.ver` [nuevo] | O; E si autorizado | Conservar comprobación de archivo registrado; pendiente. |
+| GET `/uploads/retinas/<path:filename>` | Ver archivo protegido / imágenes | `imagenes.ver` | O; E si autorizado | **Activa B1**: `images.read` con grant vigente del rol clínico, comprobación de archivo registrado, extensión de imagen y confinamiento al directorio. JWT solo por Bearer, no `?token=`. |
 
 `POST /api/login` y `GET /` no son rutas clínicas protegidas. No existe hoy
 endpoint para anular clínicamente un informe: cuando se implemente debe usar
@@ -271,19 +271,77 @@ datos clínicos: 404 para ausente, 200 con `data: []` cuando no hay visitas o
 sin diagnóstico. El 403 se emite antes de consultar pacientes/visitas. Con
 visitas se ejecutan tres consultas de historial agrupadas, no una por visita.
 
-**Dependencia pendiente fuera del alcance:** el repositorio devuelve referencias
-de imágenes almacenadas, sin generar JWT en las URLs. Sin embargo,
-`frontend/src/features/patients/components/visit-detail/VisitDiagnosisTab.tsx`
-añade actualmente el JWT como `?token=` al construir URLs de `/uploads/retinas`.
-Eso puede exponer credenciales en historial del navegador o registros HTTP;
-corregirlo requiere revisar la entrega/autorización del endpoint de archivos
-por separado. Ningún cambio de este bloque añade tokens a URLs ni modifica
-esos endpoints. Los permisos nuevos tampoco corrigen el bypass del decorador
-antiguo en informes, detalle independiente de IA, PDF o imágenes.
+**Actualización Prompt 23:** las referencias de imágenes continúan siendo
+nombres de archivo (no credenciales). La lectura de `/uploads/retinas` ya
+requiere B1 y Bearer, y las dos vistas que antes añadían el JWT a la URL usan
+Blob autenticado sin caché persistente. Los permisos B1 todavía **no** corrigen
+el bypass del decorador antiguo en informes, detalle independiente de IA,
+PDF y otras rutas de imágenes.
 `usePatientVisitDetail` aún solicita detalles adicionales a un endpoint de
 diagnóstico independiente y trata su error como ausencia de detalle ampliado;
 su autorización, manejo de 403 y registro del error deben revisarse en un
 bloque específico de diagnóstico. No se alteró ese endpoint en este bloque.
+
+## Archivos retinianos y transporte de JWT (estado histórico: Prompt 23)
+
+Inventario antes del cambio:
+
+| Recurso / consumidor | Transporte y situación |
+| --- | --- |
+| `/uploads/retinas/<path:filename>`; `VisitDiagnosisTab.tsx` (historial, imagen original y Grad-CAM) | Antes añadía `?token=`; ahora obtiene Blob con Axios/Bearer y usa URL `blob:` revocada al cambiar recurso o sesión y al desmontar. |
+| `/uploads/retinas/<path:filename>`; `useDiagnosis.ts` / `DiagnosisResults.tsx` (resultado recién procesado, Grad-CAM) | Antes `useDiagnosis` construía URL con `?token=`; ahora conserva el nombre y `DiagnosisResults` carga Blob con Bearer. La imagen original recién seleccionada es una previsualización local independiente. |
+| `/api/diagnosticar/retinografo/imagen`; `descargarImagenRetinografo` en `diagnosisService.ts` | Ya descargaba Blob con Axios/Bearer; **endpoint legacy no migrado a B1**. Los archivos exportados del retinógrafo usan otra política de paciente/directorio; revisar independientemente sin concederles acceso a través de `/uploads/retinas`. |
+| `/api/visitas/<int:visita_id>/reporte-diagnostico`; `PatientVisitDetail.tsx` | Descarga PDF con Axios/Bearer y URL blob local, pero su autorización backend y aceptación de JWT en URL siguen pendientes. No se modificó el PDF. |
+| Rutas de detalle de diagnóstico, informes, documentos y demás `@token_required` | El único lector de `request.args.get('token')` es `backend/utils/security.py`. Ese fallback global todavía acepta JWT en query en rutas legacy; ninguna construcción `?token=` permanece en el frontend fuente. |
+
+`images.read` autoriza únicamente roles clínicos activos `OFTALMOLOGO` o
+`ENFERMERO` **con `imagenes.ver` activo procedente de uno de esos roles**;
+no autoriza Admin por jerarquía, Asistente ni permisos administrativos de un
+multirrol. No se exige propiedad individual. Se consulta un archivo de imagen
+con nombre plano dentro del directorio de retinas, registrado en un detalle de
+diagnóstico/visita no anulado; respuestas sin caché (`private, no-store`) y
+`nosniff`. Solicitudes con cualquier parámetro `token` reciben 401 en esta
+ruta incluso cuando incluyan Bearer; el token del navegador nunca aparece en
+la URL generada. Incluso las siete rutas B1 anteriores continúan usando el
+fallback de `token_required`: el rechazo de `?token=` es **solo** de la ruta
+de archivos migrada, no de todo B1. Otras rutas legacy también aceptan JWT
+en URL; **A1-QUERY-TOKEN sigue como fallo esperado** y la vulnerabilidad global está solo corregida
+parcialmente. Siguiente bloque necesario: revisar por separado todos los
+consumidores/endpoints `@token_required` (incluidos retinógrafo, PDF,
+diagnóstico independiente e informes), migrarlos a Bearer y solo entonces
+eliminar el fallback global y convertir A1 en prueba ordinaria.
+
+La imagen registrada añade **una** consulta SQL de existencia tras las tres
+de autenticación/autorización (cuatro SELECT por lectura, independientes del
+número de visitas). Los rechazos 403 ocurren antes de consultar archivos
+(tres SELECT); el rechazo de `?token=` ocurre antes de tocar la BD. Las siete
+rutas B1 anteriores permanecen; con archivos son **ocho** rutas B1.
+
+## Cierre del transporte JWT por URL (Prompt 24)
+
+Inventario de dependencias comprobado antes de retirar el fallback:
+
+| Backend protegido | Consumidor / transporte vigente |
+| --- | --- |
+| `GET /uploads/retinas/<path:filename>` | `VisitDiagnosisTab.tsx` (original y Grad-CAM) y `DiagnosisResults.tsx` (Grad-CAM posterior al diagnóstico) descargan Blob vía `api.get` con el interceptor Bearer; crean y revocan URL blob local. La imagen de entrada recién seleccionada usa previsualización local, no JWT en URL. |
+| `GET /api/diagnosticar/retinografo/imagen` | `descargarImagenRetinografo` usa `api.get` con `params: {paciente_id, filename}` y `responseType: 'blob'`: son parámetros de selección, **no** credenciales. `auto-seleccion` usa la misma instancia Axios. |
+| `GET /api/visitas/<int:visita_id>/reporte-diagnostico` | `descargarReporteDiagnostico` descarga PDF Blob por Axios/Bearer; `PatientVisitDetail.tsx` crea/revoca una URL blob para descargarlo. |
+| Pacientes, historiales, detalle IA, informes y documentos (`@token_required` o B1) | Consumidores web usan `frontend/src/lib/api.ts`: su interceptor coloca el JWT en `Authorization: Bearer`. No se encontraron `?token=`, `access_token`, `jwt` ni construcción equivalente de JWT en query en el frontend fuente. |
+| `backend/utils/security.py` | Era el **único** lector de `request.args.get('token')`. `allow_query_token=True` lo habilitaba para toda ruta protegida; solo retinas lo desactivaba explícitamente. |
+
+El middleware ahora acepta **únicamente** el Bearer de cabecera. Si la query
+incluye `token`, `access_token`, `jwt` o `id_token` (sin distinguir mayúsculas),
+responde 401 **antes de decodificar o consultar usuarios**, incluso con un
+Bearer válido. También rechaza valores con forma de JWT en cualquier parámetro,
+aunque se oculten bajo otro nombre o entre valores repetidos. Los parámetros
+normales, como `paciente_id`, `filename`, `q` o `page`, conservan su semántica.
+Se mantienen la validación HS256, la exigencia de
+`exp` y `user_id`, la cuenta activa y las reglas/grants existentes. Se eliminó
+la opción de habilitar tokens de query por ruta; no se añadió otra alternativa
+de autenticación. `A1-QUERY-TOKEN` se ejecuta como prueba ordinaria. El riesgo
+de **autorización legacy** (permisos de diagnósticos, PDF e informes) sigue
+pendiente y es independiente del transporte del JWT: no se amplió B1 ni se
+cambió esa política. **Ocho** rutas B1 continúan activas.
 
 ## Dependencias antes de activar B1
 

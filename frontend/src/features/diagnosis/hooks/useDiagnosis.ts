@@ -16,7 +16,6 @@ import {
   obtenerSeleccionAutomaticaRetinografo,
   validarDetalleDiagnostico,
 } from "@/features/diagnosis/api/diagnosisService";
-import { useAuthStore } from "@/features/auth/store/authStore";
 import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
 import { EyeKey, EyeState, DiagnosisHook } from "../types";
 
@@ -506,14 +505,8 @@ export function useDiagnosis(): DiagnosisHook {
       const eye = eyesToProcess[i];
       setProcessingEye(eye);
 
-      // Construir URL Grad-CAM
-      const result = newResults[eye]!;
-      const BACKEND_URL =
-        import.meta.env.VITE_API_URL || "http://localhost:5000";
-      if (result.gradcam_url) {
-        const token = useAuthStore.getState().token;
-        result.gradcam_url = `${BACKEND_URL}/uploads/retinas/${result.gradcam_url}?token=${token}`;
-      }
+      // La referencia Grad-CAM permanece como nombre de archivo; la vista
+      // descargará el Blob con Bearer sin colocar credenciales en la URL.
 
       const segmentStart = Date.now();
       await sleep(MIN_ANALYZE_MS);

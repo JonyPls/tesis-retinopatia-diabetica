@@ -2,6 +2,7 @@ from functools import wraps
 from flask import current_app, request, jsonify
 import jwt
 import os
+import re
 from src.repositories.auth_repository import AuthRepository
 
 ADMIN_ROLES = {
@@ -33,11 +34,17 @@ CLINICAL_BASE_PERMISSIONS = {
 
 GENERIC_UNAUTHORIZED_MESSAGE = "No autorizado."
 GENERIC_NOT_FOUND_MESSAGE = "Recurso no encontrado."
+JWT_URL_PATTERN = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
 
 def token_required(f, *, eager_permissions=False):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Rechazar credenciales en URL aun cuando llegue un Bearer valido.
+        if any(key.lower() in ('token', 'access_token', 'jwt', 'id_token') or
+               any(JWT_URL_PATTERN.fullmatch(value) for value in values)
+               for key, values in request.args.lists()):
+            return jsonify({"success": False, "message": GENERIC_UNAUTHORIZED_MESSAGE}), 401
         token = None
         
         # 1. Buscamos el token en los encabezados (Headers) de la petición HTTP
@@ -46,18 +53,14 @@ def token_required(f, *, eager_permissions=False):
             if auth_header.startswith('Bearer '):
                 token = auth_header.split(" ")[1]
         
-        # 2. Fallback: token como query parameter (para <img> tags)
-        if not token:
-            token = request.args.get('token')
-
-        # 3. Si no hay token, bloqueamos el acceso inmediatamente
+        # 2. Sin Bearer, bloquear inmediatamente (nunca leer JWT de la URL).
         if not token:
             return jsonify({
                 "success": False, 
                 "message": "Falta el token de autorización. Acceso denegado."
             }), 401
 
-        # 4. Validamos que el token sea auténtico y no haya expirado
+        # 3. Validamos que el token sea auténtico y no haya expirado
         try:
             data = jwt.decode(
                 token,
@@ -94,7 +97,7 @@ def token_required(f, *, eager_permissions=False):
             current_app.logger.exception("Error al verificar la cuenta autenticada")
             return safe_json_error(status=500)
 
-        # 5. Si todo está perfecto, dejamos que la petición continúe hacia la ruta original
+        # 4. Si todo está perfecto, dejamos que la petición continúe hacia la ruta original
         return f(*args, **kwargs)
         
     return decorated

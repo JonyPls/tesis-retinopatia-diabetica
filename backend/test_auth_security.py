@@ -3,6 +3,7 @@
 import datetime
 import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -26,6 +27,8 @@ class FakeUsuario:
 
 
 fake_models.Usuario = FakeUsuario
+fake_database = types.ModuleType("database")
+fake_database.db = SimpleNamespace()
 fake_patient_service = types.ModuleType("services.patient_service")
 for service_name in (
     "obtener_todos_pacientes", "registrar_nuevo_paciente", "obtener_detalle_paciente",
@@ -33,12 +36,37 @@ for service_name in (
 ):
     setattr(fake_patient_service, service_name, Mock())
 
+# Importar rutas HTTP reales con sus servicios sustituidos antes de cargar
+# cualquier dependencia de IA, PDF o directorio clínico.
+fake_diagnosis_service = types.ModuleType("services.diagnosis_service")
+for name in ("procesar_diagnostico", "confirmar_validacion_detalle",
+             "consultar_detalles_existentes", "consultar_detalles_por_visita"):
+    setattr(fake_diagnosis_service, name, Mock())
+fake_retinograph_service = types.ModuleType("services.retinograph_import_service")
+for name in ("obtener_archivo_retinografo", "obtener_seleccion_automatica"):
+    setattr(fake_retinograph_service, name, Mock())
+fake_report_service = types.ModuleType("services.report_service")
+fake_report_service.ReportNotFoundError = type("ReportNotFoundError", (Exception,), {})
+fake_report_service.ReportTemplateError = type("ReportTemplateError", (Exception,), {})
+fake_report_service.generar_reporte_diagnostico_pdf = Mock()
+fake_informe_service = types.ModuleType("services.informe_service")
+for name in ("obtener_tipos", "crear_nuevo_informe", "obtener_informe",
+             "actualizar_informe_existente", "eliminar_informe_existente",
+             "obtener_informes_por_paciente", "consultar_informes_por_diagnostico",
+             "consultar_informes_por_visita"):
+    setattr(fake_informe_service, name, Mock())
+
 with patch.dict(sys.modules, {
     "src.models.auth_entities": fake_models,
     "services.patient_service": fake_patient_service,
+    "services.diagnosis_service": fake_diagnosis_service,
+    "services.retinograph_import_service": fake_retinograph_service,
+    "services.report_service": fake_report_service,
+    "services.informe_service": fake_informe_service,
+    "database": fake_database,
 }):
     from routes.auth_routes import auth_bp
-    from routes import patient_routes
+    from routes import patient_routes, files_routes, diagnosis_routes, informe_routes
     from services import auth_service
     from src.repositories.auth_repository import AuthRepository
     from utils import security
@@ -99,6 +127,9 @@ class AuthSecurityTests(unittest.TestCase):
         app.config.update(TESTING=True, SECRET_KEY=TEST_KEY)
         app.register_blueprint(auth_bp)
         app.register_blueprint(patient_routes.patient_bp)
+        app.register_blueprint(files_routes.files_bp)
+        app.register_blueprint(diagnosis_routes.diagnosis_bp)
+        app.register_blueprint(informe_routes.informe_bp)
 
         self.search_service = Mock(return_value=({
             "success": True,
@@ -454,11 +485,165 @@ class AuthSecurityTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200)  # Actual: el rol clínico elude permiso específico.
         self.assertEqual(result.status_code, 403)  # Objetivo sujeto a política de permisos.
 
-    @unittest.expectedFailure  # Objetivo: la API no debe aceptar tokens en URL de rutas no-imagen.
     def test_a1_query_token_on_clinical_route_should_be_rejected(self):
-        result = self.client.get("/api/_isolated_read", query_string={"token": self.token()})
-        self.assertEqual(result.status_code, 200)  # Actual: fallback global en token_required.
-        self.assertEqual(result.status_code, 401)  # Objetivo.
+        token = self.token()
+        result = self.client.get("/api/_isolated_read", query_string={"token": token})
+        self.assertEqual(result.status_code, 401)
+        self.assertFalse(result.json["success"])
+        self.assertNotIn(token, result.get_data(as_text=True))
+        FakeUsuario.query.filter_by.assert_not_called()
+
+    def test_a1_all_protected_routes_reject_url_credentials_before_auth(self):
+        self.set_role_grants({"OFTALMOLOGO": [
+            "pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver",
+            "informes.ver", "imagenes.ver",
+        ]})
+        valid = self.token()
+        expired = jwt.encode({
+            "user_id": self.user.id,
+            "exp": datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1),
+        }, TEST_KEY, algorithm="HS256")
+        cases = (
+            ("valid", valid), ("expired", expired),
+            ("tampered", self.token(key="invalid-query-only-signing-key")),
+        )
+        paths = (
+            "/api/_isolated_read", "/api/_isolated_pdf",
+            "/api/pacientes", "/api/pacientes/101/visitas",
+            "/uploads/retinas/synthetic-only.jpg",
+        )
+        for path in paths:
+            for kind, query_token in cases:
+                with self.subTest(path=path, kind=kind):
+                    result = self.client.get(path, query_string={"token": query_token})
+                    self.assertEqual(result.status_code, 401)
+                    self.assertNotIn(query_token, result.get_data(as_text=True))
+            for key in ("token", "TOKEN", "access_token", "jwt", "id_token"):
+                with self.subTest(path=path, key=key):
+                    result = self.client.get(path, query_string={key: expired},
+                                             headers=self.headers(valid))
+                    self.assertEqual(result.status_code, 401)
+                    self.assertNotIn(expired, result.get_data(as_text=True))
+            disguised = self.client.get(path, query_string={"q": ["paciente", valid]},
+                                        headers=self.headers(valid))
+            self.assertEqual(disguised.status_code, 401)
+            self.assertNotIn(valid, disguised.get_data(as_text=True))
+        FakeUsuario.query.filter_by.assert_not_called()
+        self.list_service.assert_not_called()
+        self.history_service.assert_not_called()
+
+    def test_a1_bearer_works_for_b1_and_legacy_without_changing_permissions(self):
+        roles = self.set_role_grants({"OFTALMOLOGO": [
+            "pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver",
+            "informes.ver", "imagenes.ver",
+        ]})
+        headers = self.headers(self.token())
+        for path in ("/api/_isolated_read", "/api/_isolated_pdf", "/api/pacientes",
+                     "/api/pacientes/101/visitas"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path, headers=headers).status_code, 200)
+        roles["OFTALMOLOGO"].permisos_rel[0].permiso.estado = "INACTIVO"
+        self.assertEqual(self.client.get("/api/pacientes", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/pacientes/101/visitas",
+                                         headers=headers).status_code, 403)
+        self.active = False
+        self.assertEqual(self.client.get("/api/_isolated_read", headers=headers).status_code, 401)
+
+    def test_a1_real_legacy_retinograph_pdf_and_report_transport(self):
+        token = self.token()
+        headers = self.headers(token)
+        approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
+        with tempfile.TemporaryDirectory(prefix="b1-transport-only-", dir=approved) as folder:
+            Path(folder, "synthetic.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+            image = Mock(return_value=({"success": True, "directory": folder,
+                                        "filename": "synthetic.jpg", "mimetype": "image/jpeg"}, 200))
+            pdf = Mock(return_value=(b"%PDF-1.4\nsynthetic-only\n", "synthetic.pdf"))
+            report = Mock(return_value=({"success": True, "data": {"id": 123}}, 200))
+            with (patch.object(diagnosis_routes, "obtener_archivo_retinografo", image),
+                  patch.object(diagnosis_routes, "generar_reporte_diagnostico_pdf", pdf),
+                  patch.object(informe_routes, "obtener_informe", report)):
+                targets = (
+                    ("/api/diagnosticar/retinografo/imagen",
+                     {"paciente_id": 101, "filename": "synthetic.jpg"}),
+                    ("/api/visitas/123/reporte-diagnostico", {}),
+                    ("/api/informes/123", {}),
+                )
+                for path, params in targets:
+                    with self.subTest(path=path):
+                        response = self.client.get(path, query_string=params, headers=headers)
+                        self.assertEqual(response.status_code, 200)
+                        if path.endswith("/imagen"):
+                            self.assertEqual(response.mimetype, "image/jpeg")
+                        elif "reporte-diagnostico" in path:
+                            self.assertEqual(response.mimetype, "application/pdf")
+                        response.close()
+                        for sent_headers in (None, headers):
+                            denied = self.client.get(path, query_string={**params, "token": token},
+                                                     headers=sent_headers)
+                            self.assertEqual(denied.status_code, 401)
+                            self.assertNotIn(token, denied.get_data(as_text=True))
+                image.assert_called_once_with(101, "synthetic.jpg")
+                pdf.assert_called_once_with(123)
+                report.assert_called_once_with(123)
+
+    def test_b1_real_image_route_rejects_url_tokens_before_lookup(self):
+        self.set_role_grants({"OFTALMOLOGO": ["imagenes.ver"]})
+        path = "/uploads/retinas/synthetic-only.jpg"
+        with patch.object(files_routes, "_retina_file_is_registered") as registered:
+            for headers in (None, self.headers(self.token())):
+                response = self.client.get(path, query_string={"token": self.token()}, headers=headers)
+                self.assertEqual(response.status_code, 401)
+                self.assertNotIn("synthetic-only.jpg", response.get_data(as_text=True))
+            registered.assert_not_called()
+
+    def test_b1_real_image_route_role_and_resource_protection(self):
+        approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
+        with tempfile.TemporaryDirectory(prefix="b1-image-isolated-", dir=approved) as folder:
+            Path(folder, "synthetic-only.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+            with patch.object(files_routes, "RETINAS_FOLDER", folder):
+                path = "/uploads/retinas/synthetic-only.jpg"
+                self.set_role_grants({"OFTALMOLOGO": ["imagenes.ver"]})
+                headers = self.headers(self.token(roles=["Administrador del sistema"]))
+                with patch.object(files_routes, "_retina_file_is_registered", return_value=True) as registered:
+                    result = self.client.get(path, headers=headers)
+                    self.assertEqual(result.status_code, 200)
+                    self.assertEqual(result.mimetype, "image/jpeg")
+                    self.assertEqual(result.headers["Cache-Control"], "private, no-store")
+                    self.assertEqual(result.headers["X-Content-Type-Options"], "nosniff")
+                    result.close()
+                    registered.assert_called_once_with("synthetic-only.jpg")
+                    for role_grants in ({"ADMINISTRADOR_SISTEMA": ["imagenes.ver"]},
+                                        {"ASISTENTE_ADMINISTRATIVO": ["imagenes.ver"]},
+                                        {"ENFERMERO": []},
+                                        {"ADMINISTRADOR_SISTEMA": ["imagenes.ver"],
+                                         "OFTALMOLOGO": []}):
+                        self.set_role_grants(role_grants)
+                        self.assertEqual(self.client.get(path, headers=headers).status_code, 403)
+                    registered.assert_called_once()
+
+                    self.set_role_grants({"OFTALMOLOGO": ["imagenes.ver"]})
+                    for token in (None, self.token(key="wrong-synthetic-key"),
+                                  self.token(expires=False)):
+                        response = self.client.get(path, headers=self.headers(token) if token else None)
+                        self.assertEqual(response.status_code, 401)
+                    self.active = False
+                    self.assertEqual(self.client.get(path, headers=headers).status_code, 401)
+                    self.active = True
+                    registered.assert_called_once()
+
+                    role = self.user.roles_rel[0].rol
+                    role.permisos_rel[0].permiso.estado = "INACTIVO"
+                    self.assertEqual(self.client.get(path, headers=headers).status_code, 403)
+                    role.permisos_rel[0].permiso.estado = "ACTIVO"
+                    authorized_again = self.client.get(path, headers=headers)
+                    self.assertEqual(authorized_again.status_code, 200)
+                    authorized_again.close()
+
+                with patch.object(files_routes, "_retina_file_is_registered", return_value=False):
+                    self.assertEqual(self.client.get(path, headers=headers).status_code, 404)
+                for name in ("missing.jpg", "synthetic-only.exe", "..%5csynthetic-only.jpg"):
+                    self.assertEqual(self.client.get(f"/uploads/retinas/{name}",
+                                                     headers=headers).status_code, 404)
 
     def test_a1_non_object_json_should_be_rejected_as_bad_request(self):
         for payload in (["unexpected"], "unexpected", 1, True, None):

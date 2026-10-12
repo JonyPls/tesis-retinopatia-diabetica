@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Brain,
   CalendarCheck,
@@ -15,6 +15,7 @@ import {
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { RDLevel, RD_LEVELS } from "@/data/rdLevels";
 import { cn } from "@/lib/utils";
+import { useRetinaImage } from "@/hooks/useRetinaImage";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { ImagePreviewLightbox } from "@/features/diagnosis/components/ImagePreviewLightbox";
 import { ImagePanel } from "@/features/diagnosis/components/ImagePanel";
@@ -81,13 +82,6 @@ function formatDate(dateStr?: string | null) {
   });
 }
 
-function buildRetinaImageUrl(filename?: string | null, token?: string | null) {
-  if (!filename) return null;
-  const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-  const query = token ? `?token=${encodeURIComponent(token)}` : "";
-  return `${backendUrl}/uploads/retinas/${encodeURIComponent(filename)}${query}`;
-}
-
 function validationTone(status: PatientDiagnosisEyeDetail["estado_validacion"]) {
   if (status === "APROBADO")
     return "border-success/30 bg-success/10 text-success";
@@ -97,22 +91,24 @@ function validationTone(status: PatientDiagnosisEyeDetail["estado_validacion"]) 
 }
 
 function EvidenceImage({
+  filename,
   onPreview,
   overlay,
-  src,
   subtitle,
   title,
 }: {
-  onPreview: () => void;
+  filename: string | null;
+  onPreview: (src: string) => void;
   overlay?: boolean;
-  src: string | null;
   subtitle?: string;
   title: string;
 }) {
+  const { src, error, isLoading } = useRetinaImage(filename);
   if (!src) {
     return (
-      <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-xs text-muted-foreground">
-        No disponible
+      <div role={error ? "alert" : undefined}
+        className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-xs text-muted-foreground">
+        {error ?? (isLoading ? "Cargando imagen clínica…" : "No disponible")}
       </div>
     );
   }
@@ -120,7 +116,7 @@ function EvidenceImage({
   return (
     <button
       type="button"
-      onClick={onPreview}
+      onClick={() => onPreview(src)}
       className="block w-full rounded-lg text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <ImagePanel
@@ -170,7 +166,6 @@ function EyeDiagnosisBlock({
   detail,
   extra,
   onPreview,
-  token,
 }: {
   detail: PatientDiagnosisEyeDetail;
   extra: DetalleDiagnosticoExistente | null;
@@ -180,7 +175,6 @@ function EyeDiagnosisBlock({
     subtitle?: string;
     title: string;
   }) => void;
-  token?: string | null;
 }) {
   const iaLevel = detail.resultado_ia_id ?? extra?.resultado_ia ?? null;
   const finalLevel =
@@ -200,14 +194,8 @@ function EyeDiagnosisBlock({
     iaLevel !== null &&
     finalLevel !== null &&
     Number(iaLevel) !== Number(finalLevel);
-  const originalUrl = buildRetinaImageUrl(
-    detail.imagen_original_url ?? extra?.imagen_url,
-    token,
-  );
-  const gradcamUrl = buildRetinaImageUrl(
-    detail.imagen_gradcam_url ?? extra?.gradcam_url,
-    token,
-  );
+  const originalFilename = detail.imagen_original_url ?? extra?.imagen_url ?? null;
+  const gradcamFilename = detail.imagen_gradcam_url ?? extra?.gradcam_url ?? null;
   const validatedAt = formatDate(detail.fecha_validacion);
   const originalName =
     detail.nombre_archivo_original ??
@@ -328,12 +316,11 @@ function EyeDiagnosisBlock({
               <EvidenceImage
                 title="Imagen original"
                 subtitle={originalName}
-                src={originalUrl}
-                onPreview={() => {
-                  if (!originalUrl) return;
+                filename={originalFilename}
+                onPreview={(src) => {
                   onPreview({
                     alt: `Imagen original ${eyeLabel(detail.ojo_evaluado)}`,
-                    src: originalUrl,
+                    src,
                     subtitle: originalName,
                     title: `Imagen evaluada - ${eyeLabel(detail.ojo_evaluado)}`,
                   });
@@ -342,13 +329,12 @@ function EyeDiagnosisBlock({
               <EvidenceImage
                 title="Grad-CAM"
                 subtitle="Regiones de mayor atención del modelo"
-                src={gradcamUrl}
+                filename={gradcamFilename}
                 overlay
-                onPreview={() => {
-                  if (!gradcamUrl) return;
+                onPreview={(src) => {
                   onPreview({
                     alt: `Grad-CAM ${eyeLabel(detail.ojo_evaluado)}`,
-                    src: gradcamUrl,
+                    src,
                     subtitle: originalName,
                     title: `Grad-CAM - ${eyeLabel(detail.ojo_evaluado)}`,
                   });
@@ -445,7 +431,10 @@ export function VisitDiagnosisTab({
     src: string;
     subtitle?: string;
     title: string;
+    visitId: number;
+    session: string | null;
   } | null>(null);
+  useEffect(() => setPreviewImage(null), [token, visit.visita_id]);
   const diagnosis = visit.diagnostico_ia;
 
   const details = useMemo(
@@ -519,13 +508,15 @@ export function VisitDiagnosisTab({
             key={detail.detalle_id}
             detail={detail}
             extra={mergeDetail(detail, diagnosisDetails)}
-            onPreview={setPreviewImage}
-            token={token}
+            onPreview={(image) => setPreviewImage({
+              ...image, visitId: visit.visita_id, session: token,
+            })}
           />
         ))}
       </div>
 
-      {previewImage && (
+      {previewImage && previewImage.visitId === visit.visita_id &&
+        previewImage.session === token && (
         <ImagePreviewLightbox
           alt={previewImage.alt}
           src={previewImage.src}

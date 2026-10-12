@@ -4,9 +4,8 @@ from sqlalchemy import text
 from database import db
 from utils.security import (
     GENERIC_NOT_FOUND_MESSAGE,
-    clinical_access_required,
-    token_required,
 )
+from utils.strict_authorization import strict_authorization_required
 
 files_bp = Blueprint('files_bp', __name__)
 
@@ -33,18 +32,22 @@ def _retina_file_is_registered(filename):
     return db.session.execute(query, {"filename": safe_name}).first() is not None
 
 @files_bp.route('/uploads/retinas/<path:filename>', methods=['GET'])
-@token_required
-@clinical_access_required('imagenes.ver', 'diagnosticos.ver')
+@strict_authorization_required('images.read')
 def serve_retina_image(filename):
     safe_name = os.path.basename(filename)
-    if safe_name != filename or not _retina_file_is_registered(safe_name):
+    if (safe_name != filename or
+            not safe_name.lower().endswith(('.jpg', '.jpeg', '.png'))):
         return jsonify({"success": False, "message": GENERIC_NOT_FOUND_MESSAGE}), 404
 
-    full_path = os.path.abspath(os.path.join(RETINAS_FOLDER, safe_name))
-    if os.path.commonpath([RETINAS_FOLDER, full_path]) != RETINAS_FOLDER:
+    root = os.path.realpath(RETINAS_FOLDER)
+    full_path = os.path.realpath(os.path.join(root, safe_name))
+    if os.path.commonpath([root, full_path]) != root:
         return jsonify({"success": False, "message": GENERIC_NOT_FOUND_MESSAGE}), 404
 
-    if not os.path.exists(full_path):
+    if not os.path.isfile(full_path) or not _retina_file_is_registered(safe_name):
         return jsonify({"success": False, "message": GENERIC_NOT_FOUND_MESSAGE}), 404
-    
-    return send_from_directory(RETINAS_FOLDER, safe_name)
+
+    response = send_from_directory(root, safe_name)
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response

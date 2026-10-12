@@ -22,6 +22,17 @@ import { cn } from "@/lib/utils";
 import { EyeKey, EyeState } from "../types";
 import { DiagnosisResult } from "@/features/diagnosis/api/diagnosisService";
 import { ImagePanel } from "./ImagePanel";
+import { useRetinaImage } from "@/hooks/useRetinaImage";
+
+function GradcamImage({ filename }: { filename: string }) {
+  const { src, error, isLoading } = useRetinaImage(filename);
+  if (!src) return <div role={error ? "alert" : undefined}
+    className="flex aspect-square items-center justify-center rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground">
+    {error ?? (isLoading ? "Cargando Grad-CAM…" : "No disponible")}
+  </div>;
+  return <ImagePanel title="Grad-CAM" subtitle="Regiones de mayor atención del modelo"
+    src={src} overlay />;
+}
 
 interface DiagnosisResultsProps {
   results: Partial<Record<EyeKey, DiagnosisResult>>;
@@ -439,12 +450,7 @@ export function DiagnosisResults(
             subtitle={originalFileName}
             src={eyes[activeEye].preview!}
           />
-          <ImagePanel
-            title="Grad-CAM"
-            subtitle="Regiones de mayor atención del modelo"
-            src={current.gradcam_url}
-            overlay
-          />
+          <GradcamImage filename={current.gradcam_url} />
         </div>
 
         <div className="flex items-start gap-2 rounded-md border border-info/30 bg-info/5 px-3 py-2.5">

@@ -10,9 +10,11 @@ from datetime import date, datetime, timedelta, timezone
 from functools import partial
 import inspect as python_inspect
 import os
+from pathlib import Path
 import re
 import secrets
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -28,7 +30,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     from database import db
     from routes.auth_routes import auth_bp
     from routes.patient_routes import patient_bp
-    from routes import patient_routes
+    from routes import patient_routes, files_routes
     from src.models.auth_entities import (Cargo, Permiso, Rol, RolPermiso,
                                           TipoDocumento, Usuario, UsuarioRol)
     from src.models.patient_entities import Paciente, VisitaClinica
@@ -68,6 +70,16 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         cls.addClassCleanup(db.session.remove)
         cls.app.register_blueprint(auth_bp)
         cls.app.register_blueprint(patient_bp)
+        cls.app.register_blueprint(files_routes.files_bp)
+        cls.image_directory = tempfile.TemporaryDirectory(
+            prefix="b1-orm-images-", dir=r"C:\Users\ricar\AppData\Local\Temp\opencode")
+        cls.addClassCleanup(cls.image_directory.cleanup)
+        cls.image_directory_patch = patch.object(
+            files_routes, "RETINAS_FOLDER", cls.image_directory.name)
+        cls.image_directory_patch.start()
+        cls.addClassCleanup(cls.image_directory_patch.stop)
+        for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg", "unregistered.jpg"):
+            Path(cls.image_directory.name, name).write_bytes(b"\xff\xd8\xff\xd9")
 
         # El mismo handler real, temporalmente protegido con el esquema antiguo,
         # permite comparar contratos sin modificar rutas de producción.
@@ -418,6 +430,34 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertEqual(self.call(path, token=token)[0].status_code, 200)
         with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
             self.assertEqual(self.call(path, token=token)[0].status_code, 401)
+
+    def test_url_jwt_is_rejected_before_orm_on_b1_and_legacy_routes(self):
+        bearer = self.token()
+        expired = self.token(expired=True)
+        invalid = jwt.encode({
+            "user_id": self.user_ids["ophthalmologist"],
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        }, "different-only-synthetic-signing-key", algorithm="HS256")
+        paths = (
+            f"/api/pacientes/{self.patient_ids[0]}",
+            f"/api/pacientes/{self.patient_ids[0]}/visitas",
+            "/uploads/retinas/synthetic-only.jpg",
+            f"/api/_orm_legacy_patient/{self.patient_ids[0]}",
+        )
+        for path in paths:
+            response, _ = self.call(path, token=bearer)
+            self.assertEqual(response.status_code, 200)
+            response.close()
+            for query_token in (bearer, expired, invalid):
+                for header_token in (None, bearer):
+                    with self.subTest(path=path, bearer=bool(header_token),
+                                      query_valid=query_token == bearer):
+                        denied, statements = self.call(
+                            f"{path}?token={query_token}", token=header_token,
+                            measure=True)
+                        self.assertEqual(denied.status_code, 401)
+                        self.assertEqual(statements, [])
+                        self.assertNotIn(query_token, denied.get_data(as_text=True))
 
     def test_active_role_and_permission_states_are_respected(self):
         token = self.token()
@@ -842,6 +882,56 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertEqual(result.status_code, 500)
         self.assertNotIn("synthetic-only.jpg", result.get_data(as_text=True))
         logged.assert_called_once_with("Error al obtener historial de diagnosticos")
+
+    def test_b1_real_retina_file_requires_bearer_and_registered_resource(self):
+        for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg"):
+            path = f"/uploads/retinas/{name}"
+            response, sql = self.call(path, token=self.token(), measure=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, "image/jpeg")
+            self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 4)
+            self.assertFalse(any("select *" in q.lower() for q in sql))
+            response.close()
+
+        path = "/uploads/retinas/synthetic-only.jpg"
+        for token in (None, self.token(expired=True)):
+            denied, sql = self.call(path, token=token, measure=True)
+            self.assertEqual(denied.status_code, 401)
+            self.assertEqual(sql, [])
+        for token in (None, self.token()):
+            db.session.remove()
+            headers = {"Authorization": f"Bearer {token}"} if token else None
+            denied = self.client.get(path, query_string={"token": self.token()}, headers=headers)
+            self.assertEqual(denied.status_code, 401)
+            self.assertNotIn("synthetic-only.jpg", denied.get_data(as_text=True))
+        with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
+            self.assertEqual(self.call(path, token=self.token())[0].status_code, 401)
+        for profile in ("administrator", "assistant", "nurse"):
+            denied, sql = self.call(path, token=self.token(profile), measure=True)
+            self.assertEqual(denied.status_code, 403)
+            self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+        dual_response, _ = self.call(path, token=self.token("dual"))
+        self.assertEqual(dual_response.status_code, 200)
+        dual_response.close()
+        with self.temporary_grant("ADMINISTRADOR_SISTEMA", "imagenes.ver", present=True):
+            with self.temporary_grant("OFTALMOLOGO", "imagenes.ver", present=False):
+                for profile in ("ophthalmologist", "dual", "assistant_dual"):
+                    denied, sql = self.call(path, token=self.token(profile), measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+        response, _ = self.call(path, token=self.token())
+        self.assertEqual(response.status_code, 200)
+        response.close()
+
+        for name in ("unregistered.jpg", "missing.jpg", "synthetic-only.exe",
+                     "..%5csynthetic-only.jpg"):
+            response, _ = self.call(f"/uploads/retinas/{name}", token=self.token())
+            self.assertEqual(response.status_code, 404)
+            self.assertNotIn("synthetic-only.jpg", response.get_data(as_text=True))
+        print("ORM imagen registrada: 4 SELECT (3 autenticación + 1 vínculo); "
+              "denegación: 3 SELECT sin consultar recursos; token en URL: 401.")
 
     def test_b1_real_post_creates_by_role_without_leaking_fields(self):
         payloads = {
