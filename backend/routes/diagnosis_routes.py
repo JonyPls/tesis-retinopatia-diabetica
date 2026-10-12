@@ -1,6 +1,8 @@
 from io import BytesIO
 
-from flask import Blueprint, request, jsonify, send_file, send_from_directory
+from flask import Blueprint, request, jsonify, send_file, send_from_directory, current_app
+from werkzeug.exceptions import RequestEntityTooLarge
+from dl_model.validator import MAX_IMAGE_BYTES
 from services.diagnosis_service import (
     procesar_diagnostico,
     confirmar_validacion_detalle,
@@ -26,39 +28,59 @@ diagnosis_bp = Blueprint('diagnosis', __name__)
 @token_required
 @clinical_access_required('diagnosticos.crear', 'diagnosticos.gestionar')
 def diagnosticar_retina():
-    # 1. Verifica el archivo
-    if 'imagen' not in request.files:
+    # Límite por petición, sin afectar a otras rutas ni leer el archivo entero.
+    max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)
+    request.max_content_length = max_bytes + 64 * 1024  # envoltura multipart
+    try:
+        if request.content_length is not None and request.content_length > request.max_content_length:
+            raise RequestEntityTooLarge()
+        archivo = request.files.get('imagen')
+        form = request.form
+    except RequestEntityTooLarge:
+        return jsonify({"success": False, "message": "Archivo demasiado grande."}), 413
+
+    if archivo is None:
         message = "Falta la imagen"
         return jsonify({"success": False, "message": message, "error": message}), 400
-    
-    archivo = request.files['imagen']
-    if archivo.filename == '':
+    if not archivo.filename:
         message = "Archivo vacío"
         return jsonify({"success": False, "message": message, "error": message}), 400
 
-    # 2. Capturar los datos del formulario
-    paciente_id  = request.form.get('paciente_id')
-    ojo_evaluado = request.form.get('ojo_evaluado')
-    visita_id = request.form.get('visita_id') or request.form.get('diagnostico_id')
+    paciente_id = form.get('paciente_id')
+    ojo_evaluado = form.get('ojo_evaluado')
+    visita_id = form.get('visita_id')
+    diagnostico_id = form.get('diagnostico_id')  # Alias legacy del ID de visita.
 
     if not all([paciente_id, ojo_evaluado]):
         message = "Faltan datos (paciente_id u ojo_evaluado)"
         return jsonify({"success": False, "message": message, "error": message}), 400
+    if (ojo_evaluado not in ('Derecho', 'Izquierdo') or
+            not paciente_id.isascii() or not paciente_id.isdecimal() or
+            any(value is not None and (not value or not value.isascii() or not value.isdecimal())
+                for value in (visita_id, diagnostico_id))):
+        return jsonify({"success": False, "message": "Datos de diagnóstico inválidos."}), 400
+    try:
+        paciente_id = int(paciente_id)
+        visita_id = int(visita_id) if visita_id is not None else None
+        diagnostico_id = int(diagnostico_id) if diagnostico_id is not None else None
+    except ValueError:
+        return jsonify({"success": False, "message": "Datos de diagnóstico inválidos."}), 400
+    if (paciente_id < 1 or (visita_id is not None and visita_id < 1) or
+            (diagnostico_id is not None and diagnostico_id < 1) or
+            (visita_id is not None and diagnostico_id is not None and visita_id != diagnostico_id)):
+        return jsonify({"success": False, "message": "Datos de diagnóstico inválidos."}), 400
 
     usuario_id = request.current_user.get('user_id')
 
-    resultado = procesar_diagnostico(
+    resultado, status_code = procesar_diagnostico(
         archivo_imagen=archivo,
-        paciente_id=int(paciente_id),
+        paciente_id=paciente_id,
         usuario_id=int(usuario_id),
         ojo_evaluado=ojo_evaluado,
-        visita_id=int(visita_id) if visita_id else None,
+        visita_id=visita_id if visita_id is not None else diagnostico_id,
+        require_existing_diagnosis=diagnostico_id is not None,
     )
-
-    if resultado.get("success"):
-        return jsonify(resultado), 200
-    else:
-        return jsonify(resultado), 400
+    return jsonify(resultado), status_code
 
 
 @diagnosis_bp.route('/api/diagnosticar/visita/<int:visita_id>/detalles', methods=['GET'])

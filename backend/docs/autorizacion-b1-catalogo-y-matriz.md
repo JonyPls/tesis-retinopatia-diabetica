@@ -420,6 +420,49 @@ En el arnés MySQL 8 desechable, una primera validación con dos ojos cuesta
 La prueba con dos clientes/conexiones independientes sincronizados antes del
 bloqueo verifica 200/409 y un único resultado persistido.
 
+## Bloqueos inmediatos del POST de inferencia (Prompt 27A)
+
+`POST /api/diagnosticar` **continúa con autorización legacy**. No aumenta el
+número de rutas B1 (11). La regla de 27C aprobada pero **no aplicada** exige
+`OFTALMOLOGO` activo con `diagnostico_retinopatia.crear` e `imagenes.ver`
+procedentes de ese rol y, cuando crea visita, `visitas.crear` adicionalmente.
+
+CLIP ahora deniega con 503 genérico si no puede cargar o ejecutar el validador;
+un resultado interno inesperado da 500 y el rechazo semántico 422; ninguno
+permite inferencia ni inserción. En el POST se
+limita la envoltura multipart solo para esta ruta y se leen como máximo
+20 MiB + 1 byte del archivo (413 si excede). El validador comprueba por
+contenido JPEG/PNG/TIFF, extensión, MIME declarado, decodificación, lado mínimo
+350 px, máximo 8192 px y superficie máxima 30 millones de píxeles. Los máximos
+se pueden configurar por aplicación con `DIAGNOSIS_MAX_IMAGE_BYTES`,
+`DIAGNOSIS_MAX_IMAGE_SIDE`, `DIAGNOSIS_MAX_IMAGE_PIXELS`; no se cambió SQL.
+El retinógrafo usa `mimetypes.guess_type` y `File.type` para las extensiones
+permitidas; un MIME genérico no pasa como excepción implícita.
+
+La visita solicitada debe existir, corresponder al paciente y estar `ACTIVA`;
+las `CERRADA`/`ANULADA` devuelven 409. El alias `diagnostico_id` del POST
+histórico se interpreta **como ID de visita**, no como PK de diagnóstico; ahora
+exige que la visita ya tenga diagnóstico y no puede discrepar de `visita_id` si
+ambos se envían. `ojo_evaluado` solo acepta `Derecho`/`Izquierdo`.
+
+La consulta temprana del ojo evita inferencia innecesaria. Antes de insertar
+se repiten las comprobaciones con bloqueo `FOR UPDATE` de la visita y el
+diagnóstico; la restricción SQL única por diagnóstico/ojo es respaldo para
+colisiones. Cualquier detalle anterior, `PENDIENTE` o validado, responde 409:
+ni su predicción, archivos, comentario, resultado final, validador o fecha se
+reescriben. Los JPEG nuevos usan UUID completo y apertura exclusiva: tampoco
+truncan archivos previos ante una colisión de nombre. Si solo había un ojo validado (`VALIDADO`), incorporar el opuesto
+pendiente devuelve el estado agregado a `PROCESADO` conservando íntegro el
+primero. Registros antiguos incompletos tampoco se reparan sobrescribiendo.
+
+**Riesgo que persiste hasta 27B:** el repositorio confirma MySQL antes de
+publicar ambos JPEG. Un fallo de disco o del proceso puede dejar registros
+con archivos ausentes o archivos parciales; una colisión de nombre después
+del commit tampoco se revierte en MySQL. MySQL y disco aún no tienen
+compensación, conciliación ni atomicidad conjunta. OD y OI siguen siendo
+peticiones independientes. La presentación de predicciones pendientes y la
+recuperación frontend de éxitos parciales quedan para 27D.
+
 ## Dependencias antes de activar B1
 
 1. Autorizar comprobación de catálogo/grants en instancia v2 y aplicar la

@@ -50,8 +50,9 @@ with app.app_context():
     try:
         _get_clip()
         print("[OK] CLIP model loaded successfully")
-    except Exception as e:
-        print(f"[WARN] CLIP model failed to load: {e}")
+    except Exception:
+        # Puede arrancar el resto del sistema; el validador bloquea el POST.
+        print("[WARN] CLIP model unavailable; image validation is disabled")
 
 if __name__ == '__main__':
     app.run(debug=app.config['DEBUG'], port=int(os.getenv('FLASK_PORT', 5000)))

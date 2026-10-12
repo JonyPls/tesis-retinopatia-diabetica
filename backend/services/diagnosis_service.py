@@ -7,9 +7,11 @@ from PIL import Image
 import io
 from werkzeug.datastructures import FileStorage
 from dl_model.validator import validar_formato_y_dimensiones, validar_region_circular, validar_contenido_semantico
+from dl_model.validator import MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, MAX_IMAGE_PIXELS
 from dl_model.inference import predecir_imagen_bytes
 from src.repositories.diagnosis_repository import DiagnosisRepository, DiagnosisValidationError
 from database import db
+from sqlalchemy.exc import IntegrityError
 
 RD_LABELS = {
     0: "Normal",
@@ -23,24 +25,44 @@ DIAGNOSIS_NOT_FOUND_MESSAGE = "Diagnóstico no encontrado."
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads', 'retinas')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_id: int, ojo_evaluado: str, visita_id: int = None) -> dict:
+def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_id: int,
+                        ojo_evaluado: str, visita_id: int = None,
+                        *, require_existing_diagnosis=False) -> tuple[dict, int]:
     try:
-        image_bytes = archivo_imagen.read()
+        # Las lecturas baratas preceden a CLIP/ResNet50; el repositorio las
+        # repite con bloqueo al escribir para cerrar la carrera entre peticiones.
+        DiagnosisRepository.comprobar_creacion(
+            paciente_id, ojo_evaluado, visita_id,
+            require_existing_diagnosis=require_existing_diagnosis,
+        )
+        max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)
+        image_bytes = archivo_imagen.stream.read(max_bytes + 1)
+        if len(image_bytes) > max_bytes:
+            return {"success": False, "message": "Archivo demasiado grande."}, 413
 
         # Capa 1 de Validación
-        check = validar_formato_y_dimensiones(image_bytes)
+        check = validar_formato_y_dimensiones(
+            image_bytes, filename=archivo_imagen.filename,
+            mimetype=archivo_imagen.mimetype,
+            max_side=current_app.config.get('DIAGNOSIS_MAX_IMAGE_SIDE', MAX_IMAGE_SIDE),
+            max_pixels=current_app.config.get('DIAGNOSIS_MAX_IMAGE_PIXELS', MAX_IMAGE_PIXELS),
+        )
         if not check["valido"]:
-            return {"success": False, "message": check["error"]}
+            return {"success": False, "message": check["error"]}, 400
         
         # Capa 2 de Validación
         check = validar_region_circular(image_bytes)
         if not check["valido"]:
-            return {"success": False, "message": check["error"]}
+            return {"success": False, "message": check["error"]}, 400
         
         # Capa 3 de Validación
         check = validar_contenido_semantico(image_bytes)
         if not check["valido"]:
-            return {"success": False, "message": check["error"]}
+            if check.get("status") == 503:
+                return {"success": False, "message": "Validación de imagen no disponible."}, 503
+            if check.get("status") == 500:
+                return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+            return {"success": False, "message": check["error"]}, 422
         
         
         # Proceso normal al ser una retinografía
@@ -49,7 +71,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         cam_image_array = resultado_ia.pop("cam_image_array")
 
         # Siempre guardar como .jpg sin importar el formato original
-        nombre_unico = f"P{paciente_id}_{ojo_evaluado}_{uuid.uuid4().hex[:6]}.jpg"
+        nombre_unico = f"P{paciente_id}_{ojo_evaluado}_{uuid.uuid4().hex}.jpg"
         nombre_gradcam = nombre_unico.replace('.jpg', '_gradcam.jpg')
 
         ruta_guardado = os.path.join(UPLOAD_FOLDER, nombre_unico)
@@ -80,15 +102,20 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             "modelo_nombre": "ResNet50",
         }
 
-        visita_id, diagnostico_retinopatia_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(datos_bd, visita_id)
+        visita_id, diagnostico_retinopatia_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(
+            datos_bd, visita_id, require_existing_diagnosis=require_existing_diagnosis,
+        )
 
         # Convertir y guardar como JPG solo si el INSERT fue exitoso
         if imagen.mode != 'RGB':
             imagen = imagen.convert('RGB')  # .tif puede venir en modo RGBA o L
-        imagen.save(ruta_guardado, 'JPEG', quality=90)
+        # No truncar un archivo previo, incluso ante colisión de nombre.
+        with open(ruta_guardado, 'xb') as output:
+            imagen.save(output, 'JPEG', quality=90)
 
         # Guardar físicamente la imagen del Grad-CAM
-        Image.fromarray(cam_image_array).save(ruta_gradcam, 'JPEG', quality=90)
+        with open(ruta_gradcam, 'xb') as output:
+            Image.fromarray(cam_image_array).save(output, 'JPEG', quality=90)
 
         resultado_ia["visita_id"] = visita_id
         resultado_ia["diagnostico_id"] = visita_id
@@ -96,11 +123,21 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         resultado_ia["detalle_id"] = detalle_id
         resultado_ia["gradcam_url"] = nombre_gradcam
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
-        return {"success": True, "data": resultado_ia}
+        return {"success": True, "data": resultado_ia}, 200
 
+    except DiagnosisValidationError as error:
+        db.session.rollback()
+        return {"success": False, "message": str(error)}, error.status_code
+    except IntegrityError as error:
+        db.session.rollback()
+        if getattr(error.orig, 'args', (None,))[0] == 1062:
+            return {"success": False, "message": "Ya existe un resultado para este ojo."}, 409
+        current_app.logger.error("Error de persistencia al procesar diagnostico")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
     except Exception:
-        current_app.logger.exception("Error al procesar diagnostico")
-        return {"success": False, "message": "No se pudo procesar la solicitud."}
+        db.session.rollback()
+        current_app.logger.error("Error al procesar diagnostico")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
 def consultar_detalles_por_visita(visita_id: int) -> dict:

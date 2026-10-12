@@ -39,6 +39,8 @@ with patch("dotenv.load_dotenv", return_value=False):
     from src.models.patient_entities import Paciente, VisitaClinica
     from src.repositories.patient_repository import PatientRepository
     from src.repositories.diagnosis_repository import DiagnosisRepository
+    from test_diagnosis_input import validator as real_validator, image_bytes
+    import numpy as np
     from src.models import diagnosis_entities, informe_entities  # Registrar metadatos ORM.
     from src.repositories.auth_repository import AuthRepository
     from utils.security import clinical_access_required, token_required
@@ -47,9 +49,12 @@ with patch("dotenv.load_dotenv", return_value=False):
     # Importar rutas reales sin cargar CLIP/ResNet50.
     # La generación PDF no participa en esta prueba de diagnóstico.
     fake_validator = ModuleType("dl_model.validator")
+    fake_validator.MAX_IMAGE_BYTES = 20 * 1024 * 1024
+    fake_validator.MAX_IMAGE_SIDE = 8192
+    fake_validator.MAX_IMAGE_PIXELS = 30_000_000
     for name in ("validar_formato_y_dimensiones", "validar_region_circular",
                  "validar_contenido_semantico"):
-        setattr(fake_validator, name, lambda *_: None)
+        setattr(fake_validator, name, lambda *_, **__: None)
     fake_inference = ModuleType("dl_model.inference")
     fake_inference.predecir_imagen_bytes = lambda *_: None
     fake_pdf = ModuleType("services.report_service")
@@ -62,6 +67,7 @@ with patch("dotenv.load_dotenv", return_value=False):
         "services.report_service": fake_pdf,
     }):
         from routes import diagnosis_routes
+        from services import diagnosis_service
 
 
 TEST_KEY = "b1-only-disposable-orm-integration-signing-key"
@@ -454,6 +460,63 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 db.session.delete(visit)
             db.session.commit()
             db.session.remove()
+
+    @contextmanager
+    def empty_diagnosis_visit(self):
+        visit = VisitaClinica(paciente_id=self.patient_ids[1],
+                             usuario_id=self.user_ids["ophthalmologist"], estado="ACTIVA")
+        db.session.add(visit)
+        db.session.commit()
+        visit_id = visit.id
+        db.session.remove()
+        try:
+            yield visit_id
+        finally:
+            db.session.remove()
+            diag = diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first()
+            if diag:
+                db.session.delete(diag)
+                db.session.flush()
+            visit = db.session.get(VisitaClinica, visit_id)
+            db.session.delete(visit)
+            db.session.commit()
+            db.session.remove()
+
+    @contextmanager
+    def stubbed_creation(self, *, semantic=None):
+        with tempfile.TemporaryDirectory(prefix="b1-create-images-",
+                                         dir=r"C:\Users\ricar\AppData\Local\Temp\opencode") as folder:
+            infer = lambda *_: {
+                "diagnostico_codigo": 2, "diagnostico_texto": "Moderada",
+                "confianza_general": 85.0, "probabilidades_detalle": {"G2_Moderada": 85.0},
+                "cam_image_array": np.zeros((400, 400, 3), dtype=np.uint8),
+            }
+            with patch.object(diagnosis_service, 'UPLOAD_FOLDER', folder), \
+                 patch.object(diagnosis_service, 'validar_formato_y_dimensiones',
+                              real_validator.validar_formato_y_dimensiones), \
+                 patch.object(diagnosis_service, 'validar_region_circular',
+                              return_value={"valido": True}), \
+                 patch.object(diagnosis_service, 'validar_contenido_semantico',
+                              side_effect=semantic or (lambda *_: {"valido": True})), \
+                 patch.object(diagnosis_service, 'predecir_imagen_bytes', side_effect=infer) as model:
+                yield folder, model
+
+    def create_image(self, *, eye="Derecho", patient=None, visit=None, alias=None,
+                     raw=None, filename="synthetic.jpg", mimetype="image/jpeg", token=None):
+        from io import BytesIO
+        data = {"paciente_id": str(patient or self.patient_ids[1]), "ojo_evaluado": eye,
+                "imagen": (BytesIO(raw if raw is not None else image_bytes('JPEG')),
+                           filename, mimetype)}
+        if visit is not None:
+            data["visita_id"] = str(visit)
+        if alias is not None:
+            data["diagnostico_id"] = str(alias)
+        db.session.remove()
+        response = self.client.post('/api/diagnosticar', data=data,
+            content_type='multipart/form-data',
+            headers={"Authorization": "Bearer " + (token or self.token())})
+        db.session.remove()
+        return response
 
     def test_orm_columns_and_relationship_provenance(self):
         inspector = inspect(db.engine)
@@ -1227,6 +1290,215 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(detail.fecha_validacion)
             self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, oi).estado_validacion,
                              "PENDIENTE")
+
+    def test_real_creation_first_both_eyes_retries_and_validated_preserved(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            statements = []
+            def count_sql(conn, cursor, statement, parameters, context, executemany):
+                statements.append(statement)  # No parámetros ni información clínica.
+            event.listen(db.engine, 'before_cursor_execute', count_sql)
+            try:
+                first = self.create_image(visit=visit_id)
+            finally:
+                event.remove(db.engine, 'before_cursor_execute', count_sql)
+            self.assertEqual(first.status_code, 200, first.json)
+            counts = Counter(sql.lstrip().split(None, 1)[0].upper() for sql in statements)
+            print('ORM POST diagnóstico legacy (visita existente, primer ojo): '
+                  f'SELECT={counts["SELECT"]}, INSERT={counts["INSERT"]}, UPDATE={counts["UPDATE"]}')
+            od_id = first.json['data']['detalle_id']
+            self.assertEqual(first.json['data']['visita_id'], visit_id)
+            self.assertEqual(len(list(Path(folder).iterdir())), 2)
+            db.session.remove()
+            od = db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id)
+            self.assertEqual((od.ojo_evaluado, od.resultado_ia_id, od.estado_validacion),
+                             ('Derecho', 2, 'PENDIENTE'))
+            original = (od.imagen_original_url, od.imagen_gradcam_url, od.resultado_completo)
+            db.session.remove()
+            statements = []
+            event.listen(db.engine, 'before_cursor_execute', count_sql)
+            try:
+                same = self.create_image(visit=visit_id)
+            finally:
+                event.remove(db.engine, 'before_cursor_execute', count_sql)
+            self.assertEqual(same.status_code, 409)
+            self.assertFalse(any(sql.lstrip().upper().startswith(('INSERT', 'UPDATE'))
+                                 for sql in statements))
+            self.assertEqual(model.call_count, 1)
+            self.assertEqual(len(list(Path(folder).iterdir())), 2)
+            other = self.create_image(eye='Izquierdo', alias=visit_id)
+            self.assertEqual(other.status_code, 200, other.json)
+            self.assertEqual(model.call_count, 2)
+            diagnosis_id = first.json['data']['diagnostico_retinopatia_id']
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado,
+                             'PROCESADO')
+            checked, _ = self.call(f'/api/diagnosticar/detalle/{od_id}/validar',
+                                   method='PUT', token=self.token('colleague'),
+                                   json_data={'diagnostico_final': 3,
+                                              'motivo_correccion': 'Justificación sintética'})
+            self.assertEqual(checked.status_code, 200)
+            db.session.remove()
+            od = db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id)
+            medical = (od.resultado_ia_id, od.resultado_final_id, od.estado_validacion,
+                       od.validado_por, od.fecha_validacion, od.comentario_medico,
+                       od.motivo_correccion, od.imagen_original_url,
+                       od.imagen_gradcam_url, od.resultado_completo)
+            db.session.remove()
+            repeated = self.create_image(visit=visit_id)
+            self.assertEqual(repeated.status_code, 409)
+            self.assertEqual(model.call_count, 2)
+            db.session.remove()
+            od = db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id)
+            self.assertEqual((od.resultado_ia_id, od.resultado_final_id, od.estado_validacion,
+                              od.validado_por, od.fecha_validacion, od.comentario_medico,
+                              od.motivo_correccion, od.imagen_original_url,
+                              od.imagen_gradcam_url, od.resultado_completo), medical)
+            self.assertEqual((od.imagen_original_url, od.imagen_gradcam_url, od.resultado_completo), original)
+            self.assertEqual(len(list(Path(folder).iterdir())), 4)
+            details, _ = self.call(f'/api/diagnosticar/visita/{visit_id}/detalles', token=self.token())
+            self.assertEqual(details.status_code, 200)
+            self.assertEqual({d['ojo'] for d in details.json['data']['ojos']}, {'OD', 'OI'})
+
+    def test_real_creation_validated_first_eye_allows_other_without_erasing_it(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation():
+            first = self.create_image(visit=visit_id)
+            self.assertEqual(first.status_code, 200, first.json)
+            od_id = first.json['data']['detalle_id']
+            checked, _ = self.call(f'/api/diagnosticar/detalle/{od_id}/validar',
+                                   method='PUT', token=self.token(),
+                                   json_data={'diagnostico_final': 2})
+            self.assertEqual(checked.status_code, 200)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico,
+                                            first.json['data']['diagnostico_retinopatia_id']).estado,
+                             'VALIDADO')
+            opposite = self.create_image(eye='Izquierdo', visit=visit_id)
+            self.assertEqual(opposite.status_code, 200, opposite.json)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, od_id).estado_validacion,
+                             'APROBADO')
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico,
+                                            first.json['data']['diagnostico_retinopatia_id']).estado,
+                             'PROCESADO')  # Nuevo ojo pendiente; anterior aprobado permanece.
+
+    def test_real_creation_early_denials_semantic_and_limits_do_not_infer(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            for kwargs, code in (({'eye': 'Otro', 'visit': visit_id}, 400),
+                                 ({'visit': 2147483647}, 404),
+                                 ({'visit': visit_id, 'patient': self.patient_ids[0]}, 409),
+                                 ({'visit': visit_id, 'alias': visit_id + 1}, 400),
+                                 ({'alias': visit_id}, 404),
+                                 ({'visit': visit_id, 'raw': b'not image'}, 400),
+                                 ({'visit': visit_id, 'filename': '../image.jpg'}, 400),
+                                 ({'visit': visit_id, 'mimetype': 'application/octet-stream'}, 400),
+                                 ({'visit': visit_id, 'raw': b'0' * (20 * 1024 * 1024 + 1)}, 413)):
+                with self.subTest(kwargs={key: value for key, value in kwargs.items() if key != 'raw'}):
+                    response = self.create_image(**kwargs)
+                    self.assertEqual(response.status_code, code, response.json)
+            with self.temporary_state(VisitaClinica, visit_id, 'CERRADA'):
+                self.assertEqual(self.create_image(visit=visit_id).status_code, 409)
+            with self.temporary_state(VisitaClinica, visit_id, 'ANULADA'):
+                self.assertEqual(self.create_image(visit=visit_id).status_code, 409)
+            bearer = self.token()
+            url_token = self.client.post('/api/diagnosticar?token=' + bearer,
+                data={'paciente_id': str(self.patient_ids[1]),
+                      'visita_id': str(visit_id), 'ojo_evaluado': 'Derecho'},
+                headers={'Authorization': 'Bearer ' + bearer})
+            self.assertEqual(url_token.status_code, 401)
+            self.assertEqual(model.call_count, 0)
+            self.assertEqual(list(Path(folder).iterdir()), [])
+            db.session.remove()
+            self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation(
+                semantic=lambda *_: {'valido': False, 'error': 'Imagen no retiniana.'}) as (folder, model):
+            self.assertEqual(self.create_image(visit=visit_id).status_code, 422)
+            model.assert_not_called()
+            self.assertEqual(list(Path(folder).iterdir()), [])
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation(
+                semantic=lambda *_: {'valido': False, 'status': 503,
+                                      'error': 'Synthetic private error'}) as (folder, model):
+            rejected = self.create_image(visit=visit_id)
+            self.assertEqual(rejected.status_code, 503)
+            self.assertNotIn('Synthetic private error', rejected.get_data(as_text=True))
+            model.assert_not_called()
+            self.assertEqual(list(Path(folder).iterdir()), [])
+        with patch.object(real_validator, '_get_clip', side_effect=RuntimeError('synthetic model path')):
+            with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation(
+                    semantic=real_validator.validar_contenido_semantico) as (folder, model):
+                rejected = self.create_image(visit=visit_id)
+                self.assertEqual(rejected.status_code, 503)
+                self.assertNotIn('synthetic model path', rejected.get_data(as_text=True))
+                model.assert_not_called()
+                self.assertEqual(list(Path(folder).iterdir()), [])
+
+    def test_real_creation_supported_formats_and_concurrent_same_eye(self):
+        with self.empty_diagnosis_visit() as visit_id, self.stubbed_creation() as (folder, model):
+            barrier = Barrier(2, timeout=15)
+            connections = set()
+            def synchronize(conn, cursor, statement, parameters, context, executemany):
+                if ('FOR UPDATE' in statement.upper() and
+                        'FROM visitas_clinicas' in statement and
+                        'diagnosticos_retinopatia' not in statement):
+                    connections.add(conn.connection.driver_connection.thread_id())
+                    barrier.wait()
+
+            def submit():
+                from io import BytesIO
+                with self.app.app_context():
+                    try:
+                        with self.app.test_client() as client:
+                            response = client.post('/api/diagnosticar',
+                                data={'paciente_id': str(self.patient_ids[1]),
+                                      'visita_id': str(visit_id), 'ojo_evaluado': 'Derecho',
+                                      'imagen': (BytesIO(image_bytes('JPEG')),
+                                                 'synthetic.jpg', 'image/jpeg')},
+                                content_type='multipart/form-data',
+                                headers={'Authorization': 'Bearer ' + self.token()})
+                            return response.status_code
+                    finally:
+                        db.session.remove()
+
+            db.session.remove()
+            event.listen(db.engine, 'before_cursor_execute', synchronize)
+            try:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    first = pool.submit(submit)
+                    second = pool.submit(submit)
+                    outcomes = sorted([first.result(timeout=25), second.result(timeout=25)])
+            finally:
+                event.remove(db.engine, 'before_cursor_execute', synchronize)
+            self.assertEqual(len(connections), 2)
+            self.assertEqual(outcomes, [200, 409])
+            db.session.remove()
+            diagnosis = diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).one()
+            self.assertEqual(len(diagnosis.detalles), 1)
+            self.assertEqual(diagnosis.detalles[0].estado_validacion, 'PENDIENTE')
+            self.assertEqual(len(list(Path(folder).iterdir())), 2)
+            self.assertEqual(model.call_count, 2)  # Prechequeos pueden cruzarse; INSERT solo uno.
+
+        for fmt, filename, mime in (('PNG', 'synthetic.png', 'image/png'),
+                                    ('TIFF', 'synthetic.tif', 'image/tiff')):
+            with self.subTest(fmt=fmt), self.empty_diagnosis_visit() as visit_id, self.stubbed_creation():
+                result = self.create_image(visit=visit_id, raw=image_bytes(fmt),
+                                           filename=filename, mimetype=mime)
+                self.assertEqual(result.status_code, 200, result.json)
+
+    def test_real_creation_filename_collision_never_overwrites_prior_files(self):
+        from types import SimpleNamespace
+        with self.empty_diagnosis_visit() as first_visit, \
+             self.empty_diagnosis_visit() as second_visit, \
+             self.stubbed_creation() as (folder, model), \
+             patch.object(diagnosis_service.uuid, 'uuid4',
+                          return_value=SimpleNamespace(hex='f' * 32)):
+            first = self.create_image(visit=first_visit)
+            self.assertEqual(first.status_code, 200, first.json)
+            snapshots = {file.name: file.read_bytes() for file in Path(folder).iterdir()}
+            self.assertEqual(len(snapshots), 2)
+            with patch.object(self.app.logger, 'error'):
+                second = self.create_image(visit=second_visit)
+            self.assertEqual(second.status_code, 500)
+            self.assertEqual({file.name: file.read_bytes() for file in Path(folder).iterdir()},
+                             snapshots)
 
     def test_b1_real_retina_file_requires_bearer_and_registered_resource(self):
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg"):

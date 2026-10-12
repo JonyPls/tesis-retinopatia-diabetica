@@ -90,4 +90,27 @@ describe("primera validación médica por ojo", () => {
     expect(validate.mock.calls.map(([id]) => id)).toEqual([11, 11]);
     hook.unmount();
   });
+
+  it("el POST rechazado con 409 o 503 no muestra un diagnóstico nuevo ni rechazo clínico", async () => {
+    for (const status of [409, 503]) {
+      create.mockRejectedValueOnce({ response: { status,
+        data: { message: status === 409 ? "Ya existe un resultado para este ojo." : "Validación de imagen no disponible." } } });
+      const hook = renderHook(() => useDiagnosis(), { wrapper });
+      act(() => {
+        hook.result.current.selectPatient({ id: 7, nombres: "Paciente", apellidos: "Ficticio" } as Parameters<typeof hook.result.current.selectPatient>[0]);
+        hook.result.current.selectVisita(null);
+      });
+      await act(async () => { await hook.result.current.handleFile("OD", new File(["a"], "od.jpg")); });
+      act(() => hook.result.current.goNext());
+      act(() => hook.result.current.goNext());
+      await waitFor(() => expect(hook.result.current.isSaving).toBe(false));
+      expect(hook.result.current.modalPhase).toBe("idle");
+      expect(hook.result.current.results).toEqual({});
+      expect(hook.result.current.validatedEyes).toEqual({});
+      expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+        description: status === 409 ? "Ya existe un resultado para este ojo." : "Validación de imagen no disponible.",
+      }));
+      hook.unmount();
+    }
+  });
 });

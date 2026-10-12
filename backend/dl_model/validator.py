@@ -1,5 +1,6 @@
 import io
 import logging
+import warnings
 import cv2
 import numpy as np
 from PIL import Image
@@ -11,8 +12,17 @@ import logging
 
 FORMATOS_PERMITIDOS = {"JPEG", "PNG", "TIFF"}
 DIMENSION_MINIMA    = 350  # px en el lado menor, basado en análisis del dataset EyePACS
+MAX_IMAGE_SIDE = 8192
+MAX_IMAGE_PIXELS = 30_000_000
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+IMAGE_TYPES = {
+    "JPEG": ({".jpg", ".jpeg"}, "image/jpeg"),
+    "PNG": ({".png"}, "image/png"),
+    "TIFF": ({".tif", ".tiff"}, "image/tiff"),
+}
 
-def validar_formato_y_dimensiones(image_bytes: bytes) -> dict:
+def validar_formato_y_dimensiones(image_bytes: bytes, *, filename=None, mimetype=None,
+                                  max_side=MAX_IMAGE_SIDE, max_pixels=MAX_IMAGE_PIXELS) -> dict:
     """
     Verifica que el archivo sea una imagen válida, tenga un formato
     permitido y dimensiones mínimas compatibles con una retinografía.
@@ -22,33 +32,37 @@ def validar_formato_y_dimensiones(image_bytes: bytes) -> dict:
         {"valido": False, "error": "<motivo>"} si falla alguna.
     """
     # 1. Verificar que los bytes correspondan a una imagen legible
+    if not image_bytes:
+        return {"valido": False, "error": "El archivo está vacío."}
+    if filename is not None:
+        if (not filename or '/' in filename or '\\' in filename or
+                filename in ('.', '..') or len(filename) > 255 or
+                any(ord(char) < 32 for char in filename)):
+            return {"valido": False, "error": "Nombre de imagen inválido."}
     try:
-        imagen = Image.open(io.BytesIO(image_bytes))
-        imagen.verify()  # Detecta archivos corruptos o trucados
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(image_bytes)) as imagen:
+                formato = imagen.format
+                ancho, alto = imagen.size
+                if formato not in FORMATOS_PERMITIDOS:
+                    return {"valido": False, "error": "Formato de imagen no permitido."}
+                if min(ancho, alto) < DIMENSION_MINIMA:
+                    return {"valido": False, "error": "Resolución insuficiente."}
+                if max(ancho, alto) > max_side or ancho * alto > max_pixels:
+                    return {"valido": False, "error": "Dimensiones de imagen excedidas."}
+                if filename is not None:
+                    extension = '.' + filename.rsplit('.', 1)[-1].lower()
+                    if extension not in IMAGE_TYPES[formato][0] or mimetype != IMAGE_TYPES[formato][1]:
+                        return {"valido": False, "error": "Extensión o tipo MIME incompatible con la imagen."}
+                imagen.verify()
+            # verify comprueba estructura; load comprueba también los píxeles.
+            with Image.open(io.BytesIO(image_bytes)) as imagen:
+                imagen.load()
     except Exception:
         return {
             "valido": False,
             "error": "El archivo no es una imagen válida o está corrupto."
-        }
-
-    # 2. Re-abrir luego de verify() ya que este cierra el stream interno
-    imagen = Image.open(io.BytesIO(image_bytes))
-
-    # 3. Verificar formato permitido
-    if imagen.format not in FORMATOS_PERMITIDOS:
-        return {
-            "valido": False,
-            "error": f"Formato '{imagen.format}' no permitido. "
-                     f"Se aceptan: JPG, PNG y TIFF."
-        }
-
-    # 4. Verificar dimensiones mínimas
-    ancho, alto = imagen.size
-    if min(ancho, alto) < DIMENSION_MINIMA:
-        return {
-            "valido": False,
-            "error": f"Resolución insuficiente ({ancho}×{alto} px). "
-                     f"La imagen debe tener al menos {DIMENSION_MINIMA} px en su lado menor."
         }
 
     return {"valido": True}
@@ -151,9 +165,17 @@ def _get_clip():
 def validar_contenido_semantico(image_bytes: bytes) -> dict:
     try:
         modelo, processor = _get_clip()
+    except Exception:
+        logging.warning("CLIP no disponible para validar la imagen")
+        return {"valido": False, "error": "Validación de imagen no disponible.", "status": 503}
 
+    try:
         imagen = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        logging.error("Error interno al preparar imagen para CLIP")
+        return {"valido": False, "error": "No se pudo procesar la solicitud.", "status": 500}
 
+    try:
         inputs = processor(
             text=CLIP_PROMPTS,
             images=imagen,
@@ -165,18 +187,18 @@ def validar_contenido_semantico(image_bytes: bytes) -> dict:
             outputs = modelo(**inputs)
             logits  = outputs.logits_per_image
             probs   = logits.softmax(dim=1).squeeze()
-
+    except Exception:
+        logging.warning("CLIP no disponible para validar la imagen")
+        return {"valido": False, "error": "Validación de imagen no disponible.", "status": 503}
+    try:
         idx_ganador = int(probs.argmax())
-
-        if idx_ganador != PROMPT_VALIDO_IDX:
-            mensaje = MENSAJES_RECHAZO.get(
-                idx_ganador,
-                "La imagen no corresponde a una retinografía de fondo de ojo."
-            )
-            return {"valido": False, "error": mensaje}
-
-        return {"valido": True}
-
-    except Exception as e:
-        logging.warning("CLIP validation failed, allowing image: %s", e)
-        return {"valido": True}
+    except Exception:
+        logging.error("CLIP devolvió un resultado inválido")
+        return {"valido": False, "error": "No se pudo procesar la solicitud.", "status": 500}
+    if idx_ganador != PROMPT_VALIDO_IDX:
+        mensaje = MENSAJES_RECHAZO.get(
+            idx_ganador,
+            "La imagen no corresponde a una retinografía de fondo de ojo."
+        )
+        return {"valido": False, "error": mensaje}
+    return {"valido": True}

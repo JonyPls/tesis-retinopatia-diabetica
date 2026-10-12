@@ -40,6 +40,8 @@ for service_name in (
 # cualquier dependencia de IA, PDF o directorio clínico.
 fake_diagnosis_service = types.ModuleType("services.diagnosis_service")
 fake_diagnosis_service.DIAGNOSIS_NOT_FOUND_MESSAGE = "Diagnóstico no encontrado."
+fake_validator = types.ModuleType("dl_model.validator")
+fake_validator.MAX_IMAGE_BYTES = 20 * 1024 * 1024
 for name in ("procesar_diagnostico", "confirmar_validacion_detalle",
              "consultar_detalles_existentes", "consultar_detalles_por_visita"):
     setattr(fake_diagnosis_service, name, Mock())
@@ -61,6 +63,7 @@ with patch.dict(sys.modules, {
     "src.models.auth_entities": fake_models,
     "services.patient_service": fake_patient_service,
     "services.diagnosis_service": fake_diagnosis_service,
+    "dl_model.validator": fake_validator,
     "services.retinograph_import_service": fake_retinograph_service,
     "services.report_service": fake_report_service,
     "services.informe_service": fake_informe_service,

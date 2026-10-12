@@ -1,7 +1,7 @@
 from database import db
 from datetime import datetime
 from src.models.diagnosis_entities import Diagnostico, DiagnosticoDetalle, GradoRetinopatia
-from src.models.patient_entities import VisitaClinica
+from src.models.patient_entities import Paciente, VisitaClinica
 
 class DiagnosisValidationError(Exception):
     def __init__(self, status_code, message):
@@ -11,7 +11,34 @@ class DiagnosisValidationError(Exception):
 
 class DiagnosisRepository:
     @staticmethod
-    def crear_diagnostico_y_detalle(datos_bd, visita_id=None):
+    def comprobar_creacion(paciente_id, ojo_evaluado, visita_id=None,
+                           *, require_existing_diagnosis=False):
+        """Rechazo temprano: se repite bajo bloqueo antes de cualquier INSERT."""
+        if db.session.get(Paciente, paciente_id) is None:
+            raise DiagnosisValidationError(404, "Paciente no encontrado.")
+        if visita_id is None:
+            return
+        visita = db.session.get(VisitaClinica, visita_id)
+        if visita is None:
+            raise DiagnosisValidationError(404, "Visita no encontrada.")
+        if visita.paciente_id != paciente_id:
+            raise DiagnosisValidationError(409, "La visita no corresponde al paciente.")
+        if visita.estado != 'ACTIVA':
+            raise DiagnosisValidationError(409, "La visita no está disponible para diagnóstico.")
+        diag = Diagnostico.query.filter_by(visita_id=visita_id).first()
+        if require_existing_diagnosis and diag is None:
+            raise DiagnosisValidationError(404, "Diagnóstico no encontrado.")
+        if diag is not None:
+            if diag.estado not in ('PROCESADO', 'VALIDADO'):
+                raise DiagnosisValidationError(409, "Diagnóstico no disponible para procesamiento.")
+            if DiagnosticoDetalle.query.filter_by(
+                    diagnostico_retinopatia_id=diag.id,
+                    ojo_evaluado=ojo_evaluado).first() is not None:
+                raise DiagnosisValidationError(409, "Ya existe un resultado para este ojo.")
+
+    @staticmethod
+    def crear_diagnostico_y_detalle(datos_bd, visita_id=None,
+                                   *, require_existing_diagnosis=False):
         if visita_id is None:
             visita = VisitaClinica(
                 paciente_id=datos_bd['paciente_id'],
@@ -22,16 +49,21 @@ class DiagnosisRepository:
             db.session.flush()
             visita_id = visita.id
         else:
-            visita = VisitaClinica.query.filter(
-                VisitaClinica.id == visita_id,
-                VisitaClinica.estado != 'ANULADA',
-            ).first()
+            # Serializar los POST del mismo diagnóstico/visita y usar lecturas
+            # actuales aun cuando autenticación haya creado una snapshot RR.
+            visita = VisitaClinica.query.filter_by(id=visita_id).with_for_update().populate_existing().first()
             if not visita:
-                raise Exception("Visita clinica no encontrada o anulada.")
+                raise DiagnosisValidationError(404, "Visita no encontrada.")
             if int(visita.paciente_id) != int(datos_bd['paciente_id']):
-                raise Exception("La visita seleccionada no pertenece al paciente.")
+                raise DiagnosisValidationError(409, "La visita no corresponde al paciente.")
+            if visita.estado != 'ACTIVA':
+                raise DiagnosisValidationError(409, "La visita no está disponible para diagnóstico.")
 
-        diag = Diagnostico.query.filter_by(visita_id=visita_id).first()
+        diag = Diagnostico.query.filter_by(visita_id=visita_id).with_for_update().populate_existing().first()
+        if require_existing_diagnosis and diag is None:
+            raise DiagnosisValidationError(404, "Diagnóstico no encontrado.")
+        if diag is not None and diag.estado not in ('PROCESADO', 'VALIDADO'):
+            raise DiagnosisValidationError(409, "Diagnóstico no disponible para procesamiento.")
         if not diag:
             diag = Diagnostico(
                 visita_id=visita_id,
@@ -46,14 +78,14 @@ class DiagnosisRepository:
         detalle = DiagnosticoDetalle.query.filter_by(
             diagnostico_retinopatia_id=diag.id,
             ojo_evaluado=datos_bd['ojo_evaluado']
-        ).first()
-
-        if not detalle:
-            detalle = DiagnosticoDetalle(
-                diagnostico_retinopatia_id=diag.id,
-                ojo_evaluado=datos_bd['ojo_evaluado']
-            )
-            db.session.add(detalle)
+        ).with_for_update().populate_existing().first()
+        if detalle is not None:
+            raise DiagnosisValidationError(409, "Ya existe un resultado para este ojo.")
+        detalle = DiagnosticoDetalle(
+            diagnostico_retinopatia_id=diag.id,
+            ojo_evaluado=datos_bd['ojo_evaluado']
+        )
+        db.session.add(detalle)
         
         detalle.imagen_original_url = datos_bd['imagen_original_url']
         detalle.imagen_gradcam_url = datos_bd.get('imagen_gradcam_url')
@@ -68,12 +100,7 @@ class DiagnosisRepository:
         if datos_bd.get('resultado_completo'):
             detalle.resultado_completo = datos_bd['resultado_completo']
         
-        detalle.estado_validacion = 'PENDIENTE'
-        detalle.resultado_final_id = None
-        detalle.comentario_medico = None
-        detalle.motivo_correccion = None
-        detalle.validado_por = None
-        detalle.fecha_validacion = None
+        # Solo se crea un detalle nuevo. Nunca reiniciar una decisión anterior.
         diag.estado = 'PROCESADO'
 
         db.session.commit()
