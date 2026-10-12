@@ -1,9 +1,12 @@
-import mimetypes
 import os
 import re
 from datetime import datetime
 
 from src.repositories.patient_repository import PatientRepository
+from utils.retinograph_storage import (
+    ExportRootError, OversizeExportError, UnsafeExportError,
+    list_export_names, read_export,
+)
 
 RETINOGRAPH_EXPORT_DIR = os.environ.get(
     "RETINOGRAPH_EXPORT_DIR",
@@ -11,13 +14,13 @@ RETINOGRAPH_EXPORT_DIR = os.environ.get(
 )
 
 FILENAME_PATTERN = re.compile(
-    r"^(?P<documento>[^_]+)_"
-    r"(?P<fecha>\d{8})_"
-    r"(?P<hora>\d{6})_"
+    r"(?P<documento>[^_]+)_"
+    r"(?P<fecha>[0-9]{8})_"
+    r"(?P<hora>[0-9]{6})_"
     r"(?P<tipo_imagen>[^_]+)_"
     r"(?P<ojo>[RL])_"
-    r"(?P<secuencia>\d+)"
-    r"\.(?P<extension>tif|tiff|jpg|jpeg|png)$",
+    r"(?P<secuencia>[0-9]+)"
+    r"\.(?P<extension>tif|tiff|jpg|jpeg|png)",
     re.IGNORECASE,
 )
 
@@ -39,22 +42,30 @@ def obtener_seleccion_automatica(paciente_id):
             "message": "El paciente no tiene documento registrado",
         }, 400
 
-    if not os.path.isdir(RETINOGRAPH_EXPORT_DIR):
+    try:
+        names = list_export_names(RETINOGRAPH_EXPORT_DIR)
+    except FileNotFoundError:
         return {
             "success": False,
             "message": "Recurso no encontrado.",
         }, 404
+    except ExportRootError:
+        return {"success": False, "message": "Exportaciones no disponibles."}, 503
 
     seleccion = {"OD": None, "OI": None}
     encontradas = 0
 
-    for entry in os.scandir(RETINOGRAPH_EXPORT_DIR):
-        if not entry.is_file():
-            continue
-
-        parsed = _parse_retinograph_filename(entry.name)
+    for name in names:
+        parsed = _parse_retinograph_filename(name)
         if not parsed or parsed["documento"] != documento:
             continue
+
+        try:
+            _, mime = read_export(RETINOGRAPH_EXPORT_DIR, name, parsed["extension"])
+        except (FileNotFoundError, UnsafeExportError, ExportRootError):
+            continue  # Una candidata desaparecida/no verificable nunca se ofrece.
+        parsed["mime_type"] = mime
+        parsed.pop("documento", None)  # El nombre ya lo incluye; no duplicar identidad.
 
         encontradas += 1
         ojo = parsed["ojo"]
@@ -66,8 +77,6 @@ def obtener_seleccion_automatica(paciente_id):
         "success": True,
         "data": {
             "paciente_id": paciente_id,
-            "documento": documento,
-            "directorio": RETINOGRAPH_EXPORT_DIR,
             "encontradas": encontradas,
             "imagenes": seleccion,
         },
@@ -90,32 +99,32 @@ def obtener_archivo_retinografo(paciente_id, filename):
             "message": "No autorizado.",
         }, 403
 
-    safe_name = os.path.basename(filename)
-    if safe_name != filename:
-        return {"success": False, "message": "Nombre de imagen inválido"}, 400
-
-    full_path = os.path.abspath(os.path.join(RETINOGRAPH_EXPORT_DIR, safe_name))
-    export_dir = os.path.abspath(RETINOGRAPH_EXPORT_DIR)
-    if os.path.commonpath([export_dir, full_path]) != export_dir:
-        return {"success": False, "message": "Ruta de imagen inválida"}, 400
-
-    if not os.path.isfile(full_path):
+    try:
+        image, mime = read_export(RETINOGRAPH_EXPORT_DIR, filename, parsed["extension"])
+    except FileNotFoundError:
         return {"success": False, "message": "Imagen no encontrada"}, 404
+    except OversizeExportError:
+        return {"success": False, "message": "Archivo demasiado grande."}, 413
+    except UnsafeExportError:
+        return {"success": False, "message": "Imagen no válida."}, 422
+    except ExportRootError:
+        return {"success": False, "message": "Exportaciones no disponibles."}, 503
 
     return {
         "success": True,
-        "directory": RETINOGRAPH_EXPORT_DIR,
-        "filename": safe_name,
-        "mimetype": _guess_mime_type(safe_name),
+        "content": image,
+        "mimetype": mime,
     }, 200
 
 
 def _parse_retinograph_filename(filename):
-    safe_name = os.path.basename(filename)
-    if safe_name != filename:
+    if (not isinstance(filename, str) or not filename or len(filename) > 255 or
+            any(c in filename for c in ('/', '\\', ':', '\x00')) or
+            any(ord(c) < 32 or ord(c) == 127 for c in filename) or
+            filename in ('.', '..')):
         return None
 
-    match = FILENAME_PATTERN.match(safe_name)
+    match = FILENAME_PATTERN.fullmatch(filename)
     if not match:
         return None
 
@@ -134,7 +143,7 @@ def _parse_retinograph_filename(filename):
 
     sequence = int(raw["secuencia"])
     return {
-        "filename": safe_name,
+        "filename": filename,
         "documento": raw["documento"],
         "ojo": eye,
         "ojo_original": raw["ojo"].upper(),
@@ -142,7 +151,8 @@ def _parse_retinograph_filename(filename):
         "secuencia": sequence,
         "extension": raw["extension"].lower(),
         "fecha_exportacion": exported_at.isoformat(),
-        "mime_type": _guess_mime_type(safe_name),
+        "mime_type": {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                      "tif": "image/tiff", "tiff": "image/tiff"}[raw["extension"].lower()],
     }
 
 
@@ -150,9 +160,5 @@ def _selection_key(parsed):
     return (
         parsed["fecha_exportacion"],
         parsed["secuencia"],
+        parsed["filename"],  # empate estable, sin depender de os.scandir
     )
-
-
-def _guess_mime_type(filename):
-    mime_type, _ = mimetypes.guess_type(filename)
-    return mime_type or "application/octet-stream"

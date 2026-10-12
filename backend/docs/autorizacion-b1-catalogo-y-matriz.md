@@ -92,8 +92,8 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/diagnosticar/visita/<int:visita_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: referencias de retinas y Grad-CAM; 404 si no hay diagnóstico, 200 con `ojos: []` si existe sin detalles. |
 | GET `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: conserva fallback histórico al ID de visita cuando no existe ID de diagnóstico; misma política para ambos. |
 | GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` [nuevo] + `imagenes.ver` [nuevo] | O | Incluye identidad, predicción, decisión e imágenes; pendiente de decisión contractual. |
-| GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` [nuevo] | O; E si autorizado | Consulta, no ejecuta la inferencia; pendiente. |
-| GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `imagenes.ver` [nuevo] | O; E si autorizado | Solo archivo correspondiente al paciente; pendiente. |
+| GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Pendiente 28B**: ambos grants vigentes del mismo rol oftalmológico; no ejecuta inferencia. |
+| GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Pendiente 28B**: ambos grants vigentes del mismo rol oftalmológico; el nombre solo propone una candidata. |
 | PUT `/api/diagnosticar/detalle/<int:detalle_id>/validar` | Primera validación por ojo | `diagnostico_retinopatia.validar` | O con habilitación médica | **Activa B1**: solo un detalle `PENDIENTE` de diagnóstico `PROCESADO`; 409 para revalidaciones; rectificación futura fuera de alcance. |
 | GET `/api/tipos-informe` | Leer tipos / catálogo informes | `informes.ver` **o** `informes.crear` | O, E, S según tarea | Solo catálogo; alternativa OR pendiente de confirmación. |
 | POST `/api/informes` | Registrar / informes | `informes.crear` | O | Ni asistente ni enfermero crean informes oftalmológicos por defecto. Si crea visita, verificar dependencia de `visitas.crear` antes del corte; pendiente. |
@@ -543,6 +543,52 @@ desactivar el rol/cuenta afecta a la solicitud siguiente. Se conservan la
 atomicidad limitada de 27B, los 409 por ojo y visita, y las 11 rutas B1 previas;
 ahora son **12**. La recuperación de OD/OI parcialmente completados y las
 etiquetas médicas siguen pendientes para 27D.
+
+## Exportaciones del retinógrafo (Prompt 28A)
+
+Antes `FILENAME_PATTERN.match` admitía sufijos, la selección seguía symlinks y
+contaba archivos por nombre, y la descarga comprobaba `abspath/commonpath` para
+luego reabrir por nombre con `send_from_directory`. MIME procedía únicamente de
+la extensión y el JSON devolvía `directorio` y `documento` redundante.
+
+Ahora `utils.retinograph_storage` abre el directorio por componentes sin seguir
+symlinks (POSIX: `dir_fd`/`O_NOFOLLOW`; Windows: `CreateFileW` con
+`FILE_FLAG_OPEN_REPARSE_POINT`, atributos y ruta final del **mismo handle**, con
+ancestros abiertos sin compartir DELETE/WRITE). La imagen se lee una sola vez
+desde su descriptor validado, con tamaño máximo 20 MiB; se verifica su formato
+JPEG/PNG/TIFF por Pillow, dimensiones 350–8192 px por lado y hasta 30 MP. El
+límite `RETINOGRAPH_MAX_IMAGE_BYTES` puede reducir los 20 MiB por aplicación,
+pero un valor inválido o que amplíe el máximo falla de forma segura. La
+respuesta se construye desde bytes verificados en memoria y nunca reabre la
+ruta. Errores son genéricos; no se publican rutas internas. El listado examina
+solo candidatos con nombre y documento coincidentes; cuenta exclusivamente
+archivos decodificables, y desempata fecha/secuencia con nombre completo en
+orden lexicográfico. Ya no incluye `directorio` ni repite `documento` en JSON.
+No hay caché persistente, las respuestas usan `private, no-store`.
+
+**Límite de seguridad:** los handles protegen contra redirección por nombre,
+pero no convierten el archivo en inmutable ante escritura concurrente sobre el
+mismo inode (incluidos mapas de memoria previos). Se compara tamaño y mtime del
+descriptor antes/después; la lectura está acotada y el contenido leído se valida,
+pero un escritor con acceso directo al directorio puede producir cambios que no
+constituyen una instantánea clínica. La configuración de la raíz y los permisos
+del filesystem son una frontera de confianza: no se aceptan raíces relativas ni
+ancestros symlink/junction, pero montajes especiales, hardlinks, exportadores
+maliciosos y origen real de la exportación requieren controles operativos.
+La prueba de junction y symlinks se ejecutó en Windows; POSIX se analizó en
+código, pero no se ejecutó en Linux en esta entrega.
+
+**No se ha migrado ninguna ruta B1:** ambas mantienen
+`@token_required`/`@clinical_access_required` y sus bypasses legacy hasta 28B.
+Política aprobada futura para **ambas**: `OFTALMOLOGO` activo con
+`pacientes.ver` + `imagenes.ver` del **mismo rol**, sin enfermero, asistente ni
+administrador solo; nunca sustituir `imagenes.ver` por
+`diagnostico_retinopatia.crear`. Siguen siendo 12 rutas B1. El nombre/documento
+y `R/L` solamente proponen una candidata, y la decodificación solo comprueba
+validez técnica: no hay pertenencia clínica acreditada. El botón «Selección
+Auto» ya no habilita inferencia de archivos importados sin una confirmación
+trazable; definirla sin ampliar ni asumir el esquema corresponde a 28C. La carga
+manual permanece fuera de esta comprobación específica y debe revisarse allí.
 
 ## Dependencias antes de activar B1
 

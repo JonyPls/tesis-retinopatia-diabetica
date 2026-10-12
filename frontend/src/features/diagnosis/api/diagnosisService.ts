@@ -113,7 +113,6 @@ export const validarDetalleDiagnostico = async (
 
 export interface RetinographAutoImage {
   filename: string;
-  documento: string;
   ojo: EyeKey;
   ojo_original: "R" | "L";
   tipo_imagen: string;
@@ -125,8 +124,6 @@ export interface RetinographAutoImage {
 
 export interface RetinographAutoSelection {
   paciente_id: number;
-  documento: string;
-  directorio: string;
   encontradas: number;
   imagenes: Partial<Record<EyeKey, RetinographAutoImage | null>>;
 }

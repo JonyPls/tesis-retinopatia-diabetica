@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDiagnosis } from "../features/diagnosis/hooks/useDiagnosis";
-import { crearDiagnostico, obtenerDetallesVisita, resultadoPersistido } from "../features/diagnosis/api/diagnosisService";
+import { crearDiagnostico, descargarImagenRetinografo, obtenerDetallesVisita, obtenerSeleccionAutomaticaRetinografo, resultadoPersistido } from "../features/diagnosis/api/diagnosisService";
 import type { DetalleDiagnosticoExistente, DiagnosisResult } from "../features/diagnosis/api/diagnosisService";
 import { toast } from "../hooks/use-toast";
 
@@ -13,7 +13,8 @@ vi.mock("../features/patients/api/patientService", () => ({
 }));
 vi.mock("../features/diagnosis/api/diagnosisService", async (importOriginal) => {
   const original = await importOriginal<typeof import("../features/diagnosis/api/diagnosisService")>();
-  return { ...original, crearDiagnostico: vi.fn(), obtenerDetallesVisita: vi.fn() };
+  return { ...original, crearDiagnostico: vi.fn(), obtenerDetallesVisita: vi.fn(),
+    obtenerSeleccionAutomaticaRetinografo: vi.fn(), descargarImagenRetinografo: vi.fn() };
 });
 vi.mock("../lib/imageUtils", () => ({
   convertToPreviewUrl: vi.fn().mockResolvedValue("blob:synthetic"), revokePreviewUrl: vi.fn(),
@@ -23,6 +24,8 @@ vi.mock("../hooks/use-toast", () => ({ toast: vi.fn() }));
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 const create = vi.mocked(crearDiagnostico);
 const read = vi.mocked(obtenerDetallesVisita);
+const selectExport = vi.mocked(obtenerSeleccionAutomaticaRetinografo);
+const downloadExport = vi.mocked(descargarImagenRetinografo);
 const result = (eye: "OD" | "OI", visitId = 30): DiagnosisResult => ({
   visita_id: visitId, detalle_id: eye === "OD" ? 11 : 12, diagnostico_codigo: 2,
   diagnostico_texto: "Moderada", confianza_general: 80, probabilidades_detalle: {},
@@ -58,6 +61,30 @@ beforeEach(() => {
 });
 
 describe("creación secuencial y conciliación por ojo", () => {
+  it("la selección automática queda como candidata y no habilita inferencia sin confirmación 28C", async () => {
+    selectExport.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: {
+      OD: { filename: "12345678_01012026_101010_fundus_R_1.jpg", ojo: "OD", ojo_original: "R",
+        tipo_imagen: "fundus", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
+      OI: { filename: "12345678_01012026_101010_fundus_L_1.png", ojo: "OI", ojo_original: "L",
+        tipo_imagen: "fundus", secuencia: 1, extension: "png", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/png" },
+    } });
+    downloadExport.mockResolvedValue(new Blob(["synthetic"]));
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    act(() => {
+      hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]);
+      hook.result.current.selectVisita(null);
+    });
+    await act(async () => hook.result.current.autoSelectRetinographImages());
+    expect(downloadExport).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.eyes.OD.isExistingImage).toBe(true);
+    expect(hook.result.current.eyes.OI.isExistingImage).toBe(true);
+    act(() => hook.result.current.goNext());
+    expect(hook.result.current.canNext).toBe(false);
+    act(() => hook.result.current.goNext());
+    expect(create).not.toHaveBeenCalled();
+    expect(hook.result.current.processingNotice).toMatch(/confirmar/i);
+    hook.unmount();
+  });
   it("conserva ambos éxitos, visita y validación pendiente", async () => {
     const hook = await start(["OD", "OI"]);
     expect(hook.result.current.step).toBe(3);

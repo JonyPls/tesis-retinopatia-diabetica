@@ -524,7 +524,8 @@ export function useDiagnosis(): DiagnosisHook {
             preview = null;
           }
 
-          return [eye, { file, preview, isExistingImage: false }] as const;
+          // Candidata no asociada clínicamente: no habilitar inferencia en 28A.
+          return [eye, { file, preview, isExistingImage: true }] as const;
         }),
       );
 
@@ -575,6 +576,11 @@ export function useDiagnosis(): DiagnosisHook {
 
   const handleSave = async () => {
     if (!selectedPatient || selectedVisita === undefined || savingRef.current) return;
+    if (eyes.OD.isExistingImage || eyes.OI.isExistingImage) {
+      setProcessingNotice("Las exportaciones son candidatas según su nombre. Falta confirmar de forma trazable paciente, imagen y ojo antes de utilizarlas para diagnóstico.");
+      toast({ title: "Exportación pendiente de confirmación", description: "No se ejecutó la inferencia. Confirme primero la asociación clínica.", variant: "destructive" });
+      return;
+    }
     if (!confirmedVisitRef.current &&
         (eyeProcessing.OD === "incierto" || eyeProcessing.OI === "incierto")) {
       setProcessingNotice("No se confirmó el ID de visita. Consulte el historial antes de procesar otro ojo o repetir la solicitud.");
@@ -850,7 +856,8 @@ export function useDiagnosis(): DiagnosisHook {
   // ── Navegación ────────────────────────────────────────────────────
   const canNext =
     (step === 1 && selectedPatient !== null && selectedVisita !== undefined) ||
-    (step === 2 && (eyes.OD.file !== null || eyes.OI.file !== null));
+    (step === 2 && (eyes.OD.file !== null || eyes.OI.file !== null) &&
+      !eyes.OD.isExistingImage && !eyes.OI.isExistingImage);
 
   const goNext = () => {
     if (step === 2) {

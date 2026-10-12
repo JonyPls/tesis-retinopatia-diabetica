@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from flask import Blueprint, request, jsonify, send_file, send_from_directory, current_app
+from flask import Blueprint, request, jsonify, send_file, current_app
 from werkzeug.exceptions import RequestEntityTooLarge
 from dl_model.validator import MAX_IMAGE_BYTES
 from services.diagnosis_service import (
@@ -157,7 +157,9 @@ def descargar_reporte_diagnostico(visita_id):
 @clinical_access_required('imagenes.ver', 'diagnosticos.crear')
 def auto_seleccion_retinografo(paciente_id):
     resultado, status_code = obtener_seleccion_automatica(paciente_id)
-    return jsonify(resultado), status_code
+    response = jsonify(resultado)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response, status_code
 
 
 @diagnosis_bp.route('/api/diagnosticar/retinografo/imagen', methods=['GET'])
@@ -185,12 +187,12 @@ def descargar_imagen_retinografo():
     if not resultado.get("success"):
         return jsonify(resultado), status_code
 
-    return send_from_directory(
-        resultado["directory"],
-        resultado["filename"],
-        mimetype=resultado["mimetype"],
-        as_attachment=False,
-    )
+    # El contenido verificado procede de un único descriptor ya cerrado; jamás
+    # resolver de nuevo el nombre de la exportación en send_from_directory.
+    response = send_file(BytesIO(resultado["content"]), mimetype=resultado["mimetype"],
+                         as_attachment=False)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @diagnosis_bp.route('/api/diagnosticar/detalle/<int:detalle_id>/validar', methods=['PUT'])

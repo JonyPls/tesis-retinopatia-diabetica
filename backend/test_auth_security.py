@@ -562,8 +562,8 @@ class AuthSecurityTests(unittest.TestCase):
         approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
         with tempfile.TemporaryDirectory(prefix="b1-transport-only-", dir=approved) as folder:
             Path(folder, "synthetic.jpg").write_bytes(b"\xff\xd8\xff\xd9")
-            image = Mock(return_value=({"success": True, "directory": folder,
-                                        "filename": "synthetic.jpg", "mimetype": "image/jpeg"}, 200))
+            image = Mock(return_value=({"success": True, "content": b"\xff\xd8\xff\xd9",
+                                        "mimetype": "image/jpeg"}, 200))
             pdf = Mock(return_value=(b"%PDF-1.4\nsynthetic-only\n", "synthetic.pdf"))
             report = Mock(return_value=({"success": True, "data": {"id": 123}}, 200))
             with (patch.object(diagnosis_routes, "obtener_archivo_retinografo", image),
@@ -592,6 +592,65 @@ class AuthSecurityTests(unittest.TestCase):
                 image.assert_called_once_with(101, "synthetic.jpg")
                 pdf.assert_called_once_with(123)
                 report.assert_called_once_with(123)
+
+    def test_28a_real_retinograph_routes_with_synthetic_files(self):
+        from test_retinograph_storage import service as real_service, synthetic_image
+
+        token = self.token()
+        headers = self.headers(token)
+        approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
+        with tempfile.TemporaryDirectory(prefix="retinograph-http-", dir=approved) as folder:
+            name = "12345678_01012026_101010_fundus_R_1.jpg"
+            image = synthetic_image()
+            Path(folder, name).write_bytes(image)
+            with (patch.object(real_service, "RETINOGRAPH_EXPORT_DIR", folder),
+                  patch.object(real_service.PatientRepository, "obtener_paciente_por_id",
+                               return_value={"nro_documento": "12345678"}) as patient,
+                  patch.object(diagnosis_routes, "obtener_archivo_retinografo", real_service.obtener_archivo_retinografo),
+                  patch.object(diagnosis_routes, "obtener_seleccion_automatica", real_service.obtener_seleccion_automatica)):
+                selection = self.client.get("/api/diagnosticar/retinografo/auto-seleccion/101", headers=headers)
+                self.assertEqual(selection.status_code, 200, selection.json)
+                self.assertEqual(selection.headers['Cache-Control'], 'private, no-store')
+                self.assertEqual(selection.json["data"]["imagenes"]["OD"]["filename"], name)
+                self.assertNotIn(folder, selection.get_data(as_text=True))
+                downloaded = self.client.get("/api/diagnosticar/retinografo/imagen",
+                                             query_string={"paciente_id": "101", "filename": name}, headers=headers)
+                self.assertEqual(downloaded.status_code, 200)
+                self.assertEqual(downloaded.get_data(), image)
+                self.assertEqual(downloaded.mimetype, "image/jpeg")
+                self.assertEqual(downloaded.headers['Cache-Control'], 'private, no-store')
+                downloaded.close()
+                with patch.dict(self.client.application.config, {'RETINOGRAPH_MAX_IMAGE_BYTES': 512}):
+                    self.assertEqual(self.client.get("/api/diagnosticar/retinografo/imagen",
+                        query_string={"paciente_id": 101, "filename": name}, headers=headers).status_code, 413)
+                self.assertEqual(self.client.get("/api/diagnosticar/retinografo/imagen",
+                    query_string={"paciente_id": 101, "filename": name + ".exe.txt"}, headers=headers).status_code, 400)
+                self.assertEqual(self.client.get("/api/diagnosticar/retinografo/imagen",
+                    query_string={"paciente_id": 101, "filename": "98765432" + name[8:]}, headers=headers).status_code, 403)
+                missing = name.replace("_R_1.jpg", "_L_2.jpg")
+                self.assertEqual(self.client.get("/api/diagnosticar/retinografo/imagen",
+                    query_string={"paciente_id": 101, "filename": missing}, headers=headers).status_code, 404)
+                Path(folder, missing).write_bytes(b"not-an-image")
+                rejected = self.client.get("/api/diagnosticar/retinografo/imagen",
+                    query_string={"paciente_id": 101, "filename": missing}, headers=headers)
+                self.assertEqual(rejected.status_code, 422)
+                self.assertNotIn(folder, rejected.get_data(as_text=True))
+                self.assertEqual(self.client.get("/api/diagnosticar/retinografo/auto-seleccion/101",
+                    headers=headers).json["data"]["encontradas"], 1)
+                for path in ("/api/diagnosticar/retinografo/auto-seleccion/101",
+                             "/api/diagnosticar/retinografo/imagen"):
+                    self.assertEqual(self.client.get(path, query_string={"token": token}, headers=headers).status_code, 401)
+                    self.assertEqual(self.client.get(path, query_string={"token": token}).status_code, 401)
+                self.assertGreaterEqual(patient.call_count, 3)
+                # La autorización sigue siendo legacy: sin privilegios no llega al servicio.
+                self.user.roles = ["Sin rol clínico"]
+                self.user.permisos = []
+                patient.reset_mock()
+                self.assertEqual(self.client.get("/api/diagnosticar/retinografo/auto-seleccion/101",
+                                                 headers=headers).status_code, 403)
+                self.assertEqual(self.client.get("/api/diagnosticar/retinografo/imagen",
+                    query_string={"paciente_id": 101, "filename": name}, headers=headers).status_code, 403)
+                patient.assert_not_called()
 
     def test_b1_real_image_route_rejects_url_tokens_before_lookup(self):
         self.set_role_grants({"OFTALMOLOGO": ["imagenes.ver"]})

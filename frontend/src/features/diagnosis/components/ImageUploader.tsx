@@ -79,6 +79,11 @@ export function ImageUploader({
             onClear={clearEye}
           />
         </div>
+        {(eyes.OD.isExistingImage || eyes.OI.isExistingImage) && (
+          <p role="alert" className="text-sm text-muted-foreground">
+            Exportación candidata por nombre: paciente y ojo aún no han sido confirmados clínicamente. No puede enviarse a inferencia desde esta selección automática.
+          </p>
+        )}
 
         {/* Barra de progreso de carga (0 / 1 / 2 imágenes) */}
         {loadedCount > 0 && (
