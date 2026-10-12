@@ -4,6 +4,12 @@ from src.models.informe_entities import Informe, TipoInforme
 from src.models.patient_entities import Paciente, VisitaClinica
 
 class InformeRepository:
+    class NotFound(Exception):
+        pass
+
+    class Conflict(Exception):
+        pass
+
     @staticmethod
     def listar_tipos_informe_activos():
         tipos = TipoInforme.query.filter_by(estado='ACTIVO').order_by(TipoInforme.id).all()
@@ -42,15 +48,20 @@ class InformeRepository:
         return visita.id
 
     @staticmethod
+    def validar_paciente(paciente_id: int):
+        if Paciente.query.filter_by(id=paciente_id, estado='ACTIVO').first() is None:
+            raise InformeRepository.NotFound()
+
+    @staticmethod
     def validar_visita(visita_id: int, paciente_id: int):
         visita = VisitaClinica.query.filter(
             VisitaClinica.id == visita_id,
             VisitaClinica.estado != 'ANULADA',
         ).first()
         if not visita:
-            raise Exception("Visita clinica no encontrada o anulada.")
-        if int(visita.paciente_id) != int(paciente_id):
-            raise Exception("La visita seleccionada no pertenece al paciente.")
+            raise InformeRepository.NotFound()
+        if visita.paciente_id != paciente_id:
+            raise InformeRepository.NotFound()
         return visita
 
     @staticmethod
@@ -58,10 +69,9 @@ class InformeRepository:
         existente = Informe.query.filter_by(
             visita_id=visita_id,
             tipo_informe_id=tipo_informe_id,
-            estado='ACTIVO',
         ).first()
         if existente:
-            raise Exception("Ya existe un informe activo de este tipo para la visita seleccionada.")
+            raise InformeRepository.Conflict()
 
         informe = Informe(
             visita_id=visita_id,
@@ -72,7 +82,7 @@ class InformeRepository:
             conclusion=conclusion,
         )
         db.session.add(informe)
-        db.session.commit()
+        db.session.flush()
         return informe.id
 
     @staticmethod

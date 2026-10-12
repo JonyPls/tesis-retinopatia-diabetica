@@ -1,5 +1,8 @@
 import json
+import math
 from flask import current_app
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from database import db
 from src.repositories.informe_repository import InformeRepository
 
 
@@ -22,38 +25,163 @@ def obtener_tipos():
     tipos = InformeRepository.listar_tipos_informe_activos()
     return {"success": True, "data": tipos}, 200
 
-def crear_nuevo_informe(datos, usuario_id):
-    paciente_id = datos.get("paciente_id")
-    tipo_informe_id = datos.get("tipo_informe_id")
-    datos_estructurados = datos.get("datos_estructurados", {})
-    conclusion = _extraer_conclusion(datos_estructurados)
-    visita_id = datos.get("visita_id") or datos.get("diagnostico_id")
 
-    if not paciente_id or not tipo_informe_id:
-        return {"success": False, "message": "paciente_id y tipo_informe_id son obligatorios."}, 400
+_FIELDS = {'paciente_id', 'tipo_informe_id', 'datos_estructurados', 'visita_id', 'diagnostico_id'}
+_RESERVED = {'id', 'usuario_id', 'user_id', 'creador', 'estado', 'fecha_creado', 'fecha_actualizado',
+             'paciente_id', 'tipo_informe_id', 'visita_id', 'diagnostico_id', 'schema_version'}
 
-    tipo = InformeRepository.obtener_tipo_informe_por_id(tipo_informe_id)
-    if not tipo:
-        return {"success": False, "message": "El tipo de informe no existe o está inactivo."}, 404
 
-    try:
-        if visita_id:
-            InformeRepository.validar_visita(int(visita_id), int(paciente_id))
-            visita_id = int(visita_id)
+class InvalidReportData(Exception):
+    pass
+
+
+def _positive_id(value, maximum):
+    return type(value) is int and 0 < value <= maximum
+
+
+def _validar_datos_estructurados(value):
+    """Contrato estructural, sin decidir rangos ni diagnósticos clínicos."""
+    if type(value) is not dict or not value:
+        raise InvalidReportData()
+
+    def visit(node, depth):
+        if depth > 8:
+            raise InvalidReportData()
+        if type(node) is dict:
+            if len(node) > 128:
+                raise InvalidReportData()
+            for key, item in node.items():
+                if (type(key) is not str or not key or len(key) > 100 or
+                        key.lower() in _RESERVED):
+                    raise InvalidReportData()
+                visit(item, depth + 1)
+        elif type(node) is list:
+            if len(node) > 128:
+                raise InvalidReportData()
+            for item in node:
+                visit(item, depth + 1)
+        elif type(node) is str:
+            if len(node) > 8192:
+                raise InvalidReportData()
+        elif node is None or type(node) is bool or type(node) is int:
+            pass
+        elif type(node) is float:
+            if not math.isfinite(node):
+                raise InvalidReportData()
         else:
-            visita_id = InformeRepository.crear_visita(int(paciente_id), int(usuario_id))
+            raise InvalidReportData()
+
+    visit(value, 0)
+    if len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode('utf-8')) > 65536:
+        raise InvalidReportData()
+    if 'conclusion' in value:
+        conclusion = value['conclusion']
+        if (conclusion is not None and type(conclusion) is not str and
+                (type(conclusion) is not list or
+                 any(type(item) is not str for item in conclusion))):
+            raise InvalidReportData()
+    if 'ojos' in value:
+        eyes = value['ojos']
+        if (type(eyes) is not list or not 1 <= len(eyes) <= 2 or
+                any(eye not in ('OD', 'OI') for eye in eyes) or len(set(eyes)) != len(eyes)):
+            raise InvalidReportData()
+    for key in ('valores', 'campos', 'grados'):
+        if key in value:
+            entries = value[key]
+            if (type(entries) is not dict or
+                    any(eye not in ('od', 'oi') for eye in entries)):
+                raise InvalidReportData()
+            for item in entries.values():
+                if key == 'valores':
+                    if type(item) not in (int, float) or not math.isfinite(item):
+                        raise InvalidReportData()
+                elif (type(item) is not dict or
+                      any(type(field) is not str for field in item.values())):
+                    raise InvalidReportData()
+
+
+def _is_duplicate_report(error):
+    original = getattr(error, 'orig', None)
+    args = getattr(original, 'args', ())
+    return (bool(args) and args[0] == 1062 and
+            'uq_informes_visita_tipo' in str(args[1] if len(args) > 1 else ''))
+
+
+def _rollback_informe():
+    try:
+        db.session.rollback()
+    except Exception:
+        current_app.logger.error("No se pudo completar rollback de informe")
+
+
+def crear_nuevo_informe(datos, usuario_id):
+    if type(datos) is not dict or not {'paciente_id', 'tipo_informe_id', 'datos_estructurados'} <= datos.keys() or set(datos) - _FIELDS:
+        return {"success": False, "message": "Solicitud de informe inválida."}, 400
+    paciente_id, tipo_id = datos['paciente_id'], datos['tipo_informe_id']
+    if not _positive_id(paciente_id, 4294967295) or not _positive_id(tipo_id, 65535):
+        return {"success": False, "message": "Identificador inválido."}, 400
+    has_visit, has_alias = 'visita_id' in datos, 'diagnostico_id' in datos
+    if (has_visit and not _positive_id(datos['visita_id'], 18446744073709551615) or
+            has_alias and not _positive_id(datos['diagnostico_id'], 18446744073709551615) or
+            has_visit and has_alias and datos['visita_id'] != datos['diagnostico_id']):
+        return {"success": False, "message": "Identificador de visita inválido."}, 400
+    visita_id = datos['visita_id'] if has_visit else datos.get('diagnostico_id')
+    try:
+        _validar_datos_estructurados(datos['datos_estructurados'])
+    except (InvalidReportData, ValueError, OverflowError, TypeError):
+        return {"success": False, "message": "Datos estructurados inválidos."}, 422
+
+    commit_started = False
+    try:
+        InformeRepository.validar_paciente(paciente_id)
+        tipo = InformeRepository.obtener_tipo_informe_por_id(tipo_id)
+        if not tipo:
+            raise InformeRepository.NotFound()
+        if visita_id:
+            InformeRepository.validar_visita(visita_id, paciente_id)
+        else:
+            visita_id = InformeRepository.crear_visita(paciente_id, usuario_id)
 
         informe_id = InformeRepository.crear_informe(
             visita_id=visita_id,
-            tipo_informe_id=int(tipo_informe_id),
-            usuario_id=int(usuario_id),
-            datos_estructurados=datos_estructurados,
-            conclusion=conclusion,
+            tipo_informe_id=tipo_id,
+            usuario_id=usuario_id,
+            datos_estructurados=datos['datos_estructurados'],
+            conclusion=_extraer_conclusion(datos['datos_estructurados']),
             schema_version=tipo.get("schema_version_actual") or 1,
         )
+        commit_started = True
+        db.session.commit()
+    except InformeRepository.NotFound:
+        _rollback_informe()
+        return {"success": False, "message": "Recurso no encontrado."}, 404
+    except InformeRepository.Conflict:
+        _rollback_informe()
+        return {"success": False, "message": "Ya existe un informe de este tipo para la visita."}, 409
+    except IntegrityError as error:
+        _rollback_informe()
+        if not commit_started and _is_duplicate_report(error):
+            return {"success": False, "message": "Ya existe un informe de este tipo para la visita."}, 409
+        if commit_started:
+            current_app.logger.warning("Resultado de commit de informe incierto; no reintentar automáticamente")
+        else:
+            current_app.logger.error("Error de integridad al crear informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+    except DBAPIError:
+        # El rollback limpia la sesión; si falló commit NO prueba que MySQL no persistiera.
+        _rollback_informe()
+        if commit_started:
+            current_app.logger.warning("Resultado de commit de informe incierto; no reintentar automáticamente")
+        else:
+            current_app.logger.error("Error de persistencia al crear informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
     except Exception:
-        current_app.logger.exception("Error al crear informe")
-        return {"success": False, "message": "No se pudo procesar la solicitud."}, 400
+        _rollback_informe()
+        if commit_started:
+            current_app.logger.warning("Resultado de commit de informe incierto; no reintentar automáticamente")
+        else:
+            current_app.logger.error("Error al crear informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
     return {"success": True, "data": {"id": informe_id, "visita_id": visita_id, "diagnostico_id": visita_id}}, 201
 

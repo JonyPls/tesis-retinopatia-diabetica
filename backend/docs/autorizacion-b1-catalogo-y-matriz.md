@@ -66,7 +66,7 @@ pacientes: no existe vínculo exclusivo paciente-profesional.
 | --- | --- | --- |
 | `ADMINISTRADOR_SISTEMA` (administrativo) | Semilla v2: conservar `dashboard.ver`, `configuracion.ver`, `usuarios.ver/crear/editar/asignar_roles` (códigos concretos) y `catalogos.gestionar`; retirar los once grants clínicos detallados en la propuesta SQL. | Puede administrar cuentas y privilegios administrativos ajenos cuando exista API segura. No diagnostica, valida ni gestiona informes por la sola jerarquía. Dashboard actual consulta pacientes: resolver esa dependencia antes del corte estricto. |
 | Gerente (rol **futuro**, sin seed) | Permisos de cuentas operativas delegables **por definir**; no asignar ni crear el rol aquí. | Gestión de trabajadores/especialistas dentro de una lista autorizada; no crea administradores/gerentes, no se autoeleva y no adquiere facultades clínicas automáticamente. |
-| `OFTALMOLOGO` (médico habilitado) | Lectura compartida: `pacientes.ver`, `visitas.ver`, `informes.ver`, `diagnostico_retinopatia.ver` [nuevo] e `imagenes.ver` [nuevo]. Mantener `diagnostico_retinopatia.crear` y `diagnostico_retinopatia.validar` como facultades separadas y expresas. | Consulta historiales de TODOS los pacientes; crea/valida solo cuando conserva cada permiso médico y la habilitación profesional correspondiente. `informes.editar` permite editar propios con autoría; ajenos requiere autorización especial y auditoría. No recibe `informes.inactivar` automáticamente. |
+| `OFTALMOLOGO` (médico habilitado) | Lectura compartida: `pacientes.ver`, `visitas.ver`, `informes.ver`, `diagnostico_retinopatia.ver` [nuevo] e `imagenes.ver` [nuevo]. Mantener `diagnostico_retinopatia.crear` y `diagnostico_retinopatia.validar` como facultades separadas y expresas. | Consulta historiales de TODOS los pacientes; crea/valida solo cuando conserva cada permiso médico y la habilitación profesional correspondiente. `informes.editar` no habilita hoy PUT: edición propia y ajena bloqueadas hasta versionado y auditoría aprobados. No recibe `informes.inactivar` automáticamente. |
 | `ENFERMERO` (asistencial) | Conservar semilla de `pacientes.ver/crear`, `visitas.ver/crear` e `informes.ver` según tarea; sin grants nuevos automáticos. | Apoyo asistencial aprobado. No valida IA ni edita/inactiva informes por defecto. |
 | `ASISTENTE_ADMINISTRATIVO` (operativo) | Conservar `pacientes.ver/crear/editar`, `visitas.ver`, `informes.ver` según alcance aprobado; **retirar `informes.crear`**. | Puede registrar pacientes y, cuando exista endpoint apropiado, actualizar SOLO campos administrativos. No crea/edita/valida informes clínicos ni valida IA. `pacientes.editar` por sí solo no separa campos clínicos: falta autorización por campo/API. |
 
@@ -94,18 +94,18 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | POST `/api/diagnosticar` | Crear IA / diagnósticos | `diagnostico_retinopatia.crear` + `imagenes.ver`; también `visitas.crear` solo si crea visita | O | **Activa B1 (27C)**: todos los grants del mismo rol habilitante; no equivale a validación médica. |
 | GET `/api/diagnosticar/visita/<int:visita_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: referencias de retinas y Grad-CAM; 404 si no hay diagnóstico, 200 con `ojos: []` si existe sin detalles. |
 | GET `/api/diagnosticar/diagnostico/<int:diagnostico_id>/detalles` | Leer IA / detalles por ojo | `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1**: conserva fallback histórico al ID de visita cuando no existe ID de diagnóstico; misma política para ambos. |
-| GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` [nuevo] + `imagenes.ver` [nuevo] | O | Incluye identidad, predicción, decisión e imágenes; pendiente de decisión contractual. |
+| GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` + `imagenes.ver` | O | **Activa B1 (29A)**: `diagnosis.pdf_read`, autoriza antes de generar, sin caché reutilizable. |
 | GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Activa B1 (28B)**: `retinograph.select`; ambos grants vigentes del mismo rol oftalmológico; no ejecuta inferencia. |
 | GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `pacientes.ver` + `imagenes.ver` | O | **Activa B1 (28B)**: `retinograph.download`; el nombre solo propone una candidata, no acredita identidad. |
 | PUT `/api/diagnosticar/detalle/<int:detalle_id>/validar` | Primera validación por ojo | `diagnostico_retinopatia.validar` | O con habilitación médica | **Activa B1**: solo un detalle `PENDIENTE` de diagnóstico `PROCESADO`; 409 para revalidaciones; rectificación futura fuera de alcance. |
-| GET `/api/tipos-informe` | Leer tipos / catálogo informes | `informes.ver` **o** `informes.crear` | O, E, S según tarea | Solo catálogo; alternativa OR pendiente de confirmación. |
-| POST `/api/informes` | Registrar / informes | `informes.crear` | O | Ni asistente ni enfermero crean informes oftalmológicos por defecto. Si crea visita, verificar dependencia de `visitas.crear` antes del corte; pendiente. |
-| GET `/api/informes/<int:informe_id>` | Leer / informes | `informes.ver` | O, E, S según tarea | Todos los especialistas O con lectura ven informes de todos los pacientes; pendiente. |
-| PUT `/api/informes/<int:informe_id>` | Editar / informes | `informes.editar` | O | **Propio:** comparar `informes.usuario_id`; **ajeno:** requiere permiso especial nuevo pendiente y auditoría. Finalizados: impedir edición silenciosa. Pendiente. |
-| DELETE `/api/informes/<int:informe_id>` | Inactivar / informes | `informes.inactivar` [nuevo] | O con habilitación específica | Baja lógica `INACTIVO`, NO anulación; autoría/trazabilidad pendientes. |
-| GET `/api/informes/paciente/<int:paciente_id>` | Listar / informes | `informes.ver` | O, E, S según tarea | Lectura compartida sujeta a permiso; pendiente. |
-| GET `/api/informes/visita/<int:visita_id>` | Listar / informes | `informes.ver` | O, E, S según tarea | No basta `visitas.ver` por sí solo; pendiente. |
-| GET `/api/informes/diagnostico/<int:diagnostico_id>` | Listar / informes | `informes.ver` | O, E, S según tarea | El servicio actual interpreta el ID como visita; pendiente. |
+| GET `/api/tipos-informe` | Leer tipos / catálogo informes | `informes.ver` | O, E, S | **Activa B1 (29A):** `reports.catalog_read`; no concede lectura clínica completa. |
+| POST `/api/informes` | Registrar / informes | `informes.crear`; además `visitas.crear` si crea visita | O | **Activa B1 (29B):** `reports.create` y `reports.create_with_visit` según modalidad. |
+| GET `/api/informes/<int:informe_id>` | Leer / informes | `informes.ver` | O | **Activa B1 (29A):** `reports.full_read`; acceso institucional compartido. |
+| PUT `/api/informes/<int:informe_id>` | Editar / informes | Ninguno: deshabilitado | Ninguno | **Bloqueado (29A):** 403 autenticado hasta contar con edición versionada/auditable. |
+| DELETE `/api/informes/<int:informe_id>` | Inactivar / informes | Ninguno: deshabilitado | Ninguno | **Bloqueado (29A):** 403 autenticado hasta disponer de inactivación auditable. |
+| GET `/api/informes/paciente/<int:paciente_id>` | Listar / informes | `informes.ver` | O | **Activa B1 (29A):** `reports.full_read`. |
+| GET `/api/informes/visita/<int:visita_id>` | Listar / informes | `informes.ver` | O | **Activa B1 (29A):** `reports.full_read`. |
+| GET `/api/informes/diagnostico/<int:diagnostico_id>` | Listar / informes | `informes.ver` | O | **Activa B1 (29A):** el ID sigue siendo ID de visita. |
 | GET `/uploads/retinas/<path:filename>` | Ver archivo protegido / imágenes | `imagenes.ver` | O; E si autorizado | **Activa B1**: `images.read` con grant vigente del rol clínico, comprobación de archivo registrado, extensión de imagen y confinamiento al directorio. JWT solo por Bearer, no `?token=`. |
 
 `POST /api/login` y `GET /` no son rutas clínicas protegidas. No existe hoy
@@ -681,14 +681,68 @@ y la raíz `uploads/retinas` del generador original. La resistencia a enlaces
 simbólicos o escrituras fuera de banda en esa raíz es una revisión de
 almacenamiento separada; 29A no modifica ese lector ni afirma una explotación.
 
-El bloqueo de escritura es **temporal**: PUT requiere edición versionada y
+El bloqueo de PUT y DELETE es **temporal**: PUT requiere edición versionada y
 auditable, y DELETE requiere inactivación auditable; anulación clínica es una
 operación independiente, todavía sin endpoint. No se añadieron permisos,
-grants, tablas ni columnas. `POST /api/informes` **permanece legacy e inseguro**:
-creación por bypass de rol, visita indirecta, validación, rollback y concurrencia
-son prioridad alta para 29B. Se permiten informes de exámenes independientes
+grants, tablas ni columnas. **Al cierre de 29A**, `POST /api/informes` aún
+permanecía legacy; su migración de creación corresponde a 29B, detallada abajo.
+Se permiten informes de exámenes independientes
 sin diagnóstico IA validado; no se introdujo ninguna regla médica nueva.
 
 Las pruebas `expectedFailure` sobre endpoints legacy aislados de
 `test_auth_security.py` no representan la autorización de estas rutas nuevas;
 se mantienen como evidencia histórica hasta migrar sus otras operaciones.
+
+## 29B: creación transaccional de informes de exámenes
+
+`POST /api/informes` usa `reports.create`: JWT Bearer y cuenta activa, rol
+`OFTALMOLOGO` activo con `informes.crear` activo concedido **al mismo rol**.
+Sin `visita_id` ni su alias `diagnostico_id` se exige además
+`reports.create_with_visit` (`informes.crear` + `visitas.crear` en
+`OFTALMOLOGO`), antes de consultar pacientes o crear la visita. Administración,
+enfermería, asistencia, permisos de otro rol, `informes.gestionar` y comodines
+no sustituyen esta política. Para una visita existente basta `informes.crear`;
+se permite la lectura institucional compartida, no hay propiedad exclusiva.
+
+**Contrato HTTP:** JSON objeto con `paciente_id`, `tipo_informe_id` y
+`datos_estructurados` obligatorios; opcionalmente `visita_id` o
+`diagnostico_id` como **ID de visita**, nunca de diagnóstico IA. Si vienen
+ambos deben coincidir. IDs enteros positivos (no booleanos ni texto), con
+rango SQL; presencia explícita de ID inválido nunca crea una visita sustituta.
+No se admiten otros campos superiores, incluidos autor, estado o fechas. En
+éxito: `201` con `data.id`, `data.visita_id` y `data.diagnostico_id` (alias del
+mismo ID). La conclusión se extrae de `datos_estructurados.conclusion` como
+antes. `usuario_id`, estado inicial `ACTIVO`, fechas y `schema_version` son
+controlados por servidor/ORM. No se exige diagnóstico IA validado.
+
+`datos_estructurados` debe ser objeto JSON no vacío, sin metadatos reservados;
+se limita la solicitud a 64 KiB, profundidad a 8 niveles, máximo de 128
+entradas por objeto/lista, 100 caracteres por clave y 8192 por cadena. Se
+rechazan números no finitos; si aparecen `conclusion`, `ojos`, `valores`,
+`campos` o `grados`, sus tipos y estructura deben corresponder a las formas
+JSON actuales del frontend (OD/OI y claves `od`/`oi`), sin imponer umbrales
+clínicos ni campos médicos obligatorios no documentados. Los seis tipos activos
+del maestro siguen siendo válidos en backend; solo 2, 3 y 4 tienen formulario
+frontend. Contratos médicos específicos para otros tipos requieren aprobación.
+
+El repositorio exige paciente `ACTIVO`, tipo `ACTIVO`, visita existente del
+mismo paciente y no `ANULADA` (una visita `CERRADA` continúa admitida por la
+regla previa). Si falta visita, su `INSERT` y el del informe comparten **un
+commit**; ambos `flush` ocurren dentro de la unidad de trabajo. Duplicado
+por visita/tipo, aun `INACTIVO` o `ANULADO`, devuelve `409`: la consulta previa
+no sustituye la restricción SQL `uq_informes_visita_tipo`, defensa definitiva
+en carreras. No hay upsert ni reactivación. `400` identifica ID/envelope
+inválido, `404` recurso inexistente/inactivo/anulado o relación paciente–visita
+inválida, `422` estructura de datos incompatible, `500` error interno o
+resultado incierto. Las respuestas nunca incluyen SQL ni datos clínicos.
+
+Ante error de validación no se escribe; ante fallo de `flush`, unicidad o
+persistencia se intenta rollback de la sesión. Si una excepción aparece **tras
+intentar commit**, `500` no afirma rollback: puede existir un registro ya
+confirmado. No hay reintento automático ni idempotencia persistente; se debe
+conciliar consultando la visita antes de repetir manualmente. El frontend
+guarda varios tipos por POST secuenciales; un error posterior **no revierte**
+informes de POST anteriores. La conciliación de éxito parcial y respuestas
+inciertas queda pendiente para una adaptación posterior. PUT/DELETE siguen
+bloqueados; edición versionada, anulación e inactivación auditables no forman
+parte de 29B.

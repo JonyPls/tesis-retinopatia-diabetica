@@ -2025,6 +2025,70 @@ class AuthSecurityTests(unittest.TestCase):
             edit.assert_not_called()
             delete.assert_not_called()
 
+    def test_29b_real_post_requires_provenance_and_conditional_visit_grant(self):
+        path = '/api/informes'
+        payload = {'paciente_id': 101, 'tipo_informe_id': 2,
+                   'datos_estructurados': {'nota': 'Sintetica'}}
+        with patch.object(informe_routes, 'crear_nuevo_informe',
+                          return_value=({'success': True, 'data': {
+                              'id': 9, 'visita_id': 301, 'diagnostico_id': 301}}, 201)) as create:
+            self.set_role_grants({'OFTALMOLOGO': ['informes.crear']})
+            token = self.token()
+            headers = self.headers(token)
+            self.assertEqual(self.client.post(path, headers=headers,
+                                              json={**payload, 'visita_id': 301}).status_code, 201)
+            create.assert_called_once_with({**payload, 'visita_id': 301}, self.user.id)
+            create.reset_mock()
+            self.assertEqual(self.client.post(path, headers=headers,
+                                              json={**payload, 'diagnostico_id': 301}).status_code, 201)
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.crear'],
+                                  'ADMINISTRADOR_SISTEMA': ['visitas.crear']})
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.crear', 'visitas.crear'],
+                                  'ADMINISTRADOR_SISTEMA': ['informes.gestionar']})
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 201)
+            for role in ('ADMINISTRADOR_SISTEMA', 'ENFERMERO', 'ASISTENTE_ADMINISTRATIVO'):
+                self.set_role_grants({role: ['informes.crear', 'visitas.crear']})
+                count = create.call_count
+                self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 403)
+                self.assertEqual(create.call_count, count)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.gestionar', 'visitas.crear']})
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.crear', 'visitas.crear']})
+            count = create.call_count
+            for invalid_headers, query in (({}, None), (self.headers('invalid'), None),
+                                           (headers, {'token': token})):
+                self.assertEqual(self.client.post(path, headers=invalid_headers, json=payload,
+                                                  query_string=query).status_code, 401)
+            self.active = False
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 401)
+            self.assertEqual(create.call_count, count)
+
+    def test_29b_post_rechecks_grants_and_rejects_bad_envelope_before_service(self):
+        path = '/api/informes'
+        payload = {'paciente_id': 101, 'tipo_informe_id': 2,
+                   'datos_estructurados': {'nota': 'Sintetica'}}
+        roles = self.set_role_grants({'OFTALMOLOGO': ['informes.crear', 'visitas.crear']})
+        headers = self.headers(self.token())
+        with patch.object(informe_routes, 'crear_nuevo_informe',
+                          return_value=({'success': True, 'data': {}}, 201)) as create:
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 201)
+            roles['OFTALMOLOGO'].permisos_rel[0].permiso.estado = 'INACTIVO'
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 403)
+            roles['OFTALMOLOGO'].permisos_rel[0].permiso.estado = 'ACTIVO'
+            roles['OFTALMOLOGO'].permisos_rel[1].permiso.estado = 'INACTIVO'
+            self.assertEqual(self.client.post(path, headers=headers, json=payload).status_code, 403)
+            for body in ([], None, 'no es un objeto'):
+                self.assertEqual(self.client.post(path, headers=headers, json=body).status_code, 400)
+            self.assertEqual(self.client.post(path, headers=headers, data='{',
+                                              content_type='application/json').status_code, 400)
+            self.assertEqual(self.client.post(path, headers=headers, data='x' * 65537,
+                                              content_type='application/json').status_code, 413)
+            self.assertEqual(self.client.post(path, headers=headers, data='texto',
+                                              content_type='text/plain').status_code, 400)
+            self.assertEqual(create.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

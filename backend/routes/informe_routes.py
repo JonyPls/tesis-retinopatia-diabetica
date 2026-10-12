@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
-from utils.security import clinical_access_required, token_required
-from utils.strict_authorization import disabled_authenticated_operation, strict_authorization_required
+from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
+from utils.strict_authorization import (AuthorizationInputError, disabled_authenticated_operation,
+                                        strict_authorization_required)
 from services.informe_service import (
     obtener_tipos,
     crear_nuevo_informe,
@@ -11,6 +12,26 @@ from services.informe_service import (
 )
 informe_bp = Blueprint("informe_bp", __name__)
 
+
+def _report_requires_new_visit():
+    # Se ejecuta después de reports.create, antes de cualquier consulta clínica.
+    request.max_content_length = 65536
+    if request.content_length is not None and request.content_length > 65536:
+        raise AuthorizationInputError(413, "Solicitud demasiado grande.")
+    if not request.is_json:
+        raise AuthorizationInputError(400, "Solicitud de informe inválida.")
+    try:
+        data = request.get_json()
+    except RequestEntityTooLarge:
+        raise AuthorizationInputError(413, "Solicitud demasiado grande.") from None
+    except BadRequest:
+        raise AuthorizationInputError(400, "Solicitud de informe inválida.") from None
+    if type(data) is not dict:
+        raise AuthorizationInputError(400, "Solicitud de informe inválida.")
+    request.report_create_data = data
+    return 'visita_id' not in data and 'diagnostico_id' not in data
+
+
 @informe_bp.route("/api/tipos-informe", methods=["GET"])
 @strict_authorization_required("reports.catalog_read")
 def listar_tipos():
@@ -18,12 +39,11 @@ def listar_tipos():
     return jsonify(resp), status
 
 @informe_bp.route("/api/informes", methods=["POST"])
-@token_required
-@clinical_access_required("informes.crear", "informes.gestionar")
+@strict_authorization_required("reports.create", conditional_operation="reports.create_with_visit",
+                               requires_conditional_operation=_report_requires_new_visit)
 def crear():
-    data = request.get_json() or {}
     usuario_id = request.current_user.get("user_id")
-    resp, status = crear_nuevo_informe(data, usuario_id)
+    resp, status = crear_nuevo_informe(request.report_create_data, usuario_id)
     return jsonify(resp), status
 
 @informe_bp.route("/api/informes/<int:informe_id>", methods=["GET"])

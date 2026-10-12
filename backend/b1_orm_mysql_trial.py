@@ -29,7 +29,8 @@ from flask import Flask, jsonify, request
 import jwt
 from sqlalchemy import event, inspect, select
 from sqlalchemy.engine import URL
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
+from pymysql.err import IntegrityError as MySQLIntegrityError
 from werkzeug.security import generate_password_hash
 from PIL import Image
 
@@ -44,6 +45,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     from src.models.patient_entities import Paciente, VisitaClinica
     from src.repositories.patient_repository import PatientRepository
     from src.repositories.diagnosis_repository import DiagnosisRepository
+    from src.repositories.informe_repository import InformeRepository
     from test_diagnosis_input import validator as real_validator, image_bytes
     from utils import diagnosis_storage  # Mantener clase única tras patch.dict(sys.modules).
     import numpy as np
@@ -3165,6 +3167,289 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         after = db.session.get(informe_entities.Informe, report_id)
         self.assertEqual({column.name: getattr(after, column.name)
                           for column in informe_entities.Informe.__table__.columns}, before)
+
+    @contextmanager
+    def report_visit(self, *, patient_index=1, state='ACTIVA'):
+        visit = VisitaClinica(paciente_id=self.patient_ids[patient_index],
+                             usuario_id=self.user_ids['colleague'], estado=state)
+        db.session.add(visit)
+        db.session.commit()
+        identifier = visit.id
+        db.session.remove()
+        try:
+            yield identifier
+        finally:
+            db.session.remove()
+            db.session.query(informe_entities.Informe).filter_by(visita_id=identifier).delete()
+            db.session.query(VisitaClinica).filter_by(id=identifier).delete()
+            db.session.commit()
+            db.session.remove()
+
+    def report_payload(self, *, visit_id=None, type_id=2, patient_index=1):
+        payload = {'paciente_id': self.patient_ids[patient_index], 'tipo_informe_id': type_id,
+                   'datos_estructurados': {'nota': 'Resultado sintético',
+                                            'conclusion': ['Conclusión sintética']}}
+        if visit_id is not None:
+            payload['visita_id'] = visit_id
+        return payload
+
+    def test_29b_real_post_authorization_provenance_and_shared_visit(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            payload = self.report_payload(visit_id=visit_id)
+            for bearer in (None, 'invalid', self.token(expired=True)):
+                denied, sql = self.call(path, method='POST', token=bearer,
+                                        json_data=payload, measure=True)
+                self.assertEqual(denied.status_code, 401)
+                self.assertEqual(sql, [])
+            denied, sql = self.call(path + '?token=' + self.token(), method='POST',
+                                    token=self.token(), json_data=payload, measure=True)
+            self.assertEqual(denied.status_code, 401)
+            self.assertEqual(sql, [])
+            for profile in ('administrator', 'nurse', 'assistant'):
+                denied, sql = self.call(path, method='POST', token=self.token(profile),
+                                        json_data=payload, measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from pacientes' in q.lower().replace('`', '') or
+                                     'from visitas_clinicas' in q.lower().replace('`', '') or
+                                     'from informes' in q.lower().replace('`', '') for q in sql))
+            token = self.token()
+            with self.temporary_grant('OFTALMOLOGO', 'informes.crear', present=False):
+                denied, sql = self.call(path, method='POST', token=token,
+                                        json_data=payload, measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+                for profile in ('dual', 'assistant_dual'):
+                    self.assertEqual(self.call(path, method='POST', token=self.token(profile),
+                                               json_data=payload)[0].status_code, 403)
+            with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+                self.assertEqual(self.call(path, method='POST', token=token,
+                                           json_data=payload)[0].status_code, 401)
+            response, _ = self.call(path, method='POST', token=self.token('dual'), json_data=payload)
+            self.assertEqual(response.status_code, 201, response.json)
+            self.assertEqual(response.json['data']['visita_id'], visit_id)
+            self.assertEqual(response.json['data']['diagnostico_id'], visit_id)
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, response.json['data']['id'])
+            self.assertEqual(report.usuario_id, self.user_ids['dual'])
+            self.assertEqual(report.estado, 'ACTIVO')
+            self.assertEqual(report.conclusion, 'Conclusión sintética')
+            self.assertEqual(db.session.get(VisitaClinica, visit_id).usuario_id,
+                             self.user_ids['colleague'])
+            self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
+
+    def test_29b_real_post_existing_vs_new_visit_grant_and_rollback(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            with self.temporary_grant('OFTALMOLOGO', 'visitas.crear', present=False):
+                existing = self.report_payload(visit_id=visit_id, type_id=3)
+                response, _ = self.call(path, method='POST', token=self.token(), json_data=existing)
+                self.assertEqual(response.status_code, 201, response.json)
+                denied, sql = self.call(path, method='POST', token=self.token(),
+                                        json_data=self.report_payload(type_id=4), measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from pacientes' in q.lower().replace('`', '') or
+                                     'from visitas_clinicas' in q.lower().replace('`', '') or
+                                     'insert into ' in q.lower() for q in sql))
+            # Dos tipos pueden coexistir en la misma visita sin diagnóstico IA.
+            response, _ = self.call(path, method='POST', token=self.token('colleague'),
+                                    json_data=self.report_payload(visit_id=visit_id, type_id=4))
+            self.assertEqual(response.status_code, 201, response.json)
+
+        payload = self.report_payload(type_id=2)
+        before = VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                                               motivo_consulta='Registro de informe clinico').count()
+        response, sql = self.call(path, method='POST', token=self.token(),
+                                  json_data=payload, measure=True)
+        self.assertEqual(response.status_code, 201, response.json)
+        self.assertEqual(sum('insert into visitas_clinicas' in q.lower().replace('`', '')
+                             for q in sql), 1)
+        self.assertEqual(sum('insert into informes' in q.lower().replace('`', '') for q in sql), 1)
+        new_visit, new_report = response.json['data']['visita_id'], response.json['data']['id']
+        db.session.remove()
+        self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                              motivo_consulta='Registro de informe clinico').count(), before + 1)
+        self.assertEqual(db.session.get(VisitaClinica, new_visit).usuario_id,
+                         self.user_ids['ophthalmologist'])
+        self.assertEqual(db.session.get(informe_entities.Informe, new_report).visita_id, new_visit)
+        db.session.remove()
+        db.session.query(informe_entities.Informe).filter_by(id=new_report).delete()
+        db.session.query(VisitaClinica).filter_by(id=new_visit).delete()
+        db.session.commit()
+        db.session.remove()
+
+        # El flush de visita no es commit: falla el informe y desaparece la visita.
+        with patch.object(InformeRepository, 'crear_informe', side_effect=RuntimeError('synthetic')):
+            failed, _ = self.call(path, method='POST', token=self.token(), json_data=payload)
+        self.assertEqual(failed.status_code, 500)
+        db.session.remove()
+        self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                              motivo_consulta='Registro de informe clinico').count(), before)
+        with patch.object(db.session, 'commit', side_effect=RuntimeError('synthetic before commit')):
+            failed, _ = self.call(path, method='POST', token=self.token(), json_data=payload)
+        self.assertEqual(failed.status_code, 500)
+        db.session.remove()
+        self.assertEqual(VisitaClinica.query.filter_by(paciente_id=self.patient_ids[1],
+                              motivo_consulta='Registro de informe clinico').count(), before)
+
+    def test_29b_real_post_validation_alias_and_no_mutation_on_errors(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id, self.report_visit(state='ANULADA') as annulled:
+            valid = self.report_payload(visit_id=visit_id)
+            bad = (
+                ({**valid, 'paciente_id': self.patient_ids[0]}, 404),
+                ({**valid, 'paciente_id': 999999999}, 404),
+                ({**valid, 'visita_id': 999999999}, 404),
+                ({**valid, 'visita_id': annulled}, 404),
+                ({**valid, 'tipo_informe_id': 9999}, 404),
+                ({**valid, 'visita_id': False}, 400),
+                ({**valid, 'visita_id': 0}, 400),
+                ({**valid, 'visita_id': -1}, 400),
+                ({**valid, 'visita_id': 'malformado'}, 400),
+                ({**valid, 'paciente_id': True}, 400),
+                ({**valid, 'tipo_informe_id': '2'}, 400),
+                ({**valid, 'diagnostico_id': visit_id + 1}, 400),
+                ({**valid, 'usuario_id': self.user_ids['administrator']}, 400),
+                ({**valid, 'estado': 'INACTIVO'}, 400),
+                ({**valid, 'datos_estructurados': []}, 422),
+                ({**valid, 'datos_estructurados': {}}, 422),
+                ({**valid, 'datos_estructurados': {'usuario_id': 1}}, 422),
+                ({**valid, 'datos_estructurados': {'nota': {'estado': 'ANULADO'}}}, 422),
+                ({**valid, 'datos_estructurados': {'conclusion': [{'a': 1}]}}, 422),
+                ({**valid, 'datos_estructurados': {'ojos': 'OD'}}, 422),
+                ({**valid, 'datos_estructurados': {'nota': 'x' * 9000}}, 422),
+                ({**valid, 'datos_estructurados': {'a': {'b': {'c': {'d': {'e': {
+                    'f': {'g': {'h': {'i': 1}}}}}}}}}}, 422),
+            )
+            for data, expected in bad:
+                with self.subTest(data=data):
+                    result, sql = self.call(path, method='POST', token=self.token(),
+                                            json_data=data, measure=True)
+                    self.assertEqual(result.status_code, expected, result.json)
+                    self.assertFalse(any(q.lstrip().lower().startswith(('insert ', 'update '))
+                                         for q in sql))
+            with self.temporary_state(Paciente, self.patient_ids[1], 'INACTIVO'):
+                self.assertEqual(self.call(path, method='POST', token=self.token(),
+                                           json_data=valid)[0].status_code, 404)
+            with self.temporary_state(informe_entities.TipoInforme, 2, 'INACTIVO'):
+                self.assertEqual(self.call(path, method='POST', token=self.token(),
+                                           json_data=valid)[0].status_code, 404)
+            db.session.remove()
+            self.assertEqual(informe_entities.Informe.query.filter_by(visita_id=visit_id).count(), 0)
+            alias = self.report_payload(type_id=2)
+            alias['diagnostico_id'] = visit_id
+            result, _ = self.call(path, method='POST', token=self.token(), json_data=alias)
+            self.assertEqual(result.status_code, 201, result.json)
+            self.assertEqual(result.json['data']['visita_id'], visit_id)
+            both = {**self.report_payload(visit_id=visit_id, type_id=3), 'diagnostico_id': visit_id}
+            self.assertEqual(self.call(path, method='POST', token=self.token(),
+                                       json_data=both)[0].status_code, 201)
+            # Una visita cerrada no estaba prohibida por el flujo anterior.
+        with self.report_visit(state='CERRADA') as closed:
+            self.assertEqual(self.call(path, method='POST', token=self.token(),
+                                       json_data=self.report_payload(visit_id=closed))[0].status_code, 201)
+        with self.report_visit() as independent:
+            for type_id in (1, 5, 6):
+                response, _ = self.call(path, method='POST', token=self.token(),
+                                        json_data=self.report_payload(visit_id=independent,
+                                                                      type_id=type_id))
+                self.assertEqual(response.status_code, 201, response.json)
+
+    def test_29b_real_post_duplicate_inactive_and_unexpected_integrity(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            payload = self.report_payload(visit_id=visit_id)
+            first, _ = self.call(path, method='POST', token=self.token(), json_data=payload)
+            self.assertEqual(first.status_code, 201)
+            identifier = first.json['data']['id']
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, identifier)
+            original = {column.name: getattr(report, column.name)
+                        for column in informe_entities.Informe.__table__.columns}
+            duplicate, _ = self.call(path, method='POST', token=self.token('colleague'),
+                                     json_data={**payload, 'datos_estructurados': {'nota': 'OTRA'}})
+            self.assertEqual(duplicate.status_code, 409)
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, identifier)
+            self.assertEqual({column.name: getattr(report, column.name)
+                              for column in informe_entities.Informe.__table__.columns}, original)
+            report.estado = 'INACTIVO'
+            db.session.commit()  # Fixture sintética; DELETE HTTP continúa bloqueado.
+            db.session.remove()
+            self.assertEqual(self.call(path, method='POST', token=self.token(),
+                                       json_data=payload)[0].status_code, 409)
+            self.assertEqual(informe_entities.Informe.query.filter_by(visita_id=visit_id).count(), 1)
+            self.assertEqual(db.session.get(informe_entities.Informe, identifier).estado, 'INACTIVO')
+        with self.report_visit() as visit_id:
+            with patch.object(InformeRepository, 'crear_informe', side_effect=IntegrityError(
+                    'INSERT', {}, MySQLIntegrityError(1452, 'synthetic FK error'))):
+                response, _ = self.call(path, method='POST', token=self.token(),
+                                        json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(response.status_code, 500)
+            self.assertNotIn('synthetic', response.get_data(as_text=True))
+
+    def test_29b_real_post_commit_uncertain_no_retry(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            payload = self.report_payload(visit_id=visit_id)
+            actual_commit = db.session.commit
+            calls = []
+
+            def acknowledged_late():
+                calls.append(1)
+                actual_commit()
+                raise OperationalError('COMMIT', {}, RuntimeError('synthetic lost ACK'),
+                                       connection_invalidated=True)
+
+            with patch.object(db.session, 'commit', side_effect=acknowledged_late):
+                result, _ = self.call(path, method='POST', token=self.token(), json_data=payload)
+            self.assertEqual(result.status_code, 500)
+            self.assertEqual(len(calls), 1)
+            self.assertNotIn('synthetic', result.get_data(as_text=True))
+            db.session.remove()
+            self.assertEqual(informe_entities.Informe.query.filter_by(visita_id=visit_id).count(), 1)
+
+    def test_29b_real_post_concurrent_duplicate_unique_wins(self):
+        path = '/api/informes'
+        with self.report_visit() as visit_id:
+            barrier = Barrier(2, timeout=15)
+            connections = set()
+
+            def synchronize(conn, cursor, statement, parameters, context, executemany):
+                if ('FROM informes' in statement.replace('`', '') and
+                        'tipo_informe_id' in statement and 'SELECT' in statement.upper()):
+                    connections.add(conn.connection.driver_connection.thread_id())
+                    barrier.wait()
+
+            def submit(profile):
+                with self.app.app_context():
+                    try:
+                        payload = self.report_payload(visit_id=visit_id)
+                        payload['datos_estructurados']['nota'] = profile
+                        with self.app.test_client() as client:
+                            result = client.post(path, json=payload,
+                                                 headers={'Authorization': 'Bearer ' + self.token(profile)})
+                            return profile, result.status_code
+                    finally:
+                        db.session.remove()
+
+            db.session.remove()
+            event.listen(db.engine, 'before_cursor_execute', synchronize)
+            try:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    first = pool.submit(submit, 'ophthalmologist')
+                    second = pool.submit(submit, 'colleague')
+                    results = [first.result(timeout=25), second.result(timeout=25)]
+            finally:
+                event.remove(db.engine, 'before_cursor_execute', synchronize)
+            self.assertEqual(len(connections), 2)
+            self.assertEqual(sorted(code for _, code in results), [201, 409])
+            winner = next(profile for profile, code in results if code == 201)
+            db.session.remove()
+            reports = informe_entities.Informe.query.filter_by(visita_id=visit_id).all()
+            self.assertEqual(len(reports), 1)
+            self.assertEqual(reports[0].usuario_id, self.user_ids[winner])
+            self.assertEqual(reports[0].datos_estructurados['nota'], winner)
 
 
 def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_available=True):
