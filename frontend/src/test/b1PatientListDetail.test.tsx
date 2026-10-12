@@ -78,15 +78,15 @@ describe("B1 listado y detalle", () => {
     expect(get).toHaveBeenCalledTimes(1);
   });
 
-  it("404 de visitas no se presenta como paciente inexistente", async () => {
+  it("404 del historial identifica al paciente que dejó de existir", async () => {
     get.mockResolvedValueOnce({ data: { success: true, scope: "clinical",
       history_available: true, data: patient } })
       .mockRejectedValueOnce({ response: { status: 404 } });
     const { result } = renderHook(() => usePatientVisitDetail("7", "13"), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.error).toBe("load_error");
-    expect(result.current.requestError?.status).toBe(404);
-    expect(result.current.patient?.id).toBe(7);
+    expect(result.current.error).toBe("patient_not_found");
+    expect(result.current.requestError).toBeNull();
+    expect(result.current.patient).toBeNull();
     expect(get).toHaveBeenCalledTimes(2);
   });
 
@@ -97,6 +97,56 @@ describe("B1 listado y detalle", () => {
     expect(result.current.error).toBe("patient_not_found");
     expect(result.current.requestError).toBeNull();
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it("el perfil médico distingue 403 revocado, 404 del paciente y ausencia de diagnósticos", async () => {
+    get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+      .mockRejectedValueOnce({ response: { status: 403 } });
+    const denied = renderHook(() => usePatientProfile("7"), { wrapper });
+    await waitFor(() => expect(denied.result.current.isLoading).toBe(false));
+    expect(denied.result.current.patient?.id).toBe(7);
+    expect(denied.result.current.historyError?.status).toBe(403);
+    expect(denied.result.current.diagnoses).toEqual([]);
+    denied.unmount();
+
+    get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+      .mockResolvedValueOnce({ data: { success: true, data: [{ visita_id: 13,
+        fecha_visita: "2030-01-01", tiene_diagnostico_ia: 0, tiene_informes: 0,
+        diagnostico_ia: null, informes: [] }] } });
+    const authorized = renderHook(() => usePatientProfile("7"), { wrapper });
+    await waitFor(() => expect(authorized.result.current.isLoading).toBe(false));
+    expect(authorized.result.current.historyError).toBeNull();
+    expect(authorized.result.current.diagnoses).toHaveLength(1);
+    authorized.unmount();
+
+    get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+      .mockRejectedValueOnce({ response: { status: 404 } });
+    const missing = renderHook(() => usePatientProfile("7"), { wrapper });
+    await waitFor(() => expect(missing.result.current.isLoading).toBe(false));
+    expect(missing.result.current.patient).toBeNull();
+    expect(missing.result.current.historyError).toBeNull();
+    missing.unmount();
+  });
+
+  it("el detalle de visita distingue revocación de una visita sin IA", async () => {
+    get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+      .mockRejectedValueOnce({ response: { status: 403 } });
+    const denied = renderHook(() => usePatientVisitDetail("7", "13"), { wrapper });
+    await waitFor(() => expect(denied.result.current.isLoading).toBe(false));
+    expect(denied.result.current.requestError?.status).toBe(403);
+    expect(denied.result.current.error).toBe("load_error");
+    denied.unmount();
+
+    get.mockResolvedValueOnce({ data: { scope: "clinical", history_available: true, data: patient } })
+      .mockResolvedValueOnce({ data: { success: true, data: [{ visita_id: 13,
+        fecha_visita: "2030-01-01", tiene_diagnostico_ia: 0, tiene_informes: 0,
+        diagnostico_ia: null, informes: [] }] } });
+    const authorized = renderHook(() => usePatientVisitDetail("7", "13"), { wrapper });
+    await waitFor(() => expect(authorized.result.current.isLoading).toBe(false));
+    expect(authorized.result.current.error).toBeNull();
+    expect(authorized.result.current.requestError).toBeNull();
+    expect(authorized.result.current.visit?.visita_id).toBe(13);
+    authorized.unmount();
   });
 
   it("el perfil asistencial no carga un historial compuesto fuera de su alcance", async () => {

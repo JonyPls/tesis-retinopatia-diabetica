@@ -5,6 +5,7 @@ Ejecutar exclusivamente con --run-disposable tras comprobar el aislamiento.
 """
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import secrets
@@ -42,6 +43,41 @@ EXPECTED_INITIAL_COUNTS = {
 EXPECTED_FINAL_COUNTS = {
     "ADMINISTRADOR_SISTEMA": 7, "OFTALMOLOGO": 13,
     "ENFERMERO": 6, "ASISTENTE_ADMINISTRATIVO": 6,
+}
+ORIGINAL_PERMISSIONS = {
+    "dashboard.ver", "pacientes.ver", "pacientes.crear", "pacientes.editar",
+    "visitas.ver", "visitas.crear", "diagnostico_retinopatia.crear",
+    "diagnostico_retinopatia.validar", "informes.ver", "informes.crear",
+    "informes.editar", "informes.anular", "configuracion.ver", "usuarios.ver",
+    "usuarios.crear", "usuarios.editar", "usuarios.asignar_roles",
+    "catalogos.gestionar",
+}
+FINAL_GRANTS = {
+    "ADMINISTRADOR_SISTEMA": {
+        "dashboard.ver", "configuracion.ver", "usuarios.ver", "usuarios.crear",
+        "usuarios.editar", "usuarios.asignar_roles", "catalogos.gestionar",
+    },
+    "OFTALMOLOGO": {
+        "dashboard.ver", "pacientes.ver", "pacientes.crear", "pacientes.editar",
+        "visitas.ver", "visitas.crear", "diagnostico_retinopatia.crear",
+        "diagnostico_retinopatia.validar", "informes.ver", "informes.crear",
+        "informes.editar", "diagnostico_retinopatia.ver", "imagenes.ver",
+    },
+    "ENFERMERO": {
+        "dashboard.ver", "pacientes.ver", "pacientes.crear", "visitas.ver",
+        "visitas.crear", "informes.ver",
+    },
+    "ASISTENTE_ADMINISTRATIVO": {
+        "dashboard.ver", "pacientes.ver", "pacientes.crear", "pacientes.editar",
+        "visitas.ver", "informes.ver",
+    },
+}
+SEED_COUNTS = {
+    "tipos_documento": 3, "roles": 4, "cargos": 4, "permisos": 21,
+    "grados_retinopatia": 5, "tipos_informe": 6, "usuarios": 2,
+    "usuario_rol": 3, "rol_permiso": 32, "pacientes": 20,
+    "visitas_clinicas": 0, "diagnosticos_retinopatia": 0,
+    "diagnosticos_retinopatia_detalle": 0, "informes": 0,
 }
 UNAFFECTED_TABLES = (
     "usuarios", "usuario_rol", "pacientes", "visitas_clinicas",
@@ -139,7 +175,7 @@ def fingerprints(connection):
     return result
 
 
-def verify_seed(connection):
+def verify_seed(connection, *, historical=False):
     tables = set(rows(connection, """
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = %s AND table_type = 'BASE TABLE'
@@ -147,9 +183,50 @@ def verify_seed(connection):
     require(len(tables) == 14, "El seed no creó exactamente 14 tablas.")
     require(set(rows(connection, "SELECT codigo FROM roles")) == {(r,) for r in ROLES},
             "Los cuatro roles no coinciden con la semilla v2.")
-    require(len(catalog(connection)) == 18, "La semilla no contiene 18 permisos.")
-    require(counts(grants(connection)) == EXPECTED_INITIAL_COUNTS,
-            "Las asignaciones de rol originales difieren de v2.")
+    if historical:
+        require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS},
+                "El respaldo no contiene el catálogo original de 18 permisos.")
+        require(counts(grants(connection)) == EXPECTED_INITIAL_COUNTS,
+                "Las asignaciones de rol originales difieren de v2.")
+        original_links = ({
+            (role, code) for role, codes in FINAL_GRANTS.items() for code in codes
+            if code not in NEW_PERMISSIONS
+        } | {("ADMINISTRADOR_SISTEMA", code) for code in ADMIN_REMOVALS}
+          | {("ASISTENTE_ADMINISTRATIVO", "informes.crear")})
+        require(grants(connection) == original_links,
+                "Los grants históricos no coinciden por código con la semilla original.")
+    else:
+        require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS | NEW_PERMISSIONS},
+                "El maestro B1 no contiene exactamente los 21 códigos aprobados.")
+        require(counts(grants(connection)) == EXPECTED_FINAL_COUNTS,
+                "La semilla B1 no tiene los totales de grants aprobados.")
+        require(grants(connection) == {
+            (role, code) for role, codes in FINAL_GRANTS.items() for code in codes
+        }, "Los grants del maestro B1 difieren de la matriz de códigos aprobada.")
+        require(rows(connection, "SELECT COUNT(*) FROM permisos")[0][0] == 21,
+                "Existen permisos duplicados en la semilla B1.")
+        require(rows(connection, "SELECT COUNT(*) FROM rol_permiso")[0][0] == 32,
+                "Existen grants duplicados en la semilla B1.")
+        require(set(rows(connection, "SELECT id FROM permisos")) == {(i,) for i in range(1, 22)},
+                "Los ID de permisos B1 no son los esperados.")
+        expected_new = {
+            (19, "diagnostico_retinopatia.ver", "Ver diagnostico IA",
+             "Permite consultar resultados y detalles de retinopatia diabetica.",
+             "diagnostico_retinopatia", "ACTIVO"),
+            (20, "imagenes.ver", "Ver imagenes clinicas",
+             "Permite consultar retinografias y sus imagenes asociadas.", "imagenes", "ACTIVO"),
+            (21, "informes.inactivar", "Inactivar informe",
+             "Permite la baja logica INACTIVO; no equivale a anular un informe.",
+             "informes", "ACTIVO"),
+        }
+        require(set(rows(connection, """SELECT id, codigo, nombre, descripcion, modulo, estado
+                                        FROM permisos WHERE id IN (19,20,21)""")) == expected_new,
+                "Los metadatos B1 no coinciden con las propuestas aprobadas.")
+        require(rows(connection, "SELECT COUNT(*) FROM permisos WHERE estado='ACTIVO'")[0][0] == 21,
+                "La semilla B1 contiene un permiso inactivo.")
+        for table, expected in SEED_COUNTS.items():
+            require(rows(connection, f"SELECT COUNT(*) FROM `{table}`")[0][0] == expected,
+                    f"La cantidad de filas de {table} difiere de la semilla.")
     for table, index in (("roles", "uq_roles_codigo"), ("permisos", "uq_permisos_codigo"),
                          ("usuarios", "uq_usuarios_username"),
                          ("rol_permiso", "PRIMARY"), ("rol_permiso", "idx_rol_permiso_permiso"),
@@ -163,6 +240,26 @@ def verify_seed(connection):
             SELECT COUNT(*) FROM information_schema.referential_constraints
             WHERE constraint_schema=%s AND table_name=%s
         """, (SCHEMA, table))[0][0] == 2, f"Faltan FK de {table}.")
+    require(rows(connection, """
+        SELECT COUNT(*) FROM information_schema.referential_constraints
+        WHERE constraint_schema=%s
+    """, (SCHEMA,))[0][0] == 18, "Faltan claves foráneas del esquema de 14 tablas.")
+
+
+def seed_signature(connection):
+    """Comparar reconstrucciones sin exponer valores semilla ni fechas automáticas."""
+    signature = {}
+    for table in SEED_COUNTS:
+        columns = [name for (name,) in rows(connection, """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema=%s AND table_name=%s
+              AND column_name NOT IN ('fecha_creado', 'fecha_actualizado')
+            ORDER BY ordinal_position
+        """, (SCHEMA, table))]
+        select = ", ".join(f"`{column}`" for column in columns)
+        data = sorted(repr(row) for row in rows(connection, f"SELECT {select} FROM `{table}`"))
+        signature[table] = hashlib.sha256(repr(data).encode("utf-8")).hexdigest()
+    return signature
 
 
 def verify_after_grants(before, after):
@@ -287,7 +384,8 @@ def check_preexisting_permission_preserved(connection, port, password,
     require(grant_history(connection) == original_links, "El ensayo no volvió a los grants seed.")
 
 
-def run_trial(temp_root, port, password, orm_integration=False):
+def run_trial(temp_root, port, password, orm_integration=False, historical_seed=None,
+              check_historical_idempotence=False):
     with connect(port) as initial:
         instance_uuid = ensure_own_server(initial, temp_root / "data", port)
         require(not rows(initial, "SHOW DATABASES LIKE %s", (SCHEMA,)),
@@ -298,7 +396,7 @@ def run_trial(temp_root, port, password, orm_integration=False):
         require(ensure_own_server(verified, temp_root / "data", port) == instance_uuid,
                 "Cambió la identidad del servidor antes de cargar el esquema.")
 
-    v2 = BACKEND / "db" / "centro-oftalmologico-db-v2.sql"
+    v2 = historical_seed or BACKEND / "db" / "centro-oftalmologico-db-v2.sql"
     catalog_script = BACKEND / "migrations" / "b1_catalogo_permisos_propuesta.sql"
     grants_script = BACKEND / "migrations" / "b1_grants_roles_propuesta.sql"
     require(all(path.is_file() for path in (v2, catalog_script, grants_script)),
@@ -307,7 +405,38 @@ def run_trial(temp_root, port, password, orm_integration=False):
     with connect(port, password, SCHEMA) as connection:
         require(ensure_own_server(connection, temp_root / "data", port) == instance_uuid,
                 "La conexión no es a la instancia temporal propia.")
-        verify_seed(connection)
+        verify_seed(connection, historical=historical_seed is not None)
+        if historical_seed is None:
+            original_signature = seed_signature(connection)
+            # El maestro hace DROP TABLE; repetirlo solo tras confirmar UUID,
+            # datadir y puerto de la instancia desechable propia.
+            require(ensure_own_server(connection, temp_root / "data", port) == instance_uuid,
+                    "Cambió la identidad del servidor antes de reconstruir B1.")
+            client_script(port, password, v2)
+            verify_seed(connection)
+            require(seed_signature(connection) == original_signature,
+                    "La segunda reconstrucción B1 difiere en tablas o datos semilla.")
+            print("MAESTRO B1: 14 tablas y semilla conservada en dos reconstrucciones; "
+                  "21 permisos, grants 7/13/6/6 por código; sin duplicados.")
+            before_fingerprints = fingerprints(connection)
+            if orm_integration:
+                from b1_orm_mysql_trial import run_orm_integration
+
+                run_orm_integration(port, password, temp_root / "data", instance_uuid)
+                require(fingerprints(connection) == before_fingerprints,
+                        "Las pruebas ORM dejaron datos en tablas clínicas/usuarios.")
+
+            if check_historical_idempotence:
+                # Ensayo histórico optativo; nunca forma parte de la carga B1 directa.
+                before_signature = seed_signature(connection)
+                before_history = grant_history(connection)
+                client_script(port, password, catalog_script, SCHEMA)
+                client_script(port, password, grants_script, SCHEMA)
+                require(seed_signature(connection) == before_signature and
+                        grant_history(connection) == before_history,
+                        "Las migraciones históricas alteraron una instalación B1 nueva.")
+                print("MIGRACIONES HISTÓRICAS: repetición sobre B1 sin cambios de catálogo, grants o semilla.")
+            return
         before_catalog = catalog(connection)
         before_links = grant_history(connection)
         before_fingerprints = fingerprints(connection)
@@ -361,12 +490,24 @@ def main():
     parser.add_argument("--run-disposable", action="store_true", help="Autoriza crear y limpiar solo la instancia propia")
     parser.add_argument("--orm-integration", action="store_true",
                         help="Ejecuta tambien pruebas ORM/Flask reales en esa instancia")
+    parser.add_argument("--historical-seed", type=Path,
+                        help="Respaldo verificable pre-B1 (18 permisos), fuera de Git; "
+                             "solo ensaya la transición histórica")
+    parser.add_argument("--check-historical-idempotence", action="store_true",
+                        help="Solo en B1 desechable: ensayo optativo de repetir migraciones históricas")
     args = parser.parse_args()
     if args.orm_integration and not args.run_disposable:
         parser.error("--orm-integration exige --run-disposable.")
+    if args.historical_seed and args.check_historical_idempotence:
+        parser.error("El ensayo del seed histórico ya aplica las migraciones; no combinar modos.")
     if not args.run_disposable:
         parser.error("Se exige --run-disposable; no se iniciaron procesos ni SQL.")
     require(APPROVED_TEMP.is_dir(), "No existe el directorio temporal aprobado.")
+    if args.historical_seed is not None:
+        historical = args.historical_seed.resolve()
+        require(historical.is_file() and historical.is_relative_to(APPROVED_TEMP.resolve())
+                and historical != (BACKEND / "db" / "centro-oftalmologico-db-v2.sql").resolve(),
+                "El seed histórico debe ser un respaldo existente en el directorio temporal aprobado.")
     require(all(path.is_file() for path in (SERVER, CLIENT, ADMIN)), "Faltan binarios MySQL locales.")
     require("Ver 8.0." in subprocess.run([str(SERVER), "--version"],
                                           capture_output=True, text=True, timeout=5).stdout,
@@ -403,7 +544,9 @@ def main():
         else:
             raise RuntimeError("MySQL temporal no aceptó conexiones en 60 segundos.")
 
-        run_trial(root, port, password, orm_integration=args.orm_integration)
+        run_trial(root, port, password, orm_integration=args.orm_integration,
+                  historical_seed=args.historical_seed,
+                  check_historical_idempotence=args.check_historical_idempotence)
         print("AISLAMIENTO: instancia nueva verificada por datadir, puerto y UUID; sin acceso a BD habitual.")
     finally:
         if server is not None and server.poll() is None:

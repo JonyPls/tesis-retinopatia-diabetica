@@ -158,6 +158,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         cls.patient_documents = []
         cls.visit_ids = []
         cls.diagnosis_ids = []
+        cls.report_ids = []
         cls.addClassCleanup(cls.cleanup_fixtures)
         try:
             cls.make_fixtures()
@@ -220,17 +221,41 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         )
         diagnosis.detalles.append(diagnosis_entities.DiagnosticoDetalle(
             ojo_evaluado="Derecho", imagen_original_url="synthetic-only.jpg",
+            imagen_gradcam_url="synthetic-gradcam.jpg", resultado_ia_id=2,
+            resultado_final_id=3, probabilidad_ia=0.8,
             comentario_medico="Conclusion sintetica",
         ))
         db.session.add(diagnosis)
         db.session.flush()
         cls.diagnosis_ids.append(diagnosis.id)
+        report = informe_entities.Informe(
+            visita_id=visit.id, tipo_informe_id=1,
+            usuario_id=cls.user_ids["ophthalmologist"],
+            conclusion="Informe sintetico", datos_estructurados={"nota": "Sintetica"},
+            estado="ACTIVO",
+        )
+        db.session.add(report)
+        db.session.flush()
+        cls.report_ids.append(report.id)
+        visit_without_diagnosis = VisitaClinica(
+            paciente_id=cls.patient_ids[0], usuario_id=cls.user_ids["ophthalmologist"],
+            fecha_visita=datetime(2030, 2, 1), motivo_consulta="Control sintetico",
+            estado="ACTIVA",
+        )
+        db.session.add(visit_without_diagnosis)
+        db.session.flush()
+        cls.visit_ids.append(visit_without_diagnosis.id)
         db.session.commit()
         db.session.remove()
 
     @classmethod
     def cleanup_fixtures(cls):
         db.session.remove()
+        for report_id in cls.report_ids:
+            report = db.session.get(informe_entities.Informe, report_id)
+            if report:
+                db.session.delete(report)
+        db.session.flush()
         for diagnosis_id in cls.diagnosis_ids:
             diagnosis = db.session.get(diagnosis_entities.Diagnostico, diagnosis_id)
             if diagnosis:
@@ -740,6 +765,83 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 self.assertEqual(sql, [])
             with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
                 self.assertEqual(self.call(path, token=self.token())[0].status_code, 401)
+
+    def test_b1_real_history_contract_content_and_constant_query_cost(self):
+        paths = (f"/api/pacientes/{self.patient_ids[0]}/visitas",
+                 f"/api/diagnosticos/paciente/{self.patient_ids[0]}")
+        for path in paths:
+            with self.subTest(path=path):
+                response, sql = self.call(path, token=self.token(), measure=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.json), {"success", "data"})
+                visits = response.json["data"]
+                self.assertEqual([row["visita_id"] for row in visits], self.visit_ids[::-1])
+                self.assertIsNone(visits[0]["diagnostico_ia"])
+                self.assertEqual(visits[0]["informes"], [])
+                self.assertEqual(visits[1]["diagnostico_ia"]["detalles"][0]["resultado_ia_id"], 2)
+                self.assertEqual(visits[1]["diagnostico_ia"]["detalles"][0]["resultado_final_id"], 3)
+                self.assertEqual(visits[1]["diagnostico_ia"]["detalles"][0]["imagen_original_url"],
+                                 "synthetic-only.jpg")
+                self.assertEqual(visits[1]["diagnostico_ia"]["detalles"][0]["imagen_gradcam_url"],
+                                 "synthetic-gradcam.jpg")
+                self.assertEqual(visits[1]["informes"][0]["conclusion"], "Informe sintetico")
+                self.assertEqual(visits[1]["medico_tratante"], "Persona Sintetica")
+                self.assertEqual(len([q for q in sql if q.lstrip().lower().startswith("select")]), 7)
+                self.assertFalse(any("join pacientes" in q.lower() for q in sql))
+        other, queries = self.call(f"/api/pacientes/{self.patient_ids[1]}/visitas",
+                                   token=self.token("dual"), measure=True)
+        self.assertEqual(other.status_code, 200)
+        self.assertEqual(other.json["data"], [])
+        self.assertEqual(len([q for q in queries if q.lstrip().lower().startswith("select")]), 5)
+        missing, sql = self.call("/api/diagnosticos/paciente/2147483647",
+                                 token=self.token(), measure=True)
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.json, {"success": False, "message": "Paciente no encontrado"})
+        self.assertEqual(len([q for q in sql if q.lstrip().lower().startswith("select")]), 4)
+        print("ORM historial real: con visitas=7 SELECT; sin visitas=5; paciente inexistente=4; "
+              "consultas fijas sin N+1.")
+
+    def test_b1_real_history_deny_before_clinical_sql_and_fresh_revocation(self):
+        paths = (f"/api/pacientes/{self.patient_ids[0]}/visitas",
+                 f"/api/diagnosticos/paciente/{self.patient_ids[0]}")
+        wrong_key = jwt.encode({"user_id": self.user_ids["ophthalmologist"],
+                                "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                               "wrong-synthetic-signing-key", algorithm="HS256")
+        for path in paths:
+            for token in (None, wrong_key, self.token(expired=True)):
+                response, sql = self.call(path, token=token, measure=True)
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(sql, [])
+            with self.temporary_state(Usuario, self.user_ids["ophthalmologist"], "INACTIVO"):
+                self.assertEqual(self.call(path, token=self.token())[0].status_code, 401)
+            for profile in ("administrator", "assistant", "nurse"):
+                denied, sql = self.call(path, token=self.token(profile), measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertNotIn("data", denied.json)
+                self.assertFalse(any("from pacientes" in q.lower() or
+                                     "visitas_clinicas" in q.lower() for q in sql))
+            self.assertEqual(self.call(path, token=self.token("dual"))[0].status_code, 200)
+            for permission in ("diagnostico_retinopatia.ver", "informes.ver", "imagenes.ver",
+                               "pacientes.ver", "visitas.ver"):
+                with self.subTest(path=path, permission=permission):
+                    with self.temporary_grant("OFTALMOLOGO", permission, present=False):
+                        for profile in ("ophthalmologist", "assistant_dual", "dual"):
+                            denied, sql = self.call(path, token=self.token(profile), measure=True)
+                            self.assertEqual(denied.status_code, 403)
+                            self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+                            self.assertNotIn("data", denied.json)
+                            self.assertNotIn("synthetic-only.jpg", denied.get_data(as_text=True))
+                    self.assertEqual(self.call(path, token=self.token())[0].status_code, 200)
+
+    def test_b1_real_history_error_does_not_log_clinical_values(self):
+        with patch.object(PatientRepository, "obtener_diagnosticos_paciente",
+                          side_effect=RuntimeError("synthetic-only.jpg")):
+            with patch.object(self.app.logger, "error") as logged:
+                result, _ = self.call(f"/api/pacientes/{self.patient_ids[0]}/visitas",
+                                      token=self.token())
+        self.assertEqual(result.status_code, 500)
+        self.assertNotIn("synthetic-only.jpg", result.get_data(as_text=True))
+        logged.assert_called_once_with("Error al obtener historial de diagnosticos")
 
     def test_b1_real_post_creates_by_role_without_leaking_fields(self):
         payloads = {

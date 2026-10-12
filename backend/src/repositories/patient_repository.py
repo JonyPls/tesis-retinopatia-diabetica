@@ -128,6 +128,11 @@ class PatientRepository:
         return dict(result._mapping) if result else None
 
     @staticmethod
+    def existe_paciente_activo(paciente_id: int) -> bool:
+        return db.session.query(Paciente.id).filter_by(
+            id=paciente_id, estado='ACTIVO').scalar() is not None
+
+    @staticmethod
     def obtener_diagnosticos_paciente(paciente_id: int):
         visitas_query = text("""
             SELECT

@@ -170,15 +170,13 @@ def get_detalle_paciente(id):
                                      history_available=history_available)
 
 @patient_bp.route('/api/diagnosticos/paciente/<int:id>', methods=['GET'])
-@token_required
-@clinical_access_required('pacientes.ver', 'diagnosticos.ver')
+@strict_authorization_required('history.full_read')
 def get_historial_diagnosticos(id):
     response_dict, status_code = obtener_historial_diagnosticos(id)
     return jsonify(response_dict), status_code
 
 @patient_bp.route('/api/pacientes/<int:id>/visitas', methods=['GET'])
-@token_required
-@clinical_access_required('pacientes.ver', 'visitas.ver')
+@strict_authorization_required('history.full_read')
 def get_visitas_paciente(id):
     response_dict, status_code = obtener_historial_diagnosticos(id)
     return jsonify(response_dict), status_code

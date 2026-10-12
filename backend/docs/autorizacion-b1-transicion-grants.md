@@ -1,5 +1,12 @@
 # B1: transición propuesta de grants (no ejecutada)
 
+> **Histórico (semilla original de 18 permisos):** desde Prompt 21 el maestro
+> `backend/db/centro-oftalmologico-db-v2.sql` ya incluye directamente los 21
+> permisos y grants B1. Estas propuestas incrementales documentan la transición
+> desde la versión anterior; **no son necesarias en instalaciones nuevas**.
+> No ejecutar este procedimiento sobre una base existente sin inventariarla y
+> autorizar por separado sus cambios. Ver `autorizacion-b1-maestro.md`.
+
 **No cambia la política en este repositorio.** Fuente: catálogo y grants
 sembrados en `backend/db/centro-oftalmologico-db-v2.sql`. La instancia MySQL
 puede haber cambiado: jamás ejecutar sobre ella sin inventario autorizado.
@@ -68,7 +75,15 @@ preparar autorizaciones y UX para evitar peticiones 403 no previstas.
 - La autorizacion individual `usuario_permiso` y el rol Gerente se abordaran
   en entregas separadas, con jerarquia, auditoria y prohibicion de autoelevacion.
 
-## Ensayo reproducible en instancia MySQL 8 desechable (pendiente)
+## Ensayo histórico en instancia MySQL 8 desechable
+
+El procedimiento siguiente se escribió para el v2 **original**; no apunta al
+maestro B1 actualizado. El arnés `b1_mysql_disposable_trial.py` conserva el
+ensayo histórico solo si se le entrega expresamente `--historical-seed` con un
+respaldo verificable pre-B1 fuera de Git. No usar el maestro actual como seed de
+18 permisos. Los resultados del ensayo automatizado posterior constan en
+`autorizacion-b1-maestro.md`; las notas anteriores sobre falta de ensayo se
+conservan debajo como evidencia del momento en que se redactaron.
 
 No hay configuracion de contenedor ni una BD de pruebas explicitamente
 separada e identificada en el repositorio. **No se creo ni uso ninguna.**

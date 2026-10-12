@@ -81,12 +81,18 @@ export function usePatientVisitDetail(
           visitsResponse = await api.get(`/pacientes/${pacienteId}/visitas`);
         } catch (visitError) {
           if (isMounted) {
-            setPatient(resolvedPatient);
-            setError("load_error");
             const requestError = patientRequestError(visitError);
-            setRequestError(requestError.status === 403
-              ? { ...requestError, message: "No tiene autorización para consultar el historial clínico." }
-              : requestError);
+            if (requestError.status === 404) {
+              // 404 aquí corresponde al paciente, no a una visita sin diagnóstico.
+              setPatient(null);
+              setError("patient_not_found");
+            } else {
+              setPatient(resolvedPatient);
+              setError("load_error");
+              setRequestError(requestError.status === 403
+                ? { ...requestError, message: "No tiene autorización para consultar el historial clínico." }
+                : requestError);
+            }
           }
           return;
         }

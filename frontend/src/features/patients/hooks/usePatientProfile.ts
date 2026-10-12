@@ -43,9 +43,14 @@ export function usePatientProfile(id: string | undefined) {
             } catch (error) {
               if (active) {
                 const requestError = patientRequestError(error);
-                setHistoryError(requestError.status === 403
-                  ? { ...requestError, message: "No tiene autorización para consultar el historial clínico." }
-                  : requestError);
+                if (requestError.status === 404) {
+                  // El endpoint de historial solo devuelve 404 si ya no existe el paciente.
+                  setPatient(null);
+                } else {
+                  setHistoryError(requestError.status === 403
+                    ? { ...requestError, message: "No tiene autorización para consultar el historial clínico." }
+                    : requestError);
+                }
               }
             }
           } else if (resolvedScope === "clinical") {

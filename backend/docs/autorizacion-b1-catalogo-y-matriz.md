@@ -1,6 +1,9 @@
-# B1: catálogo canónico y matriz de autorización (cinco rutas activadas)
+# B1: catálogo canónico y matriz de autorización (siete rutas activadas)
 
 Referencia de estructura y códigos sembrados: `backend/db/centro-oftalmologico-db-v2.sql`.
+Desde Prompt 21 ese maestro contiene directamente el catálogo y grants B1;
+`[nuevo]` en las filas siguientes significa nuevo respecto a la semilla v2
+**histórica**, no ausente del maestro actual. Ver `autorizacion-b1-maestro.md`.
 El script v2 y la instancia MySQL pueden diferir; esta matriz no verifica grants
 reales ni sustituye una revisión autorizada de catálogo/roles en la instancia.
 Los decoradores actuales siguen en `backend/routes/` y `backend/utils/security.py`.
@@ -69,10 +72,10 @@ provenir de su rol y habilitación clínica vigentes, no de los grants del rol
 administrativo. Los permisos individuales heredados/concedidos/denegados son
 una fase posterior: este documento no implementa `usuario_permiso`.
 
-**Salvo las cinco rutas de pacientes marcadas como activas**, las filas
+**Salvo las siete rutas B1 marcadas como activas**, las filas
 siguientes están pendientes de implementación: sus permisos no se exigen hoy
-con la semántica estricta. Los códigos marcados `[nuevo]` no
-están sembrados en v2. `+` representa AND; `o` representa OR explícito solo
+con la semántica estricta. Los códigos marcados `[nuevo]` faltaban en el v2
+histórico, pero están sembrados en el maestro B1. `+` representa AND; `o` representa OR explícito solo
 donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 
 | Método y ruta actual | Operación / dominio | Permiso(s) canónico(s) | Roles propuestos | Condición especial y estado |
@@ -80,8 +83,8 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/pacientes` | Listar / pacientes | `pacientes.ver` | O, E, S | Activa B1; proyección según grant del rol; sin asignación médica exclusiva. |
 | POST `/api/pacientes` | Registrar / pacientes | `pacientes.crear` | O, E, S | Activa B1; entrada según procedencia del grant de creación y salida según lectura independiente. |
 | GET `/api/pacientes/<int:id>` | Detalle / pacientes | `pacientes.ver` | O, E, S | Activa B1; proyección según rol y grant vigente, 404 si no existe. |
-| GET `/api/diagnosticos/paciente/<int:id>` | Historial / compuesto | `pacientes.ver` + `visitas.ver` + `diagnostico_retinopatia.ver` [nuevo] + `informes.ver` | O; E/S solo si habilitados para **todo** el contenido | La respuesta actual contiene IA e informes; alternativa: filtrar secciones por permiso. Pendiente de decisión. |
-| GET `/api/pacientes/<int:id>/visitas` | Historial / compuesto | `pacientes.ver` + `visitas.ver` + `diagnostico_retinopatia.ver` [nuevo] + `informes.ver` | O; E/S solo si habilitados para **todo** el contenido | Misma respuesta compuesta que la fila anterior; pendiente de decisión. |
+| GET `/api/diagnosticos/paciente/<int:id>` | Historial / compuesto | `pacientes.ver` + `visitas.ver` + `diagnostico_retinopatia.ver` + `informes.ver` + `imagenes.ver` | O | Activa B1: misma respuesta compuesta que `/visitas`; incluye referencias de imágenes. |
+| GET `/api/pacientes/<int:id>/visitas` | Historial / compuesto | `pacientes.ver` + `visitas.ver` + `diagnostico_retinopatia.ver` + `informes.ver` + `imagenes.ver` | O | Activa B1: no hay proyección asistencial; 404 paciente inexistente, 200 lista vacía sin visitas. |
 | GET `/api/pacientes/buscar` | Buscar / pacientes | `pacientes.ver` | O, E, S | Activa B1; proyección por rol. S no recibe última visita ni orden clínico. |
 | GET `/api/pacientes/recientes` | Recientes / pacientes | `pacientes.ver` | O, E, S | Activa B1; S recibe altas recientes, no visitas recientes ni fecha de visita. |
 | GET `/api/documentos` | Tipos de documento / catálogo | `pacientes.ver` | O, E, S | Catálogo para registro de pacientes; pendiente. |
@@ -133,7 +136,7 @@ incluyen IA, imágenes referenciadas e informes completos; (2) listados y
 detalles de `/api/informes/*`, PDF diagnóstico y archivos protegidos pueden
 exponer clínica según su decorador antiguo. Evaluar individualmente tanto
 la autorización como la proyección antes de activar B1 en cada ruta: minimizar
-solo estas cinco rutas no protege el resto del sistema.
+solo estas siete rutas no protege el resto del sistema.
 
 ## Activación del listado y detalle (Prompt 18)
 
@@ -236,10 +239,51 @@ detalle. Rechazos por autorización o por campos no permitidos no escriben.
 El arnés valida aislamiento y reversión de los grants de su instancia temporal;
 no se modificaron scripts SQL B1 ni MySQL habitual.
 
-Sigue pendiente la transición autorizada de `diagnostico_retinopatia.ver` en
-la BD habitual: su ausencia omite `maxima_gravedad` del listado médico y
-deja `history_available=false`. No se implementa bypass ni se activan rutas
-de historial, diagnóstico, PDF o imágenes en este bloque.
+En Prompt 19 la BD habitual aún carecía de `diagnostico_retinopatia.ver`:
+por ello se omitía `maxima_gravedad` y `history_available=false`. El propietario
+confirmó posteriormente la reconstrucción y verificación B1 de su instancia;
+no se hizo un bypass ni se activaron historiales en **aquel** bloque.
+
+## Historial compuesto de pacientes (Prompt 22)
+
+`GET /api/diagnosticos/paciente/<int:id>` y
+`GET /api/pacientes/<int:id>/visitas` tienen **el mismo contrato real**:
+`{"success": true, "data": [visitas...]}`. Ambos llaman al mismo servicio.
+Cada visita no anulada conserva identificador, fecha descendente, profesional,
+motivo, observaciones, estado y totales; incluye diagnóstico IA no anulado con
+estado, modelo y detalles por ojo (grados sugerido/final, probabilidad,
+validación, comentarios, metadatos y URLs de imágenes), y los informes activos
+con tipo, conclusión y contenido estructurado. El servicio **no** devuelve
+identidad del paciente, antecedentes ni alergias: estos se consultan por el GET
+de detalle independiente. El frontend `PatientProfile` y `PatientVisitDetail`
+consumen `/pacientes/<id>/visitas`; el otro alias no tiene consumidor directo
+identificado. Los detalles adicionales de diagnóstico, informes, PDF y archivos
+se consultan mediante **otros endpoints heredados**, fuera de esta activación.
+
+Por incluir todos los dominios en una sola respuesta, ambas rutas requieren
+`history.full_read`: rol activo `OFTALMOLOGO` y los **cinco** grants activos
+`pacientes.ver`, `visitas.ver`, `diagnostico_retinopatia.ver`, `informes.ver` e
+`imagenes.ver` procedentes de ese rol habilitante, sin sumar los del Admin o
+Asistente. No hay asignación exclusiva de pacientes a médicos. Asistente y
+Enfermero no acceden al contenido completo; su futura vista asistencial
+requiere contrato diferente. Se comprueba el ID del paciente activo sin cargar
+datos clínicos: 404 para ausente, 200 con `data: []` cuando no hay visitas o
+sin diagnóstico. El 403 se emite antes de consultar pacientes/visitas. Con
+visitas se ejecutan tres consultas de historial agrupadas, no una por visita.
+
+**Dependencia pendiente fuera del alcance:** el repositorio devuelve referencias
+de imágenes almacenadas, sin generar JWT en las URLs. Sin embargo,
+`frontend/src/features/patients/components/visit-detail/VisitDiagnosisTab.tsx`
+añade actualmente el JWT como `?token=` al construir URLs de `/uploads/retinas`.
+Eso puede exponer credenciales en historial del navegador o registros HTTP;
+corregirlo requiere revisar la entrega/autorización del endpoint de archivos
+por separado. Ningún cambio de este bloque añade tokens a URLs ni modifica
+esos endpoints. Los permisos nuevos tampoco corrigen el bypass del decorador
+antiguo en informes, detalle independiente de IA, PDF o imágenes.
+`usePatientVisitDetail` aún solicita detalles adicionales a un endpoint de
+diagnóstico independiente y trata su error como ausencia de detalle ampliado;
+su autorización, manejo de 403 y registro del error deben revisarse en un
+bloque específico de diagnóstico. No se alteró ese endpoint en este bloque.
 
 ## Dependencias antes de activar B1
 

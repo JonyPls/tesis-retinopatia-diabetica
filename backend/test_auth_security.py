@@ -137,10 +137,19 @@ class AuthSecurityTests(unittest.TestCase):
             "success": True, "message": "Paciente registrado correctamente",
             "data": self.patient_row,
         }, 201))
+        self.history_service = Mock(return_value=({
+            "success": True, "data": [{
+                "visita_id": 301, "motivo_consulta": "Motivo sintético",
+                "diagnostico_ia": {"detalles": [{"resultado_ia_id": 2,
+                    "imagen_original_url": "synthetic-only.jpg"}]},
+                "informes": [{"conclusion": "Informe sintético"}],
+            }],
+        }, 200))
         for name, fake in (("buscar_pacientes_dinamico", self.search_service),
                            ("obtener_recientes", self.recent_service),
                            ("obtener_todos_pacientes", self.list_service),
                            ("obtener_detalle_paciente", self.detail_service),
+                           ("obtener_historial_diagnosticos", self.history_service),
                            ("registrar_nuevo_paciente", self.create_service)):
             patched = patch.object(patient_routes, name, fake)
             patched.start()
@@ -800,6 +809,10 @@ class AuthSecurityTests(unittest.TestCase):
         roles["OFTALMOLOGO"].permisos_rel.append(
             SimpleNamespace(permiso=SimpleNamespace(codigo="informes.ver", estado="ACTIVO"))
         )
+        self.assertEqual(self.client.get("/api/_strict_history/101", headers=headers).status_code, 403)
+        roles["OFTALMOLOGO"].permisos_rel.append(
+            SimpleNamespace(permiso=SimpleNamespace(codigo="imagenes.ver", estado="ACTIVO"))
+        )
         self.assertEqual(self.client.get("/api/_strict_history/101", headers=headers).status_code, 200)
 
     def test_strict_pdf_requires_image_reading(self):
@@ -1175,6 +1188,72 @@ class AuthSecurityTests(unittest.TestCase):
         self.assertNotIn("antecedentes_clinicos", result.json["data"])
         self.assertNotIn("alergias", result.json["data"])
         self.assertNotIn("consentimiento_informado", result.json["data"])
+
+    def test_b1_real_history_requires_five_grants_from_ophthalmologist(self):
+        required = {"pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver",
+                    "informes.ver", "imagenes.ver"}
+        paths = ("/api/diagnosticos/paciente/101", "/api/pacientes/101/visitas")
+        headers = self.headers(self.token(roles=["Administrador del sistema"]))
+        self.set_role_grants({"OFTALMOLOGO": required})
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path, headers=headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json["data"][0]["diagnostico_ia"]["detalles"][0]
+                                 ["imagen_original_url"], "synthetic-only.jpg")
+        self.assertEqual(self.history_service.call_count, 2)
+        for missing in required:
+            with self.subTest(missing=missing):
+                self.set_role_grants({"OFTALMOLOGO": required - {missing}})
+                for path in paths:
+                    self.assertEqual(self.client.get(path, headers=headers).status_code, 403)
+        self.assertEqual(self.history_service.call_count, 2)
+
+    def test_b1_real_history_denies_without_eligible_provenance_or_authentication(self):
+        path = "/api/pacientes/101/visitas"
+        for token in (None, self.token(key="incorrect-synthetic-key"), self.token(expires=False)):
+            response = self.client.get(path, headers=self.headers(token) if token else None)
+            self.assertEqual(response.status_code, 401)
+            self.assertNotIn("data", response.json)
+        self.active = False
+        self.assertEqual(self.client.get(path, headers=self.headers(self.token())).status_code, 401)
+        self.active = True
+        required = {"pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver",
+                    "informes.ver", "imagenes.ver"}
+        for grants in ({"ADMINISTRADOR_SISTEMA": required},
+                       {"ASISTENTE_ADMINISTRATIVO": required},
+                       {"ENFERMERO": required},
+                       {"ADMINISTRADOR_SISTEMA": required, "OFTALMOLOGO": {"pacientes.ver"}},
+                       {"ASISTENTE_ADMINISTRATIVO": required - {"imagenes.ver"},
+                        "OFTALMOLOGO": {"imagenes.ver"}}):
+            with self.subTest(grants=grants):
+                self.set_role_grants(grants)
+                for endpoint in (path, "/api/diagnosticos/paciente/101"):
+                    result = self.client.get(endpoint, headers=self.headers(self.token()))
+                    self.assertEqual(result.status_code, 403)
+                    self.assertNotIn("data", result.json)
+        self.history_service.assert_not_called()
+
+    def test_b1_real_history_revocation_empty_and_not_found(self):
+        required = ["pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver",
+                    "informes.ver", "imagenes.ver"]
+        roles = self.set_role_grants({"ADMINISTRADOR_SISTEMA": ["dashboard.ver"],
+                                      "OFTALMOLOGO": required})
+        headers = self.headers(self.token())
+        for patient_id in (101, 202):
+            self.assertEqual(self.client.get(f"/api/pacientes/{patient_id}/visitas",
+                                             headers=headers).status_code, 200)
+        roles["OFTALMOLOGO"].permisos_rel[-1].permiso.estado = "INACTIVO"
+        self.assertEqual(self.client.get("/api/pacientes/101/visitas", headers=headers).status_code, 403)
+        self.assertEqual(self.history_service.call_count, 2)
+        roles["OFTALMOLOGO"].permisos_rel[-1].permiso.estado = "ACTIVO"
+        self.history_service.return_value = ({"success": True, "data": []}, 200)
+        self.assertEqual(self.client.get("/api/pacientes/202/visitas", headers=headers).json["data"], [])
+        self.history_service.return_value = ({"success": False,
+                                              "message": "Paciente no encontrado"}, 404)
+        missing = self.client.get("/api/diagnosticos/paciente/999", headers=headers)
+        self.assertEqual(missing.status_code, 404)
+        self.assertNotIn("data", missing.json)
 
 
 if __name__ == "__main__":

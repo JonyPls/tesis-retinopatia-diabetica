@@ -48,7 +48,7 @@ OPERATION_RULES = MappingProxyType({
     "visits.create": _rule("assistance", (OFTALMOLOGO, ENFERMERO), "visitas.crear"),
     "history.full_read": _rule(
         "specialist", (OFTALMOLOGO,), "pacientes.ver", "visitas.ver",
-        "diagnostico_retinopatia.ver", "informes.ver",
+        "diagnostico_retinopatia.ver", "informes.ver", "imagenes.ver",
     ),
     "diagnosis.read": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.ver"),
     "diagnosis.create": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear"),

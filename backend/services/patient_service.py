@@ -242,13 +242,16 @@ def obtener_detalle_paciente(paciente_id, *, scope='clinical'):
 
 def obtener_historial_diagnosticos(paciente_id):
     try:
+        if not PatientRepository.existe_paciente_activo(paciente_id):
+            return {"success": False, "message": "Paciente no encontrado"}, 404
         historial = PatientRepository.obtener_diagnosticos_paciente(paciente_id)
         return {
             "success": True,
             "data": historial
         }, 200
     except Exception:
-        current_app.logger.exception("Error al obtener historial de diagnosticos")
+        # No registrar consultas ni parámetros clínicos en trazas de errores.
+        current_app.logger.error("Error al obtener historial de diagnosticos")
         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
 
 
