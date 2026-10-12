@@ -1,7 +1,13 @@
 from database import db
 from datetime import datetime
-from src.models.diagnosis_entities import Diagnostico, DiagnosticoDetalle
+from src.models.diagnosis_entities import Diagnostico, DiagnosticoDetalle, GradoRetinopatia
 from src.models.patient_entities import VisitaClinica
+
+class DiagnosisValidationError(Exception):
+    def __init__(self, status_code, message):
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class DiagnosisRepository:
     @staticmethod
@@ -117,21 +123,41 @@ class DiagnosisRepository:
         motivo_correccion: str = None,
         usuario_id: int = None,
     ):
-        detalle = DiagnosticoDetalle.query.get(detalle_id)
-        if not detalle:
-            raise Exception("Detalle de diagnóstico no encontrado.")
+        # Bloquear primero el diagnóstico: dos ojos del mismo diagnóstico se
+        # serializan; los demás diagnósticos no comparten bloqueo.
+        diagnosis_id = db.session.query(DiagnosticoDetalle.diagnostico_retinopatia_id).filter_by(
+            id=detalle_id
+        ).scalar()
+        if diagnosis_id is None:
+            raise DiagnosisValidationError(404, "Detalle de diagnóstico no encontrado.")
+        diagnostico = Diagnostico.query.filter_by(id=diagnosis_id).with_for_update().first()
+        if diagnostico is None:
+            raise DiagnosisValidationError(404, "Detalle de diagnóstico no encontrado.")
+        detalle = DiagnosticoDetalle.query.filter_by(
+            id=detalle_id, diagnostico_retinopatia_id=diagnosis_id,
+        ).with_for_update().populate_existing().first()
+        if detalle is None:
+            raise DiagnosisValidationError(404, "Detalle de diagnóstico no encontrado.")
+        if detalle.estado_validacion != 'PENDIENTE' or detalle.resultado_final_id is not None or detalle.validado_por is not None or detalle.fecha_validacion is not None:
+            raise DiagnosisValidationError(409, "El detalle ya fue validado.")
+        if diagnostico.estado != 'PROCESADO' or detalle.ojo_evaluado not in ('Derecho', 'Izquierdo') or detalle.resultado_ia_id is None:
+            raise DiagnosisValidationError(409, "El detalle no está disponible para validación.")
+        if not db.session.query(GradoRetinopatia.id).filter_by(
+            id=diagnostico_final, estado='ACTIVO',
+        ).first():
+            raise DiagnosisValidationError(400, "Grado final no permitido.")
 
         resultado_ia = detalle.resultado_ia_id
         comentario_medico = comentario_medico.strip() if comentario_medico else None
         motivo_correccion = motivo_correccion.strip() if motivo_correccion else None
 
-        if int(diagnostico_final) == int(resultado_ia):
+        if diagnostico_final == resultado_ia:
             estado_validacion = 'APROBADO'
             motivo_correccion = None
         else:
             estado_validacion = 'CORREGIDO'
             if not motivo_correccion:
-                raise Exception("Debe registrar el motivo de corrección cuando el diagnóstico final cambia el resultado de la IA.")
+                raise DiagnosisValidationError(400, "Debe registrar el motivo de corrección cuando el diagnóstico final cambia el resultado de la IA.")
 
         detalle.resultado_final_id = diagnostico_final
         detalle.estado_validacion = estado_validacion
@@ -140,12 +166,18 @@ class DiagnosisRepository:
         detalle.validado_por = usuario_id
         detalle.fecha_validacion = datetime.utcnow()
 
-        diagnostico = Diagnostico.query.get(detalle.diagnostico_retinopatia_id)
-        if diagnostico and all(d.estado_validacion != 'PENDIENTE' for d in diagnostico.detalles):
+        db.session.flush()
+        # Lectura actual (locking read): la autenticación pudo iniciar una
+        # snapshot REPEATABLE READ antes de que terminara otra solicitud.
+        estados = db.session.query(DiagnosticoDetalle.estado_validacion).filter_by(
+            diagnostico_retinopatia_id=diagnosis_id,
+        ).with_for_update().all()
+        if estados and all(estado != 'PENDIENTE' for (estado,) in estados):
             diagnostico.estado = 'VALIDADO'
         
         db.session.commit()
         return estado_validacion
+
 
     @staticmethod
     def crear_visita_simple(paciente_id: int, usuario_id: int, motivo_consulta: str = None):

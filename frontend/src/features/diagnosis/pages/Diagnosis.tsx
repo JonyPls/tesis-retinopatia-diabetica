@@ -231,6 +231,7 @@ export default function Diagnosis() {
                 setCorrectionReason={diagnosisHook.setCorrectionReason}
                 validateDiagnosis={diagnosisHook.validateDiagnosis}
                 isValidating={diagnosisHook.isValidating}
+                validatedEyes={diagnosisHook.validatedEyes}
               />
             )}
           </CardContent>
@@ -288,7 +289,7 @@ export default function Diagnosis() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    disabled={isValidating}
+                    disabled={isValidating || diagnosisHook.validationConflict || Object.keys(diagnosisHook.results).every((eye) => !!diagnosisHook.validatedEyes[eye as keyof typeof diagnosisHook.validatedEyes])}
                     className="bg-primary hover:bg-primary/90"
                   >
                     {isValidating ? (
@@ -312,7 +313,7 @@ export default function Diagnosis() {
                     subtitle="Revise esta acción antes de continuar."
                   />
                   <AppAlertModalBody>
-                    Se guardarán las validaciones para los ojos procesados y
+                    Se guardarán los ojos pendientes de validación y
                     volverás al dashboard. ¿Deseas continuar?
                   </AppAlertModalBody>
                   <AppAlertModalFooter>

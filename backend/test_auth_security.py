@@ -665,6 +665,52 @@ class AuthSecurityTests(unittest.TestCase):
             service.return_value = {"success": False, "message": "No se pudo procesar la solicitud."}
             self.assertEqual(self.client.get(path, headers=self.headers(self.token())).status_code, 500)
 
+    def test_b1_real_validation_route_authorization_and_payload(self):
+        path = "/api/diagnosticar/detalle/431/validar"
+        payload = {"diagnostico_final": 3, "motivo_correccion": "Nota sintética"}
+        service = Mock(return_value=({"success": True, "data": {"estado_validacion": "CORREGIDO"},
+                                      "message": "Diagnóstico validado y guardado exitosamente."}, 200))
+        with patch.object(diagnosis_routes, "confirmar_validacion_detalle", service):
+            roles = self.set_role_grants({"OFTALMOLOGO": ["diagnostico_retinopatia.validar"]})
+            token = self.token()
+            for invalid in (None, self.token(key="wrong-only-synthetic-key"),
+                            self.token(expires=False)):
+                result = self.client.put(path, json=payload,
+                                         headers=self.headers(invalid) if invalid else None)
+                self.assertEqual(result.status_code, 401)
+            self.active = False
+            self.assertEqual(self.client.put(path, json=payload, headers=self.headers(token)).status_code, 401)
+            self.active = True
+            for grants in ({"OFTALMOLOGO": []},
+                           {"ADMINISTRADOR_SISTEMA": ["diagnostico_retinopatia.validar"]},
+                           {"ENFERMERO": ["diagnostico_retinopatia.validar"]},
+                           {"ASISTENTE_ADMINISTRATIVO": ["diagnostico_retinopatia.validar"]},
+                           {"ADMINISTRADOR_SISTEMA": ["diagnostico_retinopatia.validar"], "OFTALMOLOGO": []}):
+                self.set_role_grants(grants)
+                self.assertEqual(self.client.put(path, json=payload, headers=self.headers(token)).status_code, 403)
+            roles = self.set_role_grants({"OFTALMOLOGO": ["diagnostico_retinopatia.validar"]})
+            for forbidden in ({"resultado_ia_id": 0}, {"validado_por": 42},
+                              {"fecha_validacion": "2030-01-01"}, {"ojo_evaluado": "Derecho"}):
+                self.assertEqual(self.client.put(path, json={**payload, **forbidden},
+                                                 headers=self.headers(token)).status_code, 400)
+            for invalid_grade in (-1, 5, "2", True, 1.5):
+                self.assertEqual(self.client.put(path, json={"diagnostico_final": invalid_grade},
+                                                 headers=self.headers(token)).status_code, 400)
+            service.assert_not_called()
+            response = self.client.put(path, json=payload, headers=self.headers(token))
+            self.assertEqual(response.status_code, 200)
+            service.assert_called_once_with(detalle_id=431, diagnostico_final=3,
+                                            comentario_medico=None,
+                                            motivo_correccion="Nota sintética", usuario_id=self.user.id)
+            roles["OFTALMOLOGO"].permisos_rel[0].permiso.estado = "INACTIVO"
+            self.assertEqual(self.client.put(path, json=payload, headers=self.headers(token)).status_code, 403)
+            self.set_role_grants({"ADMINISTRADOR_SISTEMA": [],
+                                  "OFTALMOLOGO": ["diagnostico_retinopatia.validar"]})
+            self.assertEqual(self.client.put(path, json=payload, headers=self.headers(token)).status_code, 200)
+            for query in ("?token=" + token, "?access_token=" + token):
+                self.assertEqual(self.client.put(path + query, json=payload,
+                                                 headers=self.headers(token)).status_code, 401)
+
     def test_b1_real_image_route_role_and_resource_protection(self):
         approved = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
         with tempfile.TemporaryDirectory(prefix="b1-image-isolated-", dir=approved) as folder:

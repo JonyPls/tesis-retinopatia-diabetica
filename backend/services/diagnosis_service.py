@@ -8,7 +8,8 @@ import io
 from werkzeug.datastructures import FileStorage
 from dl_model.validator import validar_formato_y_dimensiones, validar_region_circular, validar_contenido_semantico
 from dl_model.inference import predecir_imagen_bytes
-from src.repositories.diagnosis_repository import DiagnosisRepository
+from src.repositories.diagnosis_repository import DiagnosisRepository, DiagnosisValidationError
+from database import db
 
 RD_LABELS = {
     0: "Normal",
@@ -176,7 +177,7 @@ def confirmar_validacion_detalle(
     comentario_medico: str = None,
     motivo_correccion: str = None,
     usuario_id: int = None,
-) -> dict:
+) -> tuple[dict, int]:
     try:
         nuevo_estado = DiagnosisRepository.validar_detalle_diagnostico(
             detalle_id,
@@ -190,7 +191,11 @@ def confirmar_validacion_detalle(
             "success": True,
             "data": {"estado_validacion": nuevo_estado},
             "message": "Diagnóstico validado y guardado exitosamente."
-        }
+        }, 200
+    except DiagnosisValidationError as error:
+        db.session.rollback()
+        return {"success": False, "message": str(error)}, error.status_code
     except Exception:
-        current_app.logger.exception("Error al confirmar validacion de diagnostico")
-        return {"success": False, "message": "No se pudo procesar la solicitud."}
+        db.session.rollback()
+        current_app.logger.error("Error al confirmar validacion de diagnostico")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500

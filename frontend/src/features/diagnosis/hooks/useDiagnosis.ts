@@ -100,6 +100,20 @@ export function useDiagnosis(): DiagnosisHook {
     OI: "",
   });
   const [isValidating, setIsValidating] = useState(false);
+  const [validatedEyes, setValidatedEyes] = useState<Partial<Record<EyeKey, "APROBADO" | "CORREGIDO">>>({});
+  const [validationConflict, setValidationConflict] = useState(false);
+
+  const validationFailure = (error: unknown, eye: EyeKey) => {
+    const status = (error as { response?: { status?: number; data?: { message?: string } } })?.response?.status;
+    if (status === 409) {
+      setValidationConflict(true);
+      return "Este resultado ya fue validado. Actualice la vista antes de continuar.";
+    }
+    if (status === 401) return "Su sesión ya no es válida. Inicie sesión nuevamente.";
+    if (status === 403) return "No tiene permiso vigente para validar diagnósticos.";
+    if (status === 400) return (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Revise los datos de validación.";
+    return `No se pudo validar ${eye}. Inténtelo nuevamente.`;
+  };
 
   const navigate = useNavigate();
 
@@ -276,6 +290,8 @@ export function useDiagnosis(): DiagnosisHook {
     setVisitasRecientes([]);
     resetUploadedEyes();
     setResults({});
+    setValidatedEyes({});
+    setValidationConflict(false);
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
     setCorrectionReasons({ OD: "", OI: "" });
@@ -298,6 +314,8 @@ export function useDiagnosis(): DiagnosisHook {
     setVisitasRecientes([]);
     resetUploadedEyes();
     setResults({});
+    setValidatedEyes({});
+    setValidationConflict(false);
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
     setCorrectionReasons({ OD: "", OI: "" });
@@ -307,6 +325,8 @@ export function useDiagnosis(): DiagnosisHook {
     setSelectedVisita(visita);
     resetUploadedEyes();
     setResults({});
+    setValidatedEyes({});
+    setValidationConflict(false);
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
     setCorrectionReasons({ OD: "", OI: "" });
@@ -400,6 +420,8 @@ export function useDiagnosis(): DiagnosisHook {
         return next;
       });
       setResults({});
+      setValidatedEyes({});
+      setValidationConflict(false);
       setFinalSelectionState({ OD: 0, OI: 0 });
       setComments({ OD: "", OI: "" });
       setCorrectionReasons({ OD: "", OI: "" });
@@ -527,6 +549,8 @@ export function useDiagnosis(): DiagnosisHook {
     });
 
     setResults(newResults);
+    setValidatedEyes({});
+    setValidationConflict(false);
     setActiveEye(eyesToProcess[0]);
     setFinalSelectionState((prev) => ({ ...prev, ...init }));
     setComments({ OD: "", OI: "" });
@@ -589,7 +613,7 @@ export function useDiagnosis(): DiagnosisHook {
 
   const validateDiagnosis = async (eye: EyeKey) => {
     const current = results[eye];
-    if (!current) return;
+    if (!current || validatedEyes[eye] || validationConflict || isValidating) return;
     if (!ensureCorrectionReason(eye)) return;
 
     const detalleId = current.detalle_id;
@@ -601,7 +625,8 @@ export function useDiagnosis(): DiagnosisHook {
         comments[eye],
         correctionReasons[eye],
       );
-      if (resp.success) {
+      if (resp.success && (resp.data?.estado_validacion === "APROBADO" || resp.data?.estado_validacion === "CORREGIDO")) {
+        setValidatedEyes((previous) => ({ ...previous, [eye]: resp.data.estado_validacion }));
         toast({ title: "Validación guardada", description: resp.message });
       } else {
         toast({
@@ -613,7 +638,7 @@ export function useDiagnosis(): DiagnosisHook {
     } catch (err: any) {
       toast({
         title: "Error",
-        description: err?.message || "Error al validar.",
+        description: validationFailure(err, eye),
         variant: "destructive",
       });
     } finally {
@@ -623,8 +648,9 @@ export function useDiagnosis(): DiagnosisHook {
 
   /** Valida todos los diagnósticos disponibles (OD/OI) y redirige al dashboard si todo OK */
   const validateAll = async () => {
+    if (validationConflict || isValidating) return;
     const availableEyes = (Object.keys(results) as EyeKey[]).filter(
-      (e) => !!results[e],
+      (e) => !!results[e] && !validatedEyes[e],
     );
     if (availableEyes.length === 0) return;
     setIsValidating(true);
@@ -646,21 +672,25 @@ export function useDiagnosis(): DiagnosisHook {
           comments[eye],
           correctionReasons[eye],
         );
-        if (!resp.success) {
+        if (resp.success && (resp.data?.estado_validacion === "APROBADO" || resp.data?.estado_validacion === "CORREGIDO")) {
+          setValidatedEyes((previous) => ({ ...previous, [eye]: resp.data.estado_validacion }));
+        } else {
           hasError = true;
           toast({
             title: "Error",
             description: resp.message || `Error al validar ${eye}`,
             variant: "destructive",
           });
+          break;
         }
       } catch (err: any) {
         hasError = true;
         toast({
           title: "Error",
-          description: err?.message || `Error al validar ${eye}`,
+          description: validationFailure(err, eye),
           variant: "destructive",
         });
+        break;
       }
     }
 
@@ -710,6 +740,8 @@ export function useDiagnosis(): DiagnosisHook {
     setVisitasRecientes([]);
     resetUploadedEyes();
     setResults({});
+    setValidatedEyes({});
+    setValidationConflict(false);
     setFinalSelectionState({ OD: 0, OI: 0 });
     setComments({ OD: "", OI: "" });
     setCorrectionReasons({ OD: "", OI: "" });
@@ -737,6 +769,8 @@ export function useDiagnosis(): DiagnosisHook {
     validateDiagnosis,
     validateAll,
     isValidating,
+    validatedEyes,
+    validationConflict,
     query,
     searchResults,
     recentPatients,

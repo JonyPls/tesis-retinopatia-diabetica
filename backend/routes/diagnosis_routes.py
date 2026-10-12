@@ -143,16 +143,21 @@ def descargar_imagen_retinografo():
 
 
 @diagnosis_bp.route('/api/diagnosticar/detalle/<int:detalle_id>/validar', methods=['PUT'])
-@token_required
-@clinical_access_required('diagnosticos.validar', 'diagnosticos.gestionar')
+@strict_authorization_required('diagnosis.validate')
 def confirmar_validacion(detalle_id):
-    datos = request.get_json()
+    datos = request.get_json(silent=True)
     
-    if not datos or 'diagnostico_final' not in datos:
+    if not isinstance(datos, dict) or 'diagnostico_final' not in datos:
         message = "Falta el diagnostico_final"
         return jsonify({"success": False, "message": message, "error": message}), 400
-        
-    resultado = confirmar_validacion_detalle(
+    if (set(datos) - {'diagnostico_final', 'comentario_medico', 'motivo_correccion'}
+            or type(datos['diagnostico_final']) is not int
+            or not 0 <= datos['diagnostico_final'] <= 4
+            or any(datos.get(key) is not None and not isinstance(datos[key], str)
+                   for key in ('comentario_medico', 'motivo_correccion'))):
+        return jsonify({"success": False, "message": "Datos de validación inválidos."}), 400
+
+    resultado, status_code = confirmar_validacion_detalle(
         detalle_id=detalle_id,
         diagnostico_final=datos['diagnostico_final'],
         comentario_medico=datos.get('comentario_medico'),
@@ -160,7 +165,4 @@ def confirmar_validacion(detalle_id):
         usuario_id=request.current_user.get('user_id'),
     )
     
-    if resultado.get("success"):
-        return jsonify(resultado), 200
-    else:
-        return jsonify(resultado), 400
+    return jsonify(resultado), status_code

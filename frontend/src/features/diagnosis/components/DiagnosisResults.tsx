@@ -261,11 +261,13 @@ function GradeSelector({
   selected,
   iaLevel,
   onChange,
+  disabled,
 }: {
   activeEye: EyeKey;
   selected: number;
   iaLevel: number;
   onChange?: (eye: EyeKey, value: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="grid grid-cols-5 gap-1.5">
@@ -280,6 +282,7 @@ function GradeSelector({
             variant="outline"
             title={RD_LEVELS[level].label}
             onClick={() => onChange?.(activeEye, level)}
+            disabled={disabled}
             className={cn(
               "h-16 min-w-0 flex-col gap-1 rounded-md px-1 text-center transition-all",
               checked
@@ -318,6 +321,7 @@ export function DiagnosisResults(
     setCorrectionReason?: (eye: EyeKey, text: string) => void;
     validateDiagnosis?: (eye: EyeKey) => Promise<void>;
     isValidating?: boolean;
+    validatedEyes?: Partial<Record<EyeKey, "APROBADO" | "CORREGIDO">>;
   },
 ) {
   const {
@@ -331,6 +335,7 @@ export function DiagnosisResults(
     setComment,
     correctionReasons,
     setCorrectionReason,
+    validatedEyes,
   } = props;
 
   const available = eyesWithResults(results);
@@ -341,6 +346,7 @@ export function DiagnosisResults(
   const iaLevel = current.diagnostico_codigo;
   const finalLevel = finalSelection?.[activeEye] ?? iaLevel;
   const isCorrected = Number(finalLevel) !== Number(iaLevel);
+  const confirmed = validatedEyes?.[activeEye];
   const originalFileName = eyes[activeEye].file?.name ?? "Imagen seleccionada";
   const finalInfo = RD_LEVELS[finalLevel as RDLevel];
 
@@ -366,8 +372,7 @@ export function DiagnosisResults(
               <div className="min-w-0">
                 <p className="text-sm font-semibold">Decisión médica</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Seleccione el grado final. Por defecto coincide con la
-                  predicción IA.
+                  {confirmed ? "Decisión médica guardada para este ojo." : "Seleccione el grado final. Por defecto coincide con la predicción IA."}
                 </p>
               </div>
             </div>
@@ -379,7 +384,7 @@ export function DiagnosisResults(
                   : "border-success/30 bg-success/10 text-success",
               )}
             >
-              {isCorrected ? "Corregido" : "Aprobado"}
+              {confirmed ? `Validado: ${confirmed === "CORREGIDO" ? "corregido" : "aprobado"}` : `Por guardar: ${isCorrected ? "corregido" : "aprobado"}`}
             </span>
           </div>
 
@@ -388,6 +393,7 @@ export function DiagnosisResults(
             selected={finalLevel}
             iaLevel={iaLevel}
             onChange={setFinalSelection}
+            disabled={!!confirmed}
           />
 
           <p className="text-xs leading-relaxed text-muted-foreground">
@@ -407,9 +413,10 @@ export function DiagnosisResults(
               </div>
               <Textarea
                 value={correctionReasons?.[activeEye] ?? ""}
-                onChange={(event) =>
-                  setCorrectionReason?.(activeEye, event.target.value)
-                }
+                  onChange={(event) =>
+                    setCorrectionReason?.(activeEye, event.target.value)
+                  }
+                  disabled={!!confirmed}
                 className="min-h-[88px] resize-none bg-background"
                 placeholder="Explique por qué el diagnóstico final difiere del resultado IA..."
               />
@@ -423,8 +430,9 @@ export function DiagnosisResults(
                 Opcional
               </span>
             </div>
-            <Textarea
-              value={comments?.[activeEye] ?? ""}
+              <Textarea
+                value={comments?.[activeEye] ?? ""}
+                disabled={!!confirmed}
               onChange={(event) => setComment?.(activeEye, event.target.value)}
               className="min-h-[92px] resize-none"
               placeholder="Observaciones clínicas, conducta sugerida o notas para seguimiento..."

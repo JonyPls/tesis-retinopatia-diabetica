@@ -94,7 +94,7 @@ donde se indica. Las precondiciones incluyen cuenta activa y JWT válido.
 | GET `/api/visitas/<int:visita_id>/reporte-diagnostico` | Descargar PDF / compuesto | `pacientes.ver` + `diagnostico_retinopatia.ver` [nuevo] + `imagenes.ver` [nuevo] | O | Incluye identidad, predicción, decisión e imágenes; pendiente de decisión contractual. |
 | GET `/api/diagnosticar/retinografo/auto-seleccion/<int:paciente_id>` | Seleccionar exportadas / imágenes | `pacientes.ver` + `imagenes.ver` [nuevo] | O; E si autorizado | Consulta, no ejecuta la inferencia; pendiente. |
 | GET `/api/diagnosticar/retinografo/imagen` | Descargar exportada / imágenes | `imagenes.ver` [nuevo] | O; E si autorizado | Solo archivo correspondiente al paciente; pendiente. |
-| PUT `/api/diagnosticar/detalle/<int:detalle_id>/validar` | Validar / diagnóstico IA | `diagnostico_retinopatia.validar` | O con habilitación médica | Procedencia clínica obligatoria incluso en multirrol; pendiente. |
+| PUT `/api/diagnosticar/detalle/<int:detalle_id>/validar` | Primera validación por ojo | `diagnostico_retinopatia.validar` | O con habilitación médica | **Activa B1**: solo un detalle `PENDIENTE` de diagnóstico `PROCESADO`; 409 para revalidaciones; rectificación futura fuera de alcance. |
 | GET `/api/tipos-informe` | Leer tipos / catálogo informes | `informes.ver` **o** `informes.crear` | O, E, S según tarea | Solo catálogo; alternativa OR pendiente de confirmación. |
 | POST `/api/informes` | Registrar / informes | `informes.crear` | O | Ni asistente ni enfermero crean informes oftalmológicos por defecto. Si crea visita, verificar dependencia de `visitas.crear` antes del corte; pendiente. |
 | GET `/api/informes/<int:informe_id>` | Leer / informes | `informes.ver` | O, E, S según tarea | Todos los especialistas O con lectura ven informes de todos los pacientes; pendiente. |
@@ -381,6 +381,44 @@ ahora muestra 401/403 del GET independiente como error de acceso, no como
 diagnóstico ausente, incluidos los detalles de comparación; 404 corresponde
 a la ausencia del diagnóstico y no al paciente. Mantiene Blob/Bearer para
 las imágenes. Hay **diez** rutas B1 tras esta activación.
+
+## Primera validación médica por ojo (Prompt 26B)
+
+El PUT existente `/api/diagnosticar/detalle/<int:detalle_id>/validar` es la
+**undécima** ruta B1. `diagnosis.validate` exige Bearer, cuenta activa, rol
+`OFTALMOLOGO` activo y grant vigente `diagnostico_retinopatia.validar` de ese
+rol, aun en cuentas multirrol. El 403 se decide antes de consultar el detalle.
+No se restringe por médico creador ni paciente asignado. Otras diez rutas
+siguen con sus propias reglas.
+
+Solo se aceptan `diagnostico_final` entero (0–4, grado activo en el catálogo),
+`comentario_medico` y `motivo_correccion` de tipo texto o nulos. Campos
+desconocidos, atribución de validador, fecha, ojo, estado y datos de inferencia
+son 400. La predicción `resultado_ia_id` permanece intacta. Si el grado final
+coincide con IA el estado es `APROBADO` y se descarta motivo; si cambia,
+se exige motivo y el estado es `CORREGIDO`. `validado_por` es el usuario activo
+del JWT y `fecha_validacion` se asigna con la convención UTC del servidor.
+
+El diagnóstico padre se bloquea con `SELECT ... FOR UPDATE` antes de bloquear
+el detalle, por ID de diagnóstico; así las peticiones del mismo diagnóstico
+se serializan sin bloquear otros pacientes. La lectura del detalle y el
+chequeo final de ojos pendientes son *locking reads* actuales, incluso bajo
+`REPEATABLE READ`. Una única confirmación persiste detalle y estado padre;
+cualquier error revierte el conjunto. Detalle ya validado (incluido el mismo
+grado): 409 sin sobrescribir valores anteriores. Ausencia: 404. Estado
+incompatible: 409. Fallo interno: 500 genérico, sin traza clínica. La operación
+no rectifica ni conserva un historial de revisiones: esa función requiere
+otra política y auditoría futura.
+
+OD y OI siguen siendo dos solicitudes independientes. Si falla OI tras el
+éxito de OD, OD queda guardado y OI continúa pendiente; el estado padre solo
+pasa a `VALIDADO` cuando no quedan detalles pendientes. El frontend marca
+como confirmados únicamente los ojos cuyo PUT devolvió éxito, evita repetirlos
+y, ante un 409, bloquea nuevos envíos desde la vista y pide actualizarla.
+En el arnés MySQL 8 desechable, una primera validación con dos ojos cuesta
+8 SELECT, 1 UPDATE, 0 INSERT; el último ojo además actualiza el estado padre.
+La prueba con dos clientes/conexiones independientes sincronizados antes del
+bloqueo verifica 200/409 y un único resultado persistido.
 
 ## Dependencias antes de activar B1
 

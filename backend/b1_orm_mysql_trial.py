@@ -6,6 +6,7 @@ solo tras inicializar y comprobar la instancia desechable. No importa app.py.
 
 from contextlib import contextmanager
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
 import inspect as python_inspect
@@ -15,6 +16,7 @@ import re
 import secrets
 import sys
 import tempfile
+from threading import Barrier
 from types import ModuleType
 import unittest
 from unittest.mock import patch
@@ -42,7 +44,7 @@ with patch("dotenv.load_dotenv", return_value=False):
     from utils.security import clinical_access_required, token_required
     from utils.strict_authorization import evaluate_operation, strict_authorization_required
 
-    # Importar rutas y servicio de LECTURA reales sin cargar CLIP/ResNet50.
+    # Importar rutas reales sin cargar CLIP/ResNet50.
     # La generación PDF no participa en esta prueba de diagnóstico.
     fake_validator = ModuleType("dl_model.validator")
     for name in ("validar_formato_y_dimensiones", "validar_region_circular",
@@ -416,6 +418,40 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         finally:
             row = db.session.get(model, identifier)
             row.estado = original
+            db.session.commit()
+            db.session.remove()
+
+    @contextmanager
+    def pending_validation(self):
+        visit = VisitaClinica(paciente_id=self.patient_ids[1],
+                             usuario_id=self.user_ids["ophthalmologist"], estado="ACTIVA")
+        db.session.add(visit)
+        db.session.flush()
+        diagnosis = diagnosis_entities.Diagnostico(
+            visita_id=visit.id, usuario_id=self.user_ids["ophthalmologist"],
+            modelo_nombre="Modelo sintetico", estado="PROCESADO",
+        )
+        diagnosis.detalles = [diagnosis_entities.DiagnosticoDetalle(
+            ojo_evaluado=eye, imagen_original_url="synthetic-only.jpg", resultado_ia_id=grade,
+            estado_validacion="PENDIENTE",
+        ) for eye, grade in (("Derecho", 2), ("Izquierdo", 1))]
+        db.session.add(diagnosis)
+        db.session.commit()
+        ids = [detail.id for detail in diagnosis.detalles]
+        diagnosis_id = diagnosis.id
+        visit_id = visit.id
+        db.session.remove()
+        try:
+            yield ids, diagnosis_id
+        finally:
+            db.session.remove()
+            diagnosis = db.session.get(diagnosis_entities.Diagnostico, diagnosis_id)
+            if diagnosis:
+                db.session.delete(diagnosis)
+                db.session.flush()
+            visit = db.session.get(VisitaClinica, visit_id)
+            if visit:
+                db.session.delete(visit)
             db.session.commit()
             db.session.remove()
 
@@ -1006,6 +1042,191 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                                        "message": "No se pudo procesar la solicitud."})
         logged.assert_called_once_with("Error al consultar detalles de diagnostico")
         self.assertNotIn("synthetic-only.jpg", result.get_data(as_text=True))
+
+    def test_b1_real_validation_first_eyes_revalidation_and_sql_cost(self):
+        with self.pending_validation() as ((od, oi), diagnosis_id):
+            path = lambda identifier: f"/api/diagnosticar/detalle/{identifier}/validar"
+            payload = {"diagnostico_final": 3, "motivo_correccion": "Justificación sintética",
+                       "comentario_medico": "Nota sintética"}
+            response, sql = self.call(path(od), method="PUT", token=self.token("colleague"),
+                                      json_data=payload, measure=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json["data"], {"estado_validacion": "CORREGIDO"})
+            self.assertEqual(response.json["message"], "Diagnóstico validado y guardado exitosamente.")
+            print("ORM primera validación: SELECT=%d, UPDATE=%d, INSERT=%d" % (
+                sum(q.lstrip().lower().startswith("select") for q in sql),
+                sum(q.lstrip().lower().startswith("update") for q in sql),
+                sum(q.lstrip().lower().startswith("insert") for q in sql)))
+            first = db.session.get(diagnosis_entities.DiagnosticoDetalle, od)
+            snapshot = (first.resultado_ia_id, first.resultado_final_id, first.estado_validacion,
+                        first.validado_por, first.fecha_validacion, first.comentario_medico,
+                        first.motivo_correccion, first.ojo_evaluado)
+            self.assertEqual(snapshot[:4], (2, 3, "CORREGIDO", self.user_ids["colleague"]))
+            self.assertIsInstance(first.fecha_validacion, datetime)
+            self.assertEqual(snapshot[5:], ("Nota sintética", "Justificación sintética", "Derecho"))
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, oi).estado_validacion,
+                             "PENDIENTE")
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado,
+                             "PROCESADO")
+            db.session.remove()
+            for grade in (3, 0):
+                rejected, sql = self.call(path(od), method="PUT", token=self.token(),
+                                          json_data={"diagnostico_final": grade}, measure=True)
+                self.assertEqual(rejected.status_code, 409)
+                self.assertFalse(any(q.lstrip().lower().startswith("update") for q in sql))
+                db.session.remove()
+                first = db.session.get(diagnosis_entities.DiagnosticoDetalle, od)
+                self.assertEqual((first.resultado_ia_id, first.resultado_final_id,
+                                  first.estado_validacion, first.validado_por, first.fecha_validacion,
+                                  first.comentario_medico, first.motivo_correccion, first.ojo_evaluado), snapshot)
+            db.session.remove()
+            approved, final_sql = self.call(path(oi), method="PUT", token=self.token(),
+                                            json_data={"diagnostico_final": 1}, measure=True)
+            self.assertEqual(approved.status_code, 200)
+            self.assertEqual(approved.json["data"]["estado_validacion"], "APROBADO")
+            self.assertEqual(sum(q.lstrip().lower().startswith("update") for q in final_sql), 2)
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado, "VALIDADO")
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, od).resultado_final_id, 3)
+
+    def test_b1_real_validation_rejects_before_write_and_rolls_back(self):
+        with self.pending_validation() as ((od, oi), diagnosis_id):
+            path = f"/api/diagnosticar/detalle/{od}/validar"
+            token = self.token("dual")
+            payload = {"diagnostico_final": 2}
+            invalid_signature = jwt.encode({"user_id": self.user_ids["dual"],
+                "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                "invalid-only-synthetic-validation-key", algorithm="HS256")
+            for invalid in (None, invalid_signature, self.token(expired=True), self.token(expires=False)):
+                rejected, sql = self.call(path, method="PUT", token=invalid,
+                                          json_data=payload, measure=True)
+                self.assertEqual(rejected.status_code, 401)
+                self.assertEqual(sql, [])
+            with self.temporary_state(Usuario, self.user_ids["dual"], "INACTIVO"):
+                self.assertEqual(self.call(path, method="PUT", token=token, json_data=payload)[0].status_code, 401)
+            for profile in ("administrator", "nurse", "assistant"):
+                rejected, sql = self.call(path, method="PUT", token=self.token(profile),
+                                          json_data=payload, measure=True)
+                self.assertEqual(rejected.status_code, 403)
+                self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+            with self.temporary_state(Rol, Rol.query.filter_by(codigo="OFTALMOLOGO").one().id,
+                                      "INACTIVO"):
+                self.assertEqual(self.call(path, method="PUT", token=token,
+                                           json_data=payload)[0].status_code, 403)
+            with self.temporary_state(Permiso, Permiso.query.filter_by(
+                codigo="diagnostico_retinopatia.validar").one().id, "INACTIVO"):
+                self.assertEqual(self.call(path, method="PUT", token=token,
+                                           json_data=payload)[0].status_code, 403)
+            with self.temporary_grant("OFTALMOLOGO", "diagnostico_retinopatia.validar", present=False):
+                with self.temporary_grant("ADMINISTRADOR_SISTEMA", "diagnostico_retinopatia.validar", present=True):
+                    denied, sql = self.call(path, method="PUT", token=token,
+                                            json_data=payload, measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertEqual(sum(q.lstrip().lower().startswith("select") for q in sql), 3)
+            for payload_error in ({**payload, "resultado_ia_id": 4}, {**payload, "validado_por": 2},
+                                  {"diagnostico_final": 5}, {"diagnostico_final": 3}):
+                denied, sql = self.call(path, method="PUT", token=token,
+                                        json_data=payload_error, measure=True)
+                self.assertEqual(denied.status_code, 400)
+                self.assertFalse(any(q.lstrip().lower().startswith("update") for q in sql))
+            with self.temporary_state(diagnosis_entities.GradoRetinopatia, 2, "INACTIVO"):
+                self.assertEqual(self.call(path, method="PUT", token=token,
+                                           json_data=payload)[0].status_code, 400)
+            with self.temporary_state(diagnosis_entities.Diagnostico, diagnosis_id, "ANULADO"):
+                self.assertEqual(self.call(path, method="PUT", token=token,
+                                           json_data=payload)[0].status_code, 409)
+            self.assertEqual(self.call(path + "?token=" + token, method="PUT", token=token,
+                                       json_data=payload)[0].status_code, 401)
+            self.assertEqual(self.call("/api/diagnosticar/detalle/2147483647/validar", method="PUT",
+                                       token=token, json_data=payload)[0].status_code, 404)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, od).estado_validacion,
+                             "PENDIENTE")
+            # Error de flush después de asignar campos: ninguna escritura persiste.
+            original_flush = db.session.flush
+            with patch.object(db.session, "flush", side_effect=RuntimeError("Synthetic flush failure")):
+                with patch.object(self.app.logger, "error") as logged:
+                    failed, _ = self.call(path, method="PUT", token=token, json_data=payload)
+                logged.assert_called_once_with("Error al confirmar validacion de diagnostico")
+            self.assertEqual(failed.status_code, 500)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, od).estado_validacion,
+                             "PENDIENTE")
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, oi).estado_validacion,
+                             "PENDIENTE")
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado, "PROCESADO")
+            self.assertEqual(self.call(path, method="PUT", token=token, json_data=payload)[0].status_code, 200)
+
+    def test_b1_real_validation_oi_first_and_failed_commit_rolls_back(self):
+        with self.pending_validation() as ((od, oi), diagnosis_id):
+            path = lambda identifier: f"/api/diagnosticar/detalle/{identifier}/validar"
+            db.session.remove()
+            with patch.object(db.session, "commit", side_effect=RuntimeError("Synthetic commit failure")):
+                failed, sql = self.call(path(oi), method="PUT", token=self.token(),
+                                        json_data={"diagnostico_final": 1}, measure=True)
+            self.assertEqual(failed.status_code, 500)
+            self.assertGreaterEqual(sum(q.lstrip().lower().startswith("update") for q in sql), 1)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, oi).estado_validacion,
+                             "PENDIENTE")
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado,
+                             "PROCESADO")
+            response, _ = self.call(path(oi), method="PUT", token=self.token("colleague"),
+                                    json_data={"diagnostico_final": 1})
+            self.assertEqual(response.status_code, 200)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, od).estado_validacion,
+                             "PENDIENTE")
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado,
+                             "PROCESADO")
+            response, _ = self.call(path(od), method="PUT", token=self.token(),
+                                    json_data={"diagnostico_final": 2})
+            self.assertEqual(response.status_code, 200)
+            db.session.remove()
+            self.assertEqual(db.session.get(diagnosis_entities.Diagnostico, diagnosis_id).estado,
+                             "VALIDADO")
+
+    def test_b1_real_validation_concurrent_requests_single_winner(self):
+        with self.pending_validation() as ((od, oi), diagnosis_id):
+            barrier = Barrier(2, timeout=12)
+            connection_ids = set()
+            path = f"/api/diagnosticar/detalle/{od}/validar"
+            def synchronize(conn, cursor, statement, parameters, context, executemany):
+                if "FOR UPDATE" in statement.upper() and "diagnosticos_retinopatia" in statement and "detalle" not in statement:
+                    connection_ids.add(conn.connection.driver_connection.thread_id())
+                    barrier.wait()
+
+            def submit(grade):
+                with self.app.app_context():
+                    try:
+                        with self.app.test_client() as client:
+                            response = client.put(path, json={"diagnostico_final": grade,
+                                "motivo_correccion": "Justificación sintética"},
+                                headers={"Authorization": "Bearer " + self.token("colleague")})
+                            return grade, response.status_code
+                    finally:
+                        db.session.remove()
+
+            db.session.remove()
+            event.listen(db.engine, "before_cursor_execute", synchronize)
+            try:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    first = pool.submit(submit, 2)
+                    second = pool.submit(submit, 3)
+                    outcomes = [first.result(timeout=20), second.result(timeout=20)]
+            finally:
+                event.remove(db.engine, "before_cursor_execute", synchronize)
+            self.assertEqual(len(connection_ids), 2)
+            self.assertEqual(sorted(code for _, code in outcomes), [200, 409])
+            winner_grade = next(grade for grade, code in outcomes if code == 200)
+            db.session.remove()
+            detail = db.session.get(diagnosis_entities.DiagnosticoDetalle, od)
+            self.assertEqual(detail.resultado_final_id, winner_grade)
+            self.assertEqual(detail.resultado_ia_id, 2)
+            self.assertEqual(detail.validado_por, self.user_ids["colleague"])
+            self.assertIsNotNone(detail.fecha_validacion)
+            self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, oi).estado_validacion,
+                             "PENDIENTE")
 
     def test_b1_real_retina_file_requires_bearer_and_registered_resource(self):
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg"):

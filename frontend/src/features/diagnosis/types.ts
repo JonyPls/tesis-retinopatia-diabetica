@@ -69,4 +69,6 @@ export interface DiagnosisHook {
   validateDiagnosis: (eye: EyeKey) => Promise<void>;
   validateAll: () => Promise<void>;
   isValidating: boolean;
+  validatedEyes: Partial<Record<EyeKey, "APROBADO" | "CORREGIDO">>;
+  validationConflict: boolean;
 }
