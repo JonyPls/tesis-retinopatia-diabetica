@@ -1,6 +1,7 @@
 """Pruebas aisladas del almacenamiento privado, sin BD ni imágenes clínicas."""
 
 import errno
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -9,7 +10,9 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from utils.retinograph_private_storage import PrivateCopy, PrivateStorageError
+from utils.retinograph_private_storage import (
+    PrivateCopy, PrivateStorageError, PrivateCopyChangedError, read_private_copy,
+)
 
 
 class PrivateRetinographStorageTests(unittest.TestCase):
@@ -37,6 +40,8 @@ class PrivateRetinographStorageTests(unittest.TestCase):
                 else:
                     copy.publish(data)
                 self.assertEqual((self.root / copy.key).read_bytes(), data)
+                self.assertEqual(read_private_copy(copy.key, hashlib.sha256(data).hexdigest(),
+                                                   limit=20 * 1024 * 1024), data)
                 self.assertEqual(len(copy.key), 32)
                 self.assertFalse((self.root / copy.stage).exists())
                 copy.compensate()
@@ -78,3 +83,21 @@ class PrivateRetinographStorageTests(unittest.TestCase):
         with self.assertRaises(PrivateStorageError):
             PrivateCopy().publish(b'synthetic')
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_read_rejects_tampering_missing_and_arbitrary_keys(self):
+        copy = PrivateCopy()
+        original = b'synthetic-copy'
+        copy.publish(original)
+        digest = hashlib.sha256(original).hexdigest()
+        try:
+            for key in ('../' + copy.key, copy.key + '/x', 'f' * 31):
+                with self.assertRaises(PrivateStorageError):
+                    read_private_copy(key, digest, limit=100)
+            (self.root / copy.key).write_bytes(b'changed')
+            with self.assertRaises(PrivateCopyChangedError):
+                read_private_copy(copy.key, digest, limit=100)
+            (self.root / copy.key).unlink()
+            with self.assertRaises(PrivateStorageError):
+                read_private_copy(copy.key, digest, limit=100)
+        finally:
+            copy.compensate()

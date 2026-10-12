@@ -725,6 +725,54 @@ class AuthSecurityTests(unittest.TestCase):
             headers=self.headers(self.token())).status_code, 403)
         fake_confirmation_service.register.assert_not_called()
 
+    def test_28d_post_modalities_exclusive_and_b1_before_inference(self):
+        path = '/api/diagnosticar'
+        secret = 'a' * 64
+        base = {'paciente_id': '101', 'ojo_evaluado': 'Derecho'}
+        grants = ['diagnostico_retinopatia.crear', 'imagenes.ver', 'visitas.crear']
+        self.set_role_grants({'OFTALMOLOGO': grants})
+        token = self.token()
+
+        def post(data, bearer=token, query=None):
+            return self.client.post(path, data=data, content_type='multipart/form-data',
+                                    headers=self.headers(bearer) if bearer else {},
+                                    query_string=query or {})
+
+        with patch.object(diagnosis_routes, 'procesar_diagnostico',
+                          return_value=({'success': True}, 200)) as process:
+            manual = post({**base, 'imagen': (BytesIO(b'synthetic'), 'synthetic.jpg', 'image/jpeg')})
+            self.assertEqual(manual.status_code, 200)
+            self.assertIsNone(process.call_args.kwargs['confirmacion_token'])
+            process.reset_mock()
+            confirmed = post({**base, 'confirmacion_exportacion': secret})
+            self.assertEqual(confirmed.status_code, 200)
+            self.assertIsNone(process.call_args.kwargs['archivo_imagen'])
+            self.assertEqual(process.call_args.kwargs['confirmacion_token'], secret)
+            process.reset_mock()
+            invalid = ({**base},
+                       {**base, 'confirmacion_exportacion': ''},
+                       {**base, 'confirmacion_exportacion': 'b' * 63},
+                       {**base, 'confirmacion_exportacion': secret, 'imagen':
+                           (BytesIO(b'synthetic'), 'synthetic.jpg', 'image/jpeg')},
+                       {**base, 'imagen': (BytesIO(b'synthetic'), 'synthetic.jpg', 'image/jpeg'),
+                        'isExistingImage': 'false'},
+                       {**base, 'confirmacion_exportacion': secret, 'confirmado_por': '7'})
+            for data in invalid:
+                with self.subTest(fields=tuple(data)):
+                    self.assertEqual(post(data).status_code, 400)
+                    process.assert_not_called()
+            self.assertEqual(post({**base, 'confirmacion_exportacion': secret},
+                                  query={'token': token}).status_code, 401)
+            for role_grants in ({'ADMINISTRADOR_SISTEMA': grants},
+                                {'OFTALMOLOGO': ['imagenes.ver'],
+                                 'ADMINISTRADOR_SISTEMA': grants}):
+                self.set_role_grants(role_grants)
+                self.assertEqual(post({**base, 'confirmacion_exportacion': secret}).status_code, 403)
+                process.assert_not_called()
+            self.set_role_grants({'OFTALMOLOGO': grants[:-1]})
+            self.assertEqual(post({**base, 'confirmacion_exportacion': secret}).status_code, 403)
+            process.assert_not_called()
+
     def test_28b_real_routes_require_single_ophthalmologist_grant_source(self):
         both = ["pacientes.ver", "imagenes.ver"]
         cases = (

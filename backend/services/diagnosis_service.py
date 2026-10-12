@@ -14,6 +14,7 @@ from database import db
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from utils.diagnosis_storage import DiagnosisFiles
+from services import retinograph_confirmation_service as confirmations
 
 RD_LABELS = {
     0: "Normal",
@@ -28,12 +29,14 @@ UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads', 'retinas')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_id: int,
-                        ojo_evaluado: str, visita_id: int = None,
-                        *, require_existing_diagnosis=False) -> tuple[dict, int]:
+                         ojo_evaluado: str, visita_id: int = None,
+                         *, require_existing_diagnosis=False,
+                         confirmacion_token=None) -> tuple[dict, int]:
     files = None
     commit_attempted = False
     detalle_id = None
     nombre_unico = nombre_gradcam = None
+    confirmed = None
     try:
         # Las lecturas baratas preceden a CLIP/ResNet50; el repositorio las
         # repite con bloqueo al escribir para cerrar la carrera entre peticiones.
@@ -41,9 +44,18 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             paciente_id, ojo_evaluado, visita_id,
             require_existing_diagnosis=require_existing_diagnosis,
         )
+        if confirmacion_token is not None:
+            confirmed = confirmations.load_for_inference(
+                confirmacion_token, paciente_id, ojo_evaluado, usuario_id)
         # Auth/preflight inician una transacción de lectura. Soltar su snapshot
         # antes de ejecutar modelos o crear provisionales; revalidar bajo lock.
         db.session.rollback()
+        if confirmed is not None:
+            # El navegador nunca reenvía la exportación. La validación y la IA
+            # leen exclusivamente los bytes de la copia privada verificada.
+            archivo_imagen = FileStorage(stream=io.BytesIO(confirmed.data),
+                                         filename=confirmed.filename,
+                                         content_type=confirmed.mimetype)
         max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)
         image_bytes = archivo_imagen.stream.read(max_bytes + 1)
         if len(image_bytes) > max_bytes:
@@ -115,9 +127,19 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         original_temp = files.prepare(imagen)
         gradcam_temp = files.prepare(Image.fromarray(cam_image_array))
 
+        if confirmed is not None:
+            # Orden único: confirmación -> visita -> diagnóstico -> detalle.
+            # La validación clínica y la inferencia ya finalizaron sin locks SQL.
+            confirmations.lock_for_consumption(
+                confirmacion_token, paciente_id, ojo_evaluado, usuario_id, confirmed)
         visita_id, diagnostico_retinopatia_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(
             datos_bd, visita_id, require_existing_diagnosis=require_existing_diagnosis,
         )
+        if confirmed is not None:
+            confirmations.consume_with_detail(
+                confirmacion_token, paciente_id, ojo_evaluado, usuario_id,
+                confirmed, detalle_id,
+            )
         files.publish(original_temp, nombre_unico)
         files.publish(gradcam_temp, nombre_gradcam)
         commit_attempted = True
@@ -137,7 +159,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
         return {"success": True, "data": resultado_ia}, 200
 
-    except DiagnosisValidationError as error:
+    except (DiagnosisValidationError, confirmations.ConfirmationUseError) as error:
         _undo_creation(files, commit_attempted, detalle_id)
         return {"success": False, "message": str(error)}, error.status_code
     except IntegrityError as error:

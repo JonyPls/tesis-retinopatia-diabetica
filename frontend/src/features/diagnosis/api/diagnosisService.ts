@@ -1,6 +1,47 @@
 import api from "@/lib/api";
 import type { EyeKey } from "../types";
 
+const CONFIRMATIONS = "/diagnosticar/retinografo/confirmaciones";
+
+export interface RetinographConfirmationStatus {
+  paciente_id: number;
+  ojo_confirmado: "Derecho" | "Izquierdo";
+  estado: "CONFIRMADA" | "REVOCADA" | "CONSUMIDA";
+  vigente?: boolean;
+  expirada?: boolean;
+  fecha_expiracion?: string;
+}
+
+export const registrarConfirmacionRetinografo = async (data: {
+  paciente_id: number;
+  nombre_exportacion: string;
+  ojo_confirmado: "Derecho" | "Izquierdo";
+  sha256_previsualizacion: string;
+}): Promise<RetinographConfirmationStatus & { identificador: string }> => {
+  const response = await api.post(CONFIRMATIONS, { ...data, confirmo_asociacion: true });
+  return response.data.confirmacion;
+};
+
+export const consultarConfirmacionRetinografo = async (identificador: string): Promise<RetinographConfirmationStatus> => {
+  const response = await api.post(`${CONFIRMATIONS}/estado`, { identificador });
+  return response.data.confirmacion;
+};
+
+export const revocarConfirmacionRetinografo = async (identificador: string): Promise<void> => {
+  await api.post(`${CONFIRMATIONS}/revocar`, { identificador });
+};
+
+export const sha256Blob = async (blob: Blob): Promise<string> => {
+  if (!globalThis.crypto?.subtle?.digest || typeof blob.arrayBuffer !== "function")
+    throw new Error("SHA-256 no disponible en este navegador.");
+  try {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch {
+    throw new Error("SHA-256 no pudo calcularse en este navegador.");
+  }
+};
+
 export interface DiagnosisResult {
   visita_id: number;
   diagnostico_id?: number;
@@ -55,6 +96,23 @@ export interface DetalleDiagnosticoExistente {
 export const obtenerDetallesVisita = async (visitaId: number): Promise<DetalleDiagnosticoExistente[]> => {
   const response = await api.get(`/diagnosticar/visita/${visitaId}/detalles`);
   return response.data.data.ojos;
+};
+
+export const crearDiagnosticoConfirmado = async (
+  pacienteId: number,
+  ojo: "Derecho" | "Izquierdo",
+  identificador: string,
+  visitaId?: number,
+): Promise<DiagnosisResult> => {
+  const formData = new FormData();
+  formData.append("paciente_id", String(pacienteId));
+  formData.append("ojo_evaluado", ojo);
+  formData.append("confirmacion_exportacion", identificador);
+  if (visitaId !== undefined) formData.append("visita_id", String(visitaId));
+  const response = await api.post("/diagnosticar", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data.data;
 };
 
 export const obtenerDetallesDiagnostico = obtenerDetallesVisita;
@@ -130,9 +188,11 @@ export interface RetinographAutoSelection {
 
 export const obtenerSeleccionAutomaticaRetinografo = async (
   pacienteId: number,
+  signal?: AbortSignal,
 ): Promise<RetinographAutoSelection> => {
   const response = await api.get(
     `/diagnosticar/retinografo/auto-seleccion/${pacienteId}`,
+    { signal },
   );
   return response.data.data;
 };
@@ -140,10 +200,12 @@ export const obtenerSeleccionAutomaticaRetinografo = async (
 export const descargarImagenRetinografo = async (
   pacienteId: number,
   filename: string,
+  signal?: AbortSignal,
 ): Promise<Blob> => {
   const response = await api.get("/diagnosticar/retinografo/imagen", {
     params: { paciente_id: pacienteId, filename },
     responseType: "blob",
+    signal,
   });
   return response.data;
 };

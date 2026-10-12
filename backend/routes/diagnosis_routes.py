@@ -10,6 +10,7 @@ from services.diagnosis_service import (
     consultar_detalles_por_visita,
     DIAGNOSIS_NOT_FOUND_MESSAGE,
 )
+from services.retinograph_confirmation_service import TOKEN_PATTERN
 from services.retinograph_import_service import (
     obtener_archivo_retinografo,
     obtener_seleccion_automatica,
@@ -150,10 +151,20 @@ def diagnosticar_retina():
     except RequestEntityTooLarge:
         return jsonify({"success": False, "message": "Archivo demasiado grande."}), 413
 
-    if archivo is None:
+    allowed_fields = {'paciente_id', 'ojo_evaluado', 'visita_id', 'diagnostico_id',
+                      'confirmacion_exportacion'}
+    has_token = 'confirmacion_exportacion' in form
+    if (set(form) - allowed_fields or set(request.files) - {'imagen'} or
+            any(len(form.getlist(key)) != 1 for key in form) or
+            len(request.files.getlist('imagen')) > 1 or
+            (has_token and (archivo is not None or request.args))):
+        return jsonify({'success': False, 'message': 'Modalidad de diagnóstico inválida.'}), 400
+    if has_token and not TOKEN_PATTERN.fullmatch(form['confirmacion_exportacion']):
+        return jsonify({'success': False, 'message': 'Comprobante inválido.'}), 400
+    if archivo is None and not has_token:
         message = "Falta la imagen"
         return jsonify({"success": False, "message": message, "error": message}), 400
-    if not archivo.filename:
+    if archivo is not None and not archivo.filename:
         message = "Archivo vacío"
         return jsonify({"success": False, "message": message, "error": message}), 400
 
@@ -190,6 +201,7 @@ def diagnosticar_retina():
         ojo_evaluado=ojo_evaluado,
         visita_id=visita_id if visita_id is not None else diagnostico_id,
         require_existing_diagnosis=diagnostico_id is not None,
+        confirmacion_token=form['confirmacion_exportacion'] if has_token else None,
     )
     return jsonify(resultado), status_code
 

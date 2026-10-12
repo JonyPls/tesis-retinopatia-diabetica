@@ -6,7 +6,9 @@ Nunca se crea un directorio a partir de una ruta enviada por el cliente.
 
 import errno
 import hashlib
+import hmac
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 import secrets
@@ -20,6 +22,14 @@ from utils.retinograph_storage import _open_windows, UnsafeExportError, ExportRo
 
 class PrivateStorageError(Exception):
     pass
+
+
+class PrivateCopyChangedError(PrivateStorageError):
+    pass
+
+
+_KEY = re.compile(r'[0-9a-f]{32}\Z')
+_SHA = re.compile(r'[0-9a-f]{64}\Z')
 
 
 def _within(child, parent):
@@ -166,3 +176,42 @@ class PrivateCopy:
                 self._remove(root, dir_fd, self.key)
         except (OSError, PrivateStorageError):
             pass  # Nunca eliminar un recurso por nombre sin verificar su identidad.
+
+
+def read_private_copy(key, sha256, *, limit):
+    """Lee bytes limitados de la copia por un descriptor confinado, sin rutas públicas."""
+    if (not isinstance(key, str) or not _KEY.fullmatch(key) or
+            not isinstance(sha256, str) or not _SHA.fullmatch(sha256) or
+            type(limit) is not int or not 0 < limit <= 20 * 1024 * 1024):
+        raise PrivateStorageError()
+    try:
+        with _private_root() as (root, dir_fd):
+            if dir_fd is None:
+                # Reusar la comprobación Windows de ancestros/archivo con el
+                # mismo handle; no abrir luego un nombre no verificado.
+                opener = _open_windows(str(root), key)
+            else:
+                @contextmanager
+                def opener():
+                    fd = os.open(key, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_NONBLOCK', 0),
+                                 dir_fd=dir_fd)
+                    try:
+                        yield fd
+                    finally:
+                        os.close(fd)
+                opener = opener()
+            with opener as fd:
+                before = os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit:
+                    raise PrivateCopyChangedError()
+                with os.fdopen(os.dup(fd), 'rb') as stream:
+                    data = stream.read(limit + 1)
+                after = os.fstat(fd)
+                if (len(data) != before.st_size or
+                        (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                        (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or
+                        not hmac.compare_digest(hashlib.sha256(data).hexdigest(), sha256)):
+                    raise PrivateCopyChangedError()
+                return data
+    except (OSError, UnsafeExportError, ExportRootError) as error:
+        raise PrivateStorageError() from error

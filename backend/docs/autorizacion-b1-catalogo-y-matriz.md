@@ -624,7 +624,16 @@ SQL no cambian. Consulta/revocación además exigen pertenencia al profesional
 confirmador y un comprobante opaco en JSON, jamás en URL. La asociación humana
 paciente–imagen–ojo no es validación médica de la IA. Contratos, caducidad,
 almacenamiento privado y límites: `confirmaciones-exportacion-retinografo-28c3.md`.
-No hay consumo por POST ni desbloqueo de Selección Auto.
+En 28C.3 todavía no había consumo por POST ni desbloqueo de Selección Auto.
+
+### Consumo posterior en POST (Prompt 28C.4)
+
+El POST B1 existente admite archivo manual o `confirmacion_exportacion`, nunca
+ambos. La segunda modalidad verifica los bytes de copia y fuente, procesa solo
+la copia, y consume la confirmación bajo lock en la misma transacción que el
+detalle (sin mantener locks durante IA). **Siguen siendo 17 rutas B1**; la
+interfaz de Selección Auto sigue bloqueada. Contrato, concurrencia y límites de
+conciliación: `confirmaciones-exportacion-retinografo-28c4.md`.
 
 ## Dependencias antes de activar B1
 

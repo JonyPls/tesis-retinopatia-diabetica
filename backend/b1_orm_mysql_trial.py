@@ -19,7 +19,7 @@ import secrets
 import sys
 import tempfile
 import time
-from threading import Barrier
+from threading import Barrier, Event
 from types import ModuleType
 import unittest
 from unittest.mock import patch
@@ -854,6 +854,496 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             headers={"Authorization": "Bearer " + (token or self.token())})
         db.session.remove()
         return response
+
+    @contextmanager
+    def confirmed_export(self, *, eye='R', patient=None, profile='ophthalmologist'):
+        patient_id = patient or self.patient_ids[1]
+        index = self.patient_ids.index(patient_id)
+        document = self.patient_documents[index]
+        name = f'{document}_01012026_101010_fundus_{eye}_{secrets.randbelow(10**9)}.png'
+        data = image_bytes('PNG')
+        path = Path(self.retino_directory.name, name)
+        path.write_bytes(data)
+        try:
+            response, _ = self.call('/api/diagnosticar/retinografo/confirmaciones',
+                                    method='POST', token=self.token(profile), json_data={
+                'paciente_id': patient_id, 'nombre_exportacion': name,
+                'ojo_confirmado': 'Derecho' if eye == 'R' else 'Izquierdo',
+                'sha256_previsualizacion': hashlib.sha256(data).hexdigest(),
+                'confirmo_asociacion': True,
+            })
+            self.assertEqual(response.status_code, 201, response.json)
+            yield response.json['confirmacion']['identificador'], data, name
+        finally:
+            path.unlink(missing_ok=True)
+
+    def consume_export(self, token, *, patient=None, eye='Derecho', visit=None,
+                       profile='ophthalmologist', image=None, extra=None):
+        data = {'paciente_id': str(patient or self.patient_ids[1]),
+                'ojo_evaluado': eye, 'confirmacion_exportacion': token,
+                **(extra or {})}
+        if visit is not None:
+            data['visita_id'] = str(visit)
+        if image is not None:
+            data['imagen'] = (BytesIO(image), 'manual.jpg', 'image/jpeg')
+        db.session.remove()
+        response = self.app.test_client().post('/api/diagnosticar', data=data,
+            content_type='multipart/form-data',
+            headers={'Authorization': 'Bearer ' + self.token(profile)})
+        db.session.remove()
+        return response
+
+    def test_28d_confirmed_export_consumes_two_eyes_transactionally(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        patient_id = self.patient_ids[1]
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        tokens = []
+        visit_id = None
+        try:
+            with self.stubbed_creation() as (folder, infer):
+                with self.confirmed_export(eye='R') as (right, right_bytes, right_name), \
+                     self.confirmed_export(eye='L') as (left, left_bytes, left_name):
+                    tokens.extend((right, left))
+                    with patch.object(diagnosis_service, 'predecir_imagen_bytes',
+                                      wraps=diagnosis_service.predecir_imagen_bytes) as model_call:
+                        observed = []
+
+                        def record_sql(conn, cursor, statement, parameters, context, executemany):
+                            observed.append((statement, time.perf_counter()))
+
+                        with patch.object(retinograph_confirmation_service, 'read_export',
+                                          wraps=retinograph_confirmation_service.read_export) as source_read, \
+                             patch.object(retinograph_confirmation_service, 'read_private_copy',
+                                          wraps=retinograph_confirmation_service.read_private_copy) as copy_read:
+                            event.listen(db.engine, 'before_cursor_execute', record_sql)
+                            try:
+                                first = self.consume_export(right)
+                                elapsed = time.perf_counter()
+                            finally:
+                                event.remove(db.engine, 'before_cursor_execute', record_sql)
+                            self.assertEqual((source_read.call_count, copy_read.call_count), (2, 2))
+                        statements = [sql.lower().replace('`', '') for sql, _ in observed]
+                        self.assertEqual(sum('update confirmaciones_exportacion_retinografo'
+                                             in sql for sql in statements), 1)
+                        self.assertEqual(sum('insert into diagnosticos_retinopatia_detalle'
+                                             in sql for sql in statements), 1)
+                        locked_at = next(stamp for sql, stamp in observed if 'for update' in sql.lower())
+                        self.assertLess(elapsed - locked_at, 5)
+                        self.assertEqual(first.status_code, 200, first.json)
+                        visit_id = first.json['data']['visita_id']
+                        self.assertEqual(model_call.call_args.args[0], right_bytes)
+                        second = self.consume_export(left, eye='Izquierdo', visit=visit_id)
+                        self.assertEqual(second.status_code, 200, second.json)
+                        self.assertEqual(model_call.call_args.args[0], left_bytes)
+                        self.assertEqual(model_call.call_count, 2)
+                    for secret, original, name, response, eye in (
+                            (right, right_bytes, right_name, first, 'Derecho'),
+                            (left, left_bytes, left_name, second, 'Izquierdo')):
+                        db.session.remove()
+                        stored = model.query.filter_by(
+                            token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).one()
+                        detail = db.session.get(diagnosis_entities.DiagnosticoDetalle,
+                                                response.json['data']['detalle_id'])
+                        self.assertEqual((stored.estado, stored.detalle_id, stored.ojo_confirmado),
+                                         ('CONSUMIDA', detail.id, eye))
+                        self.assertIsNotNone(stored.fecha_consumo)
+                        self.assertEqual((detail.hash_archivo, detail.ojo_evaluado,
+                                          detail.nombre_archivo_original),
+                                         (hashlib.sha256(original).hexdigest(), eye, name))
+                        self.assertEqual(db.session.get(VisitaClinica,
+                            detail.diagnostico.visita_id).paciente_id, patient_id)
+                        with Image.open(Path(folder, detail.imagen_original_url)) as saved:
+                            self.assertEqual(saved.format, 'JPEG')
+                            self.assertEqual(saved.size, (400, 400))
+                        self.assertTrue(Path(folder, detail.imagen_gradcam_url).is_file())
+                        self.assertEqual(root.joinpath(stored.clave_copia).read_bytes(), original)
+                        status, _ = self.call('/api/diagnosticar/retinografo/confirmaciones/estado',
+                                              method='POST', token=self.token(),
+                                              json_data={'identificador': secret})
+                        self.assertEqual(status.json['confirmacion']['estado'], 'CONSUMIDA')
+                        self.assertFalse(status.json['confirmacion']['vigente'])
+                        self.assertEqual(self.consume_export(secret, visit=visit_id,
+                            eye=eye).status_code, 409)
+                        revoked, _ = self.call('/api/diagnosticar/retinografo/confirmaciones/revocar',
+                                               method='POST', token=self.token(),
+                                               json_data={'identificador': secret})
+                        self.assertEqual(revoked.status_code, 409)
+                    self.assertEqual(len(set(root.iterdir()) - before), 2)
+                    print('ORM consumo: 2 ojos, 2 bytes IA iguales a copias, 2 detalles ligados; '
+                          f'fuente=2 lecturas, copia=2, 1 INSERT detalle+1 UPDATE consumo; '
+                          f'primer FOR UPDATE a respuesta={elapsed - locked_at:.3f}s; '
+                          'reutilización y revocación=409.')
+        finally:
+            db.session.rollback()
+            for secret in tokens:
+                digest = hashlib.sha256(bytes.fromhex(secret)).digest()
+                db.session.query(model).filter_by(token_verificador=digest).delete()
+            db.session.flush()
+            if visit_id is not None:
+                visit = db.session.get(VisitaClinica, visit_id)
+                if visit is not None:
+                    diagnosis = diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first()
+                    if diagnosis:
+                        db.session.delete(diagnosis)
+                        db.session.flush()
+                    db.session.delete(visit)
+            db.session.commit()
+            db.session.remove()
+            for file in set(root.iterdir()) - before:
+                file.unlink()
+
+    def test_28d_two_posts_compete_for_same_confirmation(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        secret = None
+        try:
+            with self.empty_diagnosis_visit() as first_visit, \
+                 self.empty_diagnosis_visit() as second_visit, \
+                 self.stubbed_creation() as (folder, infer), \
+                 self.confirmed_export() as (secret, image, name):
+                barrier = Barrier(3)
+                original_infer = diagnosis_service.predecir_imagen_bytes
+
+                def gated_infer(data):
+                    barrier.wait(timeout=15)  # Ambas peticiones terminan CLIP antes del lock.
+                    return original_infer(data)
+
+                def worker(visit):
+                    with self.app.app_context():
+                        return self.consume_export(secret, visit=visit).status_code
+
+                try:
+                    with patch.object(diagnosis_service, 'predecir_imagen_bytes',
+                                      side_effect=gated_infer):
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            first = pool.submit(worker, first_visit)
+                            second = pool.submit(worker, second_visit)
+                            barrier.wait(timeout=15)
+                            outcomes = sorted((first.result(timeout=30), second.result(timeout=30)))
+                            self.assertEqual(outcomes, [200, 409], outcomes)
+                    db.session.remove()
+                    record = model.query.filter_by(
+                        token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).one()
+                    self.assertEqual(record.estado, 'CONSUMIDA')
+                    self.assertEqual(db.session.query(diagnosis_entities.DiagnosticoDetalle)
+                                     .join(diagnosis_entities.Diagnostico)
+                                     .filter(diagnosis_entities.Diagnostico.visita_id.in_(
+                                         (first_visit, second_visit))).count(), 1)
+                    self.assertEqual(record.detalle_id,
+                        db.session.query(diagnosis_entities.DiagnosticoDetalle.id)
+                        .join(diagnosis_entities.Diagnostico)
+                        .filter(diagnosis_entities.Diagnostico.visita_id.in_(
+                            (first_visit, second_visit))).scalar())
+                    print('ORM consumo simultáneo: 2 conexiones, barrera pre-IA, '
+                          'un solo commit y 1 detalle (200/409).')
+                finally:
+                    db.session.rollback()
+                    db.session.query(model).filter_by(
+                        token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).delete()
+                    db.session.commit()
+                    db.session.remove()
+        finally:
+            for file in set(root.iterdir()) - before:
+                file.unlink()
+
+    def test_28d_two_confirmations_same_visit_and_eye_preserve_loser(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        secrets_used = []
+        try:
+            with self.empty_diagnosis_visit() as visit_id, \
+                 self.stubbed_creation() as (folder, infer), \
+                 self.confirmed_export() as (first_token, first_bytes, first_name), \
+                 self.confirmed_export() as (second_token, second_bytes, second_name):
+                secrets_used.extend((first_token, second_token))
+                barrier = Barrier(3)
+                original_infer = diagnosis_service.predecir_imagen_bytes
+
+                def gated_infer(data):
+                    barrier.wait(timeout=15)
+                    return original_infer(data)
+
+                def worker(secret):
+                    with self.app.app_context():
+                        return self.consume_export(secret, visit=visit_id).status_code
+
+                try:
+                    with patch.object(diagnosis_service, 'predecir_imagen_bytes',
+                                      side_effect=gated_infer):
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            first = pool.submit(worker, first_token)
+                            second = pool.submit(worker, second_token)
+                            barrier.wait(timeout=15)
+                            outcomes = sorted((first.result(timeout=30), second.result(timeout=30)))
+                            self.assertEqual(outcomes, [200, 409], outcomes)
+                    db.session.remove()
+                    stored = [model.query.filter_by(
+                        token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).one()
+                        for secret in secrets_used]
+                    self.assertEqual(sorted(row.estado for row in stored), ['CONFIRMADA', 'CONSUMIDA'])
+                    diagnosis = diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).one()
+                    self.assertEqual(len(diagnosis.detalles), 1)
+                    self.assertEqual(next(row.detalle_id for row in stored if row.estado == 'CONSUMIDA'),
+                                     diagnosis.detalles[0].id)
+                    self.assertEqual(len(list(Path(folder).glob('*.jpg'))), 2)
+                    print('ORM mismo ojo/visita: 2 conexiones, un detalle y un consumo; '
+                          'confirmación perdedora permanece CONFIRMADA.')
+                finally:
+                    db.session.rollback()
+                    for secret in secrets_used:
+                        db.session.query(model).filter_by(token_verificador=
+                            hashlib.sha256(bytes.fromhex(secret)).digest()).delete()
+                    db.session.commit()
+                    db.session.remove()
+        finally:
+            for file in set(root.iterdir()) - before:
+                file.unlink()
+
+    def test_28d_revocation_during_inference_prevents_consumption(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        try:
+            with self.empty_diagnosis_visit() as visit_id, \
+                 self.stubbed_creation() as (folder, infer), \
+                 self.confirmed_export() as (secret, image, name):
+                entered, resume = Event(), Event()
+                original_infer = diagnosis_service.predecir_imagen_bytes
+
+                def gated_infer(data):
+                    entered.set()
+                    if not resume.wait(timeout=15):
+                        raise RuntimeError('Inferencia sintética no reanudada')
+                    return original_infer(data)
+
+                def worker():
+                    with self.app.app_context():
+                        return self.consume_export(secret, visit=visit_id).status_code
+
+                try:
+                    with patch.object(diagnosis_service, 'predecir_imagen_bytes',
+                                      side_effect=gated_infer):
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            future = pool.submit(worker)
+                            self.assertTrue(entered.wait(timeout=15))
+                            revoked, _ = self.call(
+                                '/api/diagnosticar/retinografo/confirmaciones/revocar',
+                                method='POST', token=self.token(),
+                                json_data={'identificador': secret})
+                            self.assertEqual(revoked.status_code, 200)
+                            resume.set()
+                            self.assertEqual(future.result(timeout=30), 409)
+                    db.session.remove()
+                    record = model.query.filter_by(
+                        token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).one()
+                    self.assertEqual(record.estado, 'REVOCADA')
+                    self.assertIsNone(record.detalle_id)
+                    self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(
+                        visita_id=visit_id).first())
+                    self.assertEqual(list(Path(folder).glob('*.jpg')), [])
+                    self.assertTrue(root.joinpath(record.clave_copia).is_file())
+                    print('ORM revocación durante IA: revocación 200 antes del lock; '
+                          'inferencia 409 sin detalle ni JPEG.')
+                finally:
+                    resume.set()
+                    db.session.rollback()
+                    db.session.query(model).filter_by(
+                        token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).delete()
+                    db.session.commit()
+                    db.session.remove()
+        finally:
+            for file in set(root.iterdir()) - before:
+                file.unlink()
+
+    def test_28d_preflight_and_final_check_reject_changes_without_inference(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        try:
+            with self.empty_diagnosis_visit() as visit_id, \
+                 self.stubbed_creation() as (folder, infer), \
+                 self.confirmed_export() as (secret, original, name):
+                digest = hashlib.sha256(bytes.fromhex(secret)).digest()
+                source = Path(self.retino_directory.name, name)
+                db.session.remove()
+                record = model.query.filter_by(token_verificador=digest).one()
+                copy_path = root / record.clave_copia
+                record_id = record.id
+                try:
+                    attempts = ((secret, self.patient_ids[0], 'Derecho', 'ophthalmologist', 409),
+                                (secret, self.patient_ids[1], 'Izquierdo', 'ophthalmologist', 409),
+                                (secret, self.patient_ids[1], 'Derecho', 'colleague', 404),
+                                ('0' * 64, self.patient_ids[1], 'Derecho', 'ophthalmologist', 404))
+                    for value, patient, eye, profile, expected in attempts:
+                        response = self.consume_export(value, patient=patient, eye=eye,
+                                                       visit=visit_id, profile=profile)
+                        self.assertEqual(response.status_code, expected, response.json)
+                        infer.assert_not_called()
+                    # Expirada conforme al límite exacto, sin estado adicional.
+                    record = db.session.get(model, record_id)
+                    original_dates = record.fecha_confirmacion, record.fecha_expiracion
+                    record.fecha_confirmacion -= timedelta(hours=2)
+                    record.fecha_expiracion -= timedelta(hours=2)
+                    db.session.commit()
+                    self.assertEqual(self.consume_export(secret, visit=visit_id).status_code, 409)
+                    record = db.session.get(model, record_id)
+                    record.fecha_confirmacion, record.fecha_expiracion = original_dates
+                    db.session.commit()
+                    infer.assert_not_called()
+
+                    copy_path.write_bytes(b'altered')
+                    self.assertEqual(self.consume_export(secret, visit=visit_id).status_code, 409)
+                    copy_path.write_bytes(original)
+                    copy_path.unlink()
+                    self.assertEqual(self.consume_export(secret, visit=visit_id).status_code, 503)
+                    copy_path.write_bytes(original)
+                    source.unlink()
+                    self.assertEqual(self.consume_export(secret, visit=visit_id).status_code, 409)
+                    source.write_bytes(image_bytes('PNG', (400, 401)))
+                    self.assertEqual(self.consume_export(secret, visit=visit_id).status_code, 409)
+                    source.write_bytes(original)
+                    infer.assert_not_called()
+
+                    with patch.object(diagnosis_service, 'validar_contenido_semantico',
+                                      return_value={'valido': False, 'status': 503}):
+                        unavailable = self.consume_export(secret, visit=visit_id)
+                    self.assertEqual(unavailable.status_code, 503)
+                    infer.assert_not_called()  # CLIP fail-closed también para bytes confirmados.
+                    db.session.remove()
+                    self.assertEqual(db.session.get(model, record_id).estado, 'CONFIRMADA')
+
+                    # Cambio después de CLIP/IA: rechazo definitivo bajo lock.
+                    def altered_source(data):
+                        source.write_bytes(image_bytes('PNG', (400, 401)))
+                        return diagnosis_service_result(data)
+
+                    diagnosis_service_result = diagnosis_service.predecir_imagen_bytes
+                    with patch.object(diagnosis_service, 'predecir_imagen_bytes',
+                                      side_effect=altered_source):
+                        rejected = self.consume_export(secret, visit=visit_id)
+                    self.assertEqual(rejected.status_code, 409, rejected.json)
+                    source.write_bytes(original)
+                    db.session.remove()
+                    self.assertEqual(db.session.get(model, record_id).estado, 'CONFIRMADA')
+                    self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(
+                        visita_id=visit_id).first())
+                    self.assertEqual(list(Path(folder).glob('*.jpg')), [])
+                    self.assertEqual(copy_path.read_bytes(), original)
+                    print('ORM preflight/final: paciente/ojo/profesional, caducidad, '
+                          'copia/fuente y cambio tras IA rechazados sin consumo.')
+                finally:
+                    source.write_bytes(original)
+                    db.session.rollback()
+                    db.session.query(model).filter_by(id=record_id).delete()
+                    db.session.commit()
+                    db.session.remove()
+        finally:
+            for file in set(root.iterdir()) - before:
+                file.unlink()
+
+    def test_28d_jpeg_failure_and_commit_uncertainty_keep_consistency(self):
+        from sqlalchemy.exc import OperationalError
+
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        try:
+            with self.empty_diagnosis_visit() as visit_id, \
+                 self.stubbed_creation() as (folder, infer), \
+                 self.confirmed_export() as (secret, original, name):
+                digest = hashlib.sha256(bytes.fromhex(secret)).digest()
+                db.session.remove()
+                record = model.query.filter_by(token_verificador=digest).one()
+                record_id = record.id
+                copy_path = root / record.clave_copia
+                try:
+                    real_publish = diagnosis_service.DiagnosisFiles.publish
+
+                    def fail_after_first(files, temporary, filename):
+                        if filename.endswith('_gradcam.jpg'):
+                            raise OSError('Fallo sintético al publicar JPEG')
+                        return real_publish(files, temporary, filename)
+
+                    with patch.object(diagnosis_service.DiagnosisFiles, 'publish',
+                                      new=fail_after_first):
+                        rejected = self.consume_export(secret, visit=visit_id)
+                    self.assertEqual(rejected.status_code, 500)
+                    db.session.remove()
+                    self.assertEqual(db.session.get(model, record_id).estado, 'CONFIRMADA')
+                    self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(
+                        visita_id=visit_id).first())
+                    self.assertEqual(list(Path(folder).glob('*.jpg')), [])
+                    self.assertEqual(copy_path.read_bytes(), original)
+
+                    # La base confirma, pero el cliente no recibe certeza del commit.
+                    real_commit = db.session.commit
+
+                    def committed_but_unacknowledged():
+                        real_commit()
+                        raise OperationalError('commit sintético', {}, Exception())
+
+                    with patch.object(db.session, 'commit', side_effect=committed_but_unacknowledged):
+                        uncertain = self.consume_export(secret, visit=visit_id)
+                    self.assertEqual(uncertain.status_code, 500)
+                    db.session.remove()
+                    record = db.session.get(model, record_id)
+                    self.assertEqual(record.estado, 'CONSUMIDA')
+                    self.assertIsNotNone(record.detalle_id)
+                    detail = db.session.get(diagnosis_entities.DiagnosticoDetalle,
+                                            record.detalle_id)
+                    self.assertEqual(detail.hash_archivo, hashlib.sha256(original).hexdigest())
+                    self.assertTrue(Path(folder, detail.imagen_original_url).is_file())
+                    self.assertTrue(Path(folder, detail.imagen_gradcam_url).is_file())
+                    self.assertEqual(copy_path.read_bytes(), original)
+                    status, _ = self.call('/api/diagnosticar/retinografo/confirmaciones/estado',
+                                          method='POST', token=self.token(),
+                                          json_data={'identificador': secret})
+                    self.assertEqual(status.json['confirmacion']['estado'], 'CONSUMIDA')
+                    print('ORM persistencia: JPEG fallido revierte detalle/consumo/archivos; '
+                          'commit ambiguo conserva detalle, consumo, JPEG y copia.')
+                finally:
+                    db.session.rollback()
+                    db.session.query(model).filter_by(id=record_id).delete()
+                    db.session.commit()
+                    db.session.remove()
+        finally:
+            for file in set(root.iterdir()) - before:
+                file.unlink()
+
+    def test_28d_confirmed_export_cannot_overwrite_medical_decision(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        root = Path(self.private_directory.name)
+        before = set(root.iterdir())
+        with self.stubbed_creation() as (folder, infer), \
+             self.confirmed_export(patient=self.patient_ids[0]) as (secret, image, name):
+            digest = hashlib.sha256(bytes.fromhex(secret)).digest()
+            db.session.remove()
+            detail = diagnosis_entities.DiagnosticoDetalle.query.filter_by(
+                diagnostico_retinopatia_id=self.diagnosis_ids[0], ojo_evaluado='Derecho').one()
+            detail_id = detail.id
+            initial = (detail.estado_validacion, detail.resultado_final_id, detail.comentario_medico)
+            try:
+                rejected = self.consume_export(secret, patient=self.patient_ids[0],
+                                               visit=self.visit_ids[0])
+                self.assertEqual(rejected.status_code, 409)
+                infer.assert_not_called()
+                db.session.remove()
+                record = model.query.filter_by(token_verificador=digest).one()
+                self.assertEqual(record.estado, 'CONFIRMADA')
+                detail = db.session.get(diagnosis_entities.DiagnosticoDetalle, detail_id)
+                self.assertEqual((detail.estado_validacion, detail.resultado_final_id,
+                                  detail.comentario_medico), initial)
+                self.assertEqual(list(Path(folder).glob('*.jpg')), [])
+            finally:
+                db.session.rollback()
+                db.session.query(model).filter_by(token_verificador=digest).delete()
+                db.session.commit()
+                db.session.remove()
+                for file in set(root.iterdir()) - before:
+                    file.unlink()
 
     def measured_creation(self, **kwargs):
         db.session.remove()

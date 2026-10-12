@@ -1,4 +1,4 @@
-import { DiagnosisResult } from "@/features/diagnosis/api/diagnosisService";
+import type { DiagnosisResult, RetinographAutoImage } from "@/features/diagnosis/api/diagnosisService";
 import {
   DiagnosticoVisita,
   PatientSearchResult,
@@ -13,6 +13,10 @@ export interface EyeState {
   file: File | null;
   preview: string | null;
   isExistingImage?: boolean;
+  candidate?: RetinographAutoImage;
+  confirmation?: "pendiente" | "registrando" | "CONFIRMADA" | "EXPIRADA" | "REVOCADA" | "CONSUMIDA" | "incierta";
+  expiresAt?: string;
+  hasConfirmation?: boolean;
 }
 
 export interface DiagnosisHook {
@@ -56,6 +60,9 @@ export interface DiagnosisHook {
   handleFile: (eye: EyeKey, file?: File) => void;
   autoSelectRetinographImages: () => Promise<void>;
   clearEye: (eye: EyeKey) => void;
+  confirmEye: (eye: EyeKey) => Promise<void>;
+  checkConfirmation: (eye: EyeKey) => Promise<EyeState["confirmation"] | null>;
+  revokeConfirmation: (eye: EyeKey) => Promise<void>;
 
   // Paso 3 — Resultados
   results: Partial<Record<EyeKey, DiagnosisResult>>;

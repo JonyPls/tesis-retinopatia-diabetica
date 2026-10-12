@@ -214,6 +214,11 @@ export default function Diagnosis() {
                 clearEye={diagnosisHook.clearEye}
                 onAutoSelect={diagnosisHook.autoSelectRetinographImages}
                 isAutoSelecting={diagnosisHook.isAutoSelectingImages}
+                isSaving={isSaving}
+                patientName={selectedPatient ? `${selectedPatient.nombres} ${selectedPatient.apellidos}` : undefined}
+                onConfirm={diagnosisHook.confirmEye}
+                onCheckConfirmation={diagnosisHook.checkConfirmation}
+                onRevokeConfirmation={diagnosisHook.revokeConfirmation}
               />
               {diagnosisHook.processingNotice && (
                 <p role="alert" className="mt-4 text-sm text-muted-foreground">{diagnosisHook.processingNotice}</p>
