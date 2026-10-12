@@ -444,6 +444,8 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                 run_orm_integration(port, password, temp_root / "data", instance_uuid)
                 require(fingerprints(connection) == before_fingerprints,
                         "Las pruebas ORM dejaron datos en tablas clínicas/usuarios.")
+                require(rows(connection, f"SELECT COUNT(*) FROM `{CONFIRMATIONS}`")[0][0] == 0,
+                        "Las pruebas ORM dejaron confirmaciones sintéticas persistidas.")
 
             if check_historical_idempotence:
                 # Ensayo histórico optativo; nunca forma parte de la carga B1 directa.
@@ -483,7 +485,8 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
             # Se importa solo DESPUES de identificar datadir, UUID y grants.
             from b1_orm_mysql_trial import run_orm_integration
 
-            run_orm_integration(port, password, temp_root / "data", instance_uuid)
+            run_orm_integration(port, password, temp_root / "data", instance_uuid,
+                                confirmations_available=False)
             require(fingerprints(connection) == before_fingerprints,
                     "Las pruebas ORM dejaron datos en las tablas clínicas/usuarios.")
 

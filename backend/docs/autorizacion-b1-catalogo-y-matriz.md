@@ -614,6 +614,18 @@ una candidata no confirmada. **14 rutas B1**; no se han ampliado otras política
 28C debe definir la confirmación humana trazable paciente–imagen–ojo sin tratar
 el nombre, R/L ni la decodificación como evidencia de asociación clínica.
 
+## Confirmaciones de exportación (Prompt 28C.3)
+
+Se mantienen las **14 rutas B1 anteriores** y se agregan tres operaciones
+separadas: `retinograph.confirm`, `retinograph.confirm_status` y
+`retinograph.revoke` (total **17 rutas B1**). Solo rol OFTALMOLOGO activo con
+`pacientes.ver` e `imagenes.ver` activos del mismo rol. Los grants y el maestro
+SQL no cambian. Consulta/revocación además exigen pertenencia al profesional
+confirmador y un comprobante opaco en JSON, jamás en URL. La asociación humana
+paciente–imagen–ojo no es validación médica de la IA. Contratos, caducidad,
+almacenamiento privado y límites: `confirmaciones-exportacion-retinografo-28c3.md`.
+No hay consumo por POST ni desbloqueo de Selección Auto.
+
 ## Dependencias antes de activar B1
 
 1. Autorizar comprobación de catálogo/grants en instancia v2 y aplicar la

@@ -64,6 +64,9 @@ OPERATION_RULES = MappingProxyType({
     "images.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO), "imagenes.ver"),
     "retinograph.select": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
     "retinograph.download": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+    "retinograph.confirm": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+    "retinograph.confirm_status": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+    "retinograph.revoke": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
     "diagnosis.pdf_read": _rule(
         "specialist", (OFTALMOLOGO,), "pacientes.ver",
         "diagnostico_retinopatia.ver", "imagenes.ver",

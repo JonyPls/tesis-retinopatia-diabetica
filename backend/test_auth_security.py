@@ -3,6 +3,7 @@
 import datetime
 from io import BytesIO
 import os
+import re
 import sys
 import tempfile
 import types
@@ -49,6 +50,11 @@ for name in ("procesar_diagnostico", "confirmar_validacion_detalle",
 fake_retinograph_service = types.ModuleType("services.retinograph_import_service")
 for name in ("obtener_archivo_retinografo", "obtener_seleccion_automatica"):
     setattr(fake_retinograph_service, name, Mock())
+fake_confirmation_service = types.ModuleType('services.retinograph_confirmation_service')
+fake_confirmation_service.HASH_PATTERN = re.compile(r'[0-9a-fA-F]{64}\Z')
+fake_confirmation_service.TOKEN_PATTERN = re.compile(r'[0-9a-f]{64}\Z')
+for name in ('register', 'status', 'revoke'):
+    setattr(fake_confirmation_service, name, Mock(return_value=({'success': True}, 200)))
 fake_report_service = types.ModuleType("services.report_service")
 fake_report_service.ReportNotFoundError = type("ReportNotFoundError", (Exception,), {})
 fake_report_service.ReportTemplateError = type("ReportTemplateError", (Exception,), {})
@@ -66,6 +72,7 @@ with patch.dict(sys.modules, {
     "services.diagnosis_service": fake_diagnosis_service,
     "dl_model.validator": fake_validator,
     "services.retinograph_import_service": fake_retinograph_service,
+    "services.retinograph_confirmation_service": fake_confirmation_service,
     "services.report_service": fake_report_service,
     "services.informe_service": fake_informe_service,
     "database": fake_database,
@@ -656,7 +663,67 @@ class AuthSecurityTests(unittest.TestCase):
     def _retinograph_routes(self):
         return (("/api/diagnosticar/retinografo/auto-seleccion/101", {}),
                 ("/api/diagnosticar/retinografo/imagen",
-                 {"paciente_id": 101, "filename": "12345678_01012026_101010_fundus_R_1.jpg"}))
+                  {"paciente_id": 101, "filename": "12345678_01012026_101010_fundus_R_1.jpg"}))
+
+    def test_28c_confirmation_routes_authorize_before_work_and_reject_untrusted_fields(self):
+        base = '/api/diagnosticar/retinografo/confirmaciones'
+        payload = {'paciente_id': 101, 'nombre_exportacion': '12345678_01012026_101010_fundus_R_1.jpg',
+                   'ojo_confirmado': 'Derecho', 'sha256_previsualizacion': 'a' * 64,
+                   'confirmo_asociacion': True}
+        calls = ((base, payload, fake_confirmation_service.register),
+                 (base + '/estado', {'identificador': 'a' * 64}, fake_confirmation_service.status),
+                 (base + '/revocar', {'identificador': 'a' * 64}, fake_confirmation_service.revoke))
+        both = ['pacientes.ver', 'imagenes.ver']
+        for roles, expected in (({'OFTALMOLOGO': both}, 200),
+                                ({'OFTALMOLOGO': ['pacientes.ver']}, 403),
+                                ({'ADMINISTRADOR_SISTEMA': both}, 403),
+                                ({'ENFERMERO': both}, 403),
+                                ({'ASISTENTE_ADMINISTRATIVO': both}, 403),
+                                ({'ADMINISTRADOR_SISTEMA': ['imagenes.ver'],
+                                  'OFTALMOLOGO': ['pacientes.ver']}, 403),
+                                ({'ADMINISTRADOR_SISTEMA': both, 'OFTALMOLOGO': both}, 200)):
+            self.set_role_grants(roles)
+            for path, body, target in calls:
+                with self.subTest(roles=roles, path=path):
+                    target.reset_mock()
+                    response = self.client.post(path, json=body, headers=self.headers(self.token()))
+                    self.assertEqual(response.status_code, expected)
+                    self.assertEqual(response.headers.get('Cache-Control'), 'private, no-store')
+                    self.assertEqual(target.call_count, int(expected == 200))
+        self.set_role_grants({'OFTALMOLOGO': both})
+        for path, body, target in calls:
+            for headers, qs, inactive in (({}, {}, False), (self.headers(self.token()),
+                                            {'token': self.token()}, False),
+                                           (self.headers(self.token()), {}, True)):
+                self.active = not inactive
+                target.reset_mock()
+                response = self.client.post(path, json=body, headers=headers, query_string=qs)
+                self.assertEqual(response.status_code, 401)
+                target.assert_not_called()
+            self.active = True
+            target.reset_mock()
+            self.assertEqual(self.client.post(path, json={**body, 'confirmado_por': 999},
+                headers=self.headers(self.token())).status_code, 400)
+            target.assert_not_called()
+        fake_confirmation_service.register.reset_mock()
+        self.assertEqual(self.client.post(base, json={**payload, 'confirmo_asociacion': False},
+            headers=self.headers(self.token())).status_code, 400)
+        self.assertEqual(self.client.post(base, headers=self.headers(self.token()),
+            content_type='application/json', data='x' * 5000).status_code, 413)
+        fake_confirmation_service.register.assert_not_called()
+        roles = self.set_role_grants({'OFTALMOLOGO': both})
+        for permission in both:
+            grant = next(g for g in roles['OFTALMOLOGO'].permisos_rel
+                         if g.permiso.codigo == permission)
+            grant.permiso.estado = 'INACTIVO'
+            self.assertEqual(self.client.post(base, json=payload,
+                headers=self.headers(self.token())).status_code, 403)
+            fake_confirmation_service.register.assert_not_called()
+            grant.permiso.estado = 'ACTIVO'
+        roles['OFTALMOLOGO'].estado = 'INACTIVO'
+        self.assertEqual(self.client.post(base, json=payload,
+            headers=self.headers(self.token())).status_code, 403)
+        fake_confirmation_service.register.assert_not_called()
 
     def test_28b_real_routes_require_single_ophthalmologist_grant_source(self):
         both = ["pacientes.ver", "imagenes.ver"]

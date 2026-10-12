@@ -14,6 +14,7 @@ from services.retinograph_import_service import (
     obtener_archivo_retinografo,
     obtener_seleccion_automatica,
 )
+from services import retinograph_confirmation_service as confirmations
 from services.report_service import (
     ReportNotFoundError,
     ReportTemplateError,
@@ -23,6 +24,87 @@ from utils.security import clinical_access_required, token_required
 from utils.strict_authorization import AuthorizationInputError, strict_authorization_required
 
 diagnosis_bp = Blueprint('diagnosis', __name__)
+
+_CONFIRMATION_ENDPOINTS = {'diagnosis.registrar_confirmacion_retinografo',
+                           'diagnosis.consultar_confirmacion_retinografo',
+                           'diagnosis.revocar_confirmacion_retinografo'}
+
+
+@diagnosis_bp.after_request
+def _private_confirmation_response(response):
+    if request.endpoint in _CONFIRMATION_ENDPOINTS:
+        response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
+@diagnosis_bp.errorhandler(AuthorizationInputError)
+def _confirmation_input_error(error):
+    return jsonify({'success': False, 'message': str(error)}), error.status_code
+
+
+def _confirmation_json(fields):
+    request.max_content_length = 4096
+    if request.content_length is not None and request.content_length > 4096:
+        raise AuthorizationInputError(413, 'Solicitud demasiado grande.')
+    if request.args or not request.is_json:
+        return None
+    try:
+        data = request.get_json(silent=True)
+    except RequestEntityTooLarge:
+        raise AuthorizationInputError(413, 'Solicitud demasiado grande.') from None
+    return data if type(data) is dict and set(data) == fields else None
+
+
+def _confirmation_error():
+    return jsonify({'success': False, 'message': 'Solicitud de confirmación inválida.'}), 400
+
+
+@diagnosis_bp.post('/api/diagnosticar/retinografo/confirmaciones')
+@strict_authorization_required('retinograph.confirm')
+def registrar_confirmacion_retinografo():
+    data = _confirmation_json({'paciente_id', 'nombre_exportacion', 'ojo_confirmado',
+                               'sha256_previsualizacion', 'confirmo_asociacion'})
+    if (data is None or type(data['paciente_id']) is not int or
+            not 0 < data['paciente_id'] <= 4294967295 or
+            not isinstance(data['nombre_exportacion'], str) or
+            not 0 < len(data['nombre_exportacion']) <= 255 or
+            data['ojo_confirmado'] not in ('Derecho', 'Izquierdo') or
+            not isinstance(data['sha256_previsualizacion'], str) or
+            not confirmations.HASH_PATTERN.fullmatch(data['sha256_previsualizacion']) or
+            data['confirmo_asociacion'] is not True):
+        return _confirmation_error()
+    result, code = confirmations.register(
+        data['paciente_id'], data['nombre_exportacion'], data['ojo_confirmado'],
+        data['sha256_previsualizacion'], request.current_user['user_id'])
+    return jsonify(result), code
+
+
+def _confirmation_token():
+    data = _confirmation_json({'identificador'})
+    if (data is None or not isinstance(data['identificador'], str) or
+            not confirmations.TOKEN_PATTERN.fullmatch(data['identificador'])):
+        return None
+    return data['identificador']
+
+
+@diagnosis_bp.post('/api/diagnosticar/retinografo/confirmaciones/estado')
+@strict_authorization_required('retinograph.confirm_status')
+def consultar_confirmacion_retinografo():
+    token = _confirmation_token()
+    if token is None:
+        return _confirmation_error()
+    result, code = confirmations.status(token, request.current_user['user_id'])
+    return jsonify(result), code
+
+
+@diagnosis_bp.post('/api/diagnosticar/retinografo/confirmaciones/revocar')
+@strict_authorization_required('retinograph.revoke')
+def revocar_confirmacion_retinografo():
+    token = _confirmation_token()
+    if token is None:
+        return _confirmation_error()
+    result, code = confirmations.revoke(token, request.current_user['user_id'])
+    return jsonify(result), code
 
 
 def _requires_new_diagnosis_visit():

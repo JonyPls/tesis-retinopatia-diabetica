@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from io import BytesIO
+import hashlib
 import inspect as python_inspect
 import os
 from pathlib import Path
@@ -73,6 +74,7 @@ with patch("dotenv.load_dotenv", return_value=False):
         from routes import diagnosis_routes
         from services import diagnosis_service
         from services import retinograph_import_service
+        from services import retinograph_confirmation_service
 
 
 TEST_KEY = "b1-only-disposable-orm-integration-signing-key"
@@ -120,6 +122,10 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             retinograph_import_service, "RETINOGRAPH_EXPORT_DIR", cls.retino_directory.name)
         cls.retino_directory_patch.start()
         cls.addClassCleanup(cls.retino_directory_patch.stop)
+        cls.private_directory = tempfile.TemporaryDirectory(
+            prefix='b1-orm-private-', dir=r'C:\Users\ricar\AppData\Local\Temp\opencode')
+        cls.addClassCleanup(cls.private_directory.cleanup)
+        cls.app.config['RETINOGRAPH_PRIVATE_DIR'] = cls.private_directory.name
         for name in ("synthetic-only.jpg", "synthetic-gradcam.jpg", "unregistered.jpg"):
             Path(cls.image_directory.name, name).write_bytes(b"\xff\xd8\xff\xd9")
 
@@ -430,6 +436,260 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 db.session.query(model).filter_by(id=entry.id).delete()
                 db.session.commit()
             db.session.remove()
+
+    def test_28c_http_confirmation_private_copy_status_and_revoke(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        base = '/api/diagnosticar/retinografo/confirmaciones'
+        patient_id = self.patient_ids[0]
+        professional = self.user_ids['ophthalmologist']
+        name, image = self.retino_files['R']
+        payload = {'paciente_id': patient_id, 'nombre_exportacion': name,
+                   'ojo_confirmado': 'Derecho', 'sha256_previsualizacion': hashlib.sha256(image).hexdigest(),
+                   'confirmo_asociacion': True}
+        token = self.token()
+        before = set(Path(self.private_directory.name).iterdir())
+        stored_ids = []
+        try:
+            with patch.object(retinograph_confirmation_service, 'read_export') as denied_open:
+                for profile in ('administrator', 'nurse', 'assistant'):
+                    denied, sql = self.call(base, method='POST', token=self.token(profile),
+                                            json_data=payload, measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertEqual(sum(q.lstrip().lower().startswith('select') for q in sql), 3)
+                    self.assertFalse(any('from pacientes' in q.lower().replace('`', '') or
+                                         'confirmaciones_exportacion' in q.lower() for q in sql))
+                denied, sql = self.call(base, method='POST', json_data=payload, measure=True)
+                self.assertEqual(denied.status_code, 401)
+                self.assertEqual(sql, [])
+                denied_open.assert_not_called()
+                self.assertEqual(set(Path(self.private_directory.name).iterdir()), before)
+            with patch.object(retinograph_confirmation_service, 'read_export',
+                              wraps=retinograph_confirmation_service.read_export) as read:
+                created, statements = self.call(base, method='POST', token=token,
+                                                json_data=payload, measure=True)
+                self.assertEqual(created.status_code, 201, created.json)
+                self.assertEqual(read.call_count, 1)
+            secret = created.json['confirmacion']['identificador']
+            self.assertEqual(len(secret), 64)
+            self.assertEqual(created.headers['Cache-Control'], 'private, no-store')
+            self.assertNotIn(name, created.get_data(as_text=True))
+            self.assertEqual(sum('insert into confirmaciones_exportacion_retinografo'
+                                 in q.lower().replace('`', '') for q in statements), 1)
+            self.assertEqual(sum(q.lstrip().lower().startswith('select') for q in statements), 4)
+            self.assertEqual(sum('from pacientes' in q.lower().replace('`', '')
+                                 for q in statements), 1)
+            digest = hashlib.sha256(bytes.fromhex(secret)).digest()
+            db.session.remove()
+            row = model.query.filter_by(token_verificador=digest).one()
+            stored_ids.append(row.id)
+            self.assertEqual(row.confirmado_por, professional)
+            self.assertEqual(row.paciente_id, patient_id)
+            self.assertEqual(row.sha256_fuente, hashlib.sha256(image).hexdigest())
+            self.assertEqual(row.fecha_expiracion - row.fecha_confirmacion, timedelta(minutes=60))
+            self.assertEqual(len(row.clave_copia), 32)
+            self.assertNotEqual(row.clave_copia, secret)
+            self.assertEqual(Path(self.private_directory.name, row.clave_copia).read_bytes(), image)
+            self.assertEqual(len(list(Path(self.private_directory.name).iterdir())), len(before) + 1)
+            status, status_sql = self.call(base + '/estado', method='POST', token=token,
+                                           json_data={'identificador': secret}, measure=True)
+            self.assertEqual(status.status_code, 200)
+            self.assertEqual(sum(q.lstrip().lower().startswith('select') for q in status_sql), 4)
+            self.assertTrue(status.json['confirmacion']['vigente'])
+            self.assertNotIn('clave_copia', status.get_data(as_text=True))
+            for path in (base + '/estado', base + '/revocar'):
+                inaccessible, _ = self.call(path, method='POST', token=self.token('colleague'),
+                                             json_data={'identificador': secret})
+                self.assertEqual(inaccessible.status_code, 404)
+                missing, _ = self.call(path, method='POST', token=token,
+                                        json_data={'identificador': '0' * 64})
+                self.assertEqual(missing.status_code, 404)
+            revoked, revoke_sql = self.call(base + '/revocar', method='POST', token=token,
+                                            json_data={'identificador': secret}, measure=True)
+            self.assertEqual(revoked.status_code, 200)
+            self.assertEqual(sum('update confirmaciones_exportacion_retinografo'
+                                 in q.lower().replace('`', '') for q in revoke_sql), 1)
+            again, _ = self.call(base + '/revocar', method='POST', token=token,
+                                 json_data={'identificador': secret})
+            self.assertEqual(again.status_code, 409)
+            db.session.remove()
+            row = model.query.filter_by(token_verificador=digest).one()
+            self.assertEqual((row.estado, row.revocada_por), ('REVOCADA', professional))
+            self.assertIsNotNone(row.fecha_revocacion)
+            self.assertEqual(Path(self.private_directory.name, row.clave_copia).read_bytes(), image)
+            print('ORM confirmación: creación=4 SELECT (3 autorización+1 paciente), '
+                  '1 apertura y 1 INSERT/copia; consulta=4 SELECT; revocación=1 UPDATE; '
+                  '401/403 sin SELECT clínicos.')
+        finally:
+            db.session.rollback()
+            for identifier in stored_ids:
+                db.session.query(model).filter_by(id=identifier).delete()
+            db.session.commit()
+            db.session.remove()
+            # Solo recursos sintéticos de esta prueba; la limpieza real no es automática.
+            for path in set(Path(self.private_directory.name).iterdir()) - before:
+                path.unlink()
+
+    def test_28c_confirmation_conflicts_expiry_and_compensation(self):
+        from sqlalchemy.exc import IntegrityError
+
+        base = '/api/diagnosticar/retinografo/confirmaciones'
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        name, image = self.retino_files['L']
+        payload = {'paciente_id': self.patient_ids[0], 'nombre_exportacion': name,
+                   'ojo_confirmado': 'Izquierdo',
+                   'sha256_previsualizacion': hashlib.sha256(image).hexdigest(),
+                   'confirmo_asociacion': True}
+        before = set(Path(self.private_directory.name).iterdir())
+        token = self.token()
+        stored_ids = []
+        try:
+            for changes, expected in (({'paciente_id': 987654321}, 404),
+                                      ({'nombre_exportacion': '../x.jpg'}, 400),
+                                      ({'nombre_exportacion': '99999999_01012026_101010_fundus_L_1.png'}, 404),
+                                      ({'ojo_confirmado': 'Derecho'}, 409),
+                                      ({'sha256_previsualizacion': '0' * 64}, 409)):
+                response, _ = self.call(base, method='POST', token=token,
+                                        json_data={**payload, **changes})
+                self.assertEqual(response.status_code, expected)
+            original = Path(self.retino_directory.name, name)
+            other = original.read_bytes()
+            try:
+                changed = BytesIO()
+                Image.new('RGB', (350, 350), (90, 35, 60)).save(changed, 'PNG')
+                original.write_bytes(changed.getvalue())
+                response, _ = self.call(base, method='POST', token=token, json_data=payload)
+                self.assertEqual(response.status_code, 409)
+                original.unlink()
+                response, _ = self.call(base, method='POST', token=token, json_data=payload)
+                self.assertEqual(response.status_code, 404)
+                original.write_bytes(b'not-an-image')
+                response, _ = self.call(base, method='POST', token=token, json_data=payload)
+                self.assertEqual(response.status_code, 422)
+            finally:
+                original.write_bytes(other)
+            self.assertEqual(set(Path(self.private_directory.name).iterdir()), before)
+
+            with patch.dict(self.app.config, {'RETINOGRAPH_PRIVATE_DIR': 'relative/private'}):
+                response, _ = self.call(base, method='POST', token=token, json_data=payload)
+                self.assertEqual(response.status_code, 503)
+            self.assertEqual(set(Path(self.private_directory.name).iterdir()), before)
+
+            # El error de flush es anterior al commit: compensar solo archivos propios.
+            with patch.object(retinograph_confirmation_service.db.session, 'flush',
+                              side_effect=IntegrityError('synthetic', {}, Exception())):
+                response, _ = self.call(base, method='POST', token=token, json_data=payload)
+                self.assertEqual(response.status_code, 500)
+            self.assertEqual(set(Path(self.private_directory.name).iterdir()), before)
+            db.session.remove()
+            self.assertEqual(model.query.filter_by(confirmado_por=self.user_ids['ophthalmologist']).count(), 0)
+
+            # El resultado de commit puede ser incierto: jamás retirar la copia.
+            with patch.object(retinograph_confirmation_service.db.session, 'commit',
+                              side_effect=IntegrityError('synthetic', {}, Exception())):
+                response, _ = self.call(base, method='POST', token=token, json_data=payload)
+                self.assertEqual(response.status_code, 500)
+            uncertain = set(Path(self.private_directory.name).iterdir()) - before
+            self.assertEqual(len(uncertain), 1)
+            self.assertNotIn('identificador', response.get_data(as_text=True))
+            db.session.remove()
+            self.assertEqual(model.query.filter_by(confirmado_por=self.user_ids['ophthalmologist']).count(), 0)
+
+            created, _ = self.call(base, method='POST', token=token, json_data=payload)
+            self.assertEqual(created.status_code, 201)
+            secret = created.json['confirmacion']['identificador']
+            db.session.remove()
+            record = model.query.filter_by(
+                token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).one()
+            record_id = record.id
+            stored_ids.append(record_id)
+            record.fecha_confirmacion -= timedelta(hours=2)
+            record.fecha_expiracion -= timedelta(hours=2)
+            db.session.commit()
+            db.session.remove()
+            status, _ = self.call(base + '/estado', method='POST', token=token,
+                                  json_data={'identificador': secret})
+            self.assertEqual(status.status_code, 200)
+            self.assertTrue(status.json['confirmacion']['expirada'])
+            self.assertFalse(status.json['confirmacion']['vigente'])
+            response, _ = self.call(base + '/revocar', method='POST', token=token,
+                                    json_data={'identificador': secret})
+            self.assertEqual(response.status_code, 409)
+            db.session.remove()
+            self.assertEqual(db.session.get(model, record_id).estado, 'CONFIRMADA')
+            print('ORM confirmación: 400/404/409/422/503, rollback y commit incierto; '
+                  'expiración derivada y revocación expirada=409.')
+        finally:
+            db.session.rollback()
+            for identifier in stored_ids:
+                db.session.query(model).filter_by(id=identifier).delete()
+            db.session.commit()
+            db.session.remove()
+            # Solo directorio sintético temporal; el servicio no borra huérfanos ambiguos.
+            for path in set(Path(self.private_directory.name).iterdir()) - before:
+                path.unlink()
+
+    def test_28c_concurrent_revocation_and_consumed_rejection(self):
+        model = diagnosis_entities.ConfirmacionExportacionRetinografo
+        base = '/api/diagnosticar/retinografo/confirmaciones'
+        name, image = self.retino_files['L']
+        body = {'paciente_id': self.patient_ids[0], 'nombre_exportacion': name,
+                'ojo_confirmado': 'Izquierdo',
+                'sha256_previsualizacion': hashlib.sha256(image).hexdigest(),
+                'confirmo_asociacion': True}
+        before = set(Path(self.private_directory.name).iterdir())
+        identifiers = []
+        try:
+            for attempt in (1, 2):
+                created, _ = self.call(base, method='POST', token=self.token(), json_data=body)
+                self.assertEqual(created.status_code, 201)
+                secret = created.json['confirmacion']['identificador']
+                db.session.remove()
+                record = model.query.filter_by(
+                    token_verificador=hashlib.sha256(bytes.fromhex(secret)).digest()).one()
+                identifiers.append(record.id)
+                if attempt == 1:
+                    barrier = Barrier(3)
+
+                    def worker():
+                        with self.app.app_context():
+                            barrier.wait(timeout=10)
+                            client = self.app.test_client()
+                            response = client.post(base + '/revocar',
+                                headers={'Authorization': f'Bearer {self.token()}'},
+                                json={'identificador': secret})
+                            db.session.remove()
+                            return response.status_code
+
+                    db.session.remove()
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        first = pool.submit(worker)
+                        second = pool.submit(worker)
+                        barrier.wait(timeout=10)
+                        self.assertEqual(sorted((first.result(timeout=15), second.result(timeout=15))),
+                                         [200, 409])
+                else:
+                    detail = diagnosis_entities.DiagnosticoDetalle.query.filter_by(
+                        diagnostico_retinopatia_id=self.diagnosis_ids[0],
+                        ojo_evaluado='Izquierdo').one()
+                    record.estado = 'CONSUMIDA'
+                    record.detalle_id = detail.id
+                    record.fecha_consumo = record.fecha_confirmacion
+                    db.session.commit()
+                    response, _ = self.call(base + '/revocar', method='POST', token=self.token(),
+                                            json_data={'identificador': secret})
+                    self.assertEqual(response.status_code, 409)
+                    status, _ = self.call(base + '/estado', method='POST', token=self.token(),
+                                          json_data={'identificador': secret})
+                    self.assertEqual(status.json['confirmacion']['estado'], 'CONSUMIDA')
+            print('ORM revocación: dos solicitudes concurrentes 200/409; consumida=409.')
+        finally:
+            db.session.rollback()
+            for identifier in identifiers:
+                db.session.query(model).filter_by(id=identifier).delete()
+            db.session.commit()
+            db.session.remove()
+            for path in set(Path(self.private_directory.name).iterdir()) - before:
+                path.unlink()
 
     def token(self, profile="ophthalmologist", *, expires=True, expired=False, claims_roles=None):
         claims = {
@@ -2211,7 +2471,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertIsNone(Paciente.query.filter_by(nro_documento=payload["nro_documento"]).first())
 
 
-def run_orm_integration(port, password, datadir, server_uuid):
+def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_available=True):
     from b1_mysql_disposable_trial import connect, ensure_own_server
 
     with connect(port, password, "centro_oftalmologico_db_v2") as connection:
@@ -2219,6 +2479,9 @@ def run_orm_integration(port, password, datadir, server_uuid):
             raise RuntimeError("La instancia ORM no coincide con la instancia temporal verificada.")
     RealORMStrictIntegrationTests.config = (port, password)
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(RealORMStrictIntegrationTests)
+    if not confirmations_available:  # Ensayo histórico de 14 tablas, anterior a 28C.2.
+        suite = unittest.TestSuite(test for test in suite
+                                   if not test._testMethodName.startswith('test_28c_'))
     result = unittest.TestResult()  # No imprimir SQL, credenciales ni trazas con datos.
     suite.run(result)
     print(f"ORM/MySQL aislado: {result.testsRun} pruebas; "
