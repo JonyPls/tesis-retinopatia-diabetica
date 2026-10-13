@@ -18,6 +18,7 @@ import type {
   PatientSearchResult,
 } from "@/features/patients/api/patientService";
 import { cn } from "@/lib/utils";
+import { clinicalTimestamp, formatClinicalDay, formatClinicalInstant, unknownClinicalDate } from "@/lib/clinicalDates";
 import type { PatientRequestError } from "@/features/patients/patientAccess";
 import { PatientLookupError } from "@/features/patients/components/PatientLookupError";
 
@@ -476,17 +477,13 @@ function PatientList({
 }
 
 function formatVisitDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatClinicalInstant(dateStr);
 }
 
 function relativeVisitTime(dateStr: string) {
-  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const visitTime = clinicalTimestamp(dateStr);
+  if (visitTime === null) return unknownClinicalDate;
+  const diffMs = Date.now() - visitTime;
   const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
   if (diffHours === 0) return "Hace menos de 1 h";
   if (diffHours === 1) return "Hace 1 h";
@@ -507,11 +504,7 @@ function buildVisitDescription(visita: DiagnosticoVisita) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  return formatClinicalDay(dateStr);
 }
 
 function PatientAvatar({

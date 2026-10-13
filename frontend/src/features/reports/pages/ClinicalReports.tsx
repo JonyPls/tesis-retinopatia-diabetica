@@ -15,6 +15,7 @@ import {
   FileText,
 } from "lucide-react";
 import { useState } from "react";
+import { formatClinicalDay } from "@/lib/clinicalDates";
 import { useReports } from "../hooks/useReports";
 import { ReportsStepper } from "../components/ReportsStepper";
 import { TypeSelector } from "../components/TypeSelector";
@@ -294,9 +295,7 @@ export default function ClinicalReports() {
                 {hook.selectedVisita && (
                   <p className="text-xs text-muted-foreground">
                     Visita:{" "}
-                    {new Date(
-                      hook.selectedVisita.fecha_visita,
-                    ).toLocaleDateString()}
+                    {formatClinicalDay(hook.selectedVisita.fecha_visita)}
                   </p>
                 )}
               </div>

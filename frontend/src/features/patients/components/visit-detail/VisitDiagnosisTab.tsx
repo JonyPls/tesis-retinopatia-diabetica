@@ -15,6 +15,7 @@ import {
 import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { RDLevel, RD_LEVELS } from "@/data/rdLevels";
 import { cn } from "@/lib/utils";
+import { formatClinicalInstant } from "@/lib/clinicalDates";
 import { useRetinaImage } from "@/hooks/useRetinaImage";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { ImagePreviewLightbox } from "@/features/diagnosis/components/ImagePreviewLightbox";
@@ -73,13 +74,7 @@ function rdHeaderTone(level?: number | null) {
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return null;
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatClinicalInstant(dateStr);
 }
 
 function validationTone(status: PatientDiagnosisEyeDetail["estado_validacion"]) {

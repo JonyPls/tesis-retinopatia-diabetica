@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DetalleDiagnosticoExistente } from "@/features/diagnosis/api/diagnosisService";
 import type { Diagnosis, PatientVisitReport } from "../../types";
+import { clinicalInstant, compareClinicalDesc, formatClinicalDay, formatClinicalInstant } from "@/lib/clinicalDates";
 import {
   compareRetinopathyGrades,
   daysBetweenVisits,
@@ -20,21 +21,11 @@ import {
 } from "./visitComparisonUtils";
 
 function formatDate(dateStr: string, compact = false) {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: compact ? "short" : "long",
-    year: "numeric",
-    hour: compact ? undefined : "2-digit",
-    minute: compact ? undefined : "2-digit",
-  });
+  return compact ? formatClinicalDay(dateStr) : formatClinicalInstant(dateStr);
 }
 
 function shortDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatClinicalDay(dateStr);
 }
 
 function hasDiagnosis(visit: Diagnosis) {
@@ -592,7 +583,7 @@ function ReportPresence({
   }
 
   const latest = [...reports].sort(
-    (a, b) => new Date(b.fecha_creado).getTime() - new Date(a.fecha_creado).getTime(),
+    (a, b) => compareClinicalDesc(a.fecha_creado, b.fecha_creado),
   )[0];
 
   return (
@@ -657,6 +648,13 @@ export function VisitComparisonTab({
         </CardContent>
       </Card>
     );
+  }
+
+  if (!clinicalInstant(currentVisit.fecha_visita) || !clinicalInstant(comparisonVisit.fecha_visita)) {
+    return <Card><CardContent className="p-6 text-sm">
+      No se puede establecer el orden temporal de estas visitas hasta conciliar sus fechas.
+      <Button type="button" variant="outline" size="sm" className="ml-3" onClick={onExit}>Quitar comparación</Button>
+    </CardContent></Card>;
   }
 
   const { later, laterDetails, previous, previousDetails } = orderVisitsChronologically(

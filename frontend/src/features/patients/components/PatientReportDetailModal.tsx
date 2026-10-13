@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatClinicalInstant } from "@/lib/clinicalDates";
 import { obtenerInformeClinico } from "../api/patientService";
 import type { PatientReportDetail } from "../types";
 
@@ -37,16 +38,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return "No registrado";
-  const date = new Date(dateStr);
-  const weekdays = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-  const months = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
-  const time = date.toLocaleTimeString("es-PE", {
-    hour: "numeric",
-    hour12: true,
-    minute: "2-digit",
-  });
-
-  return `${weekdays[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} · ${time}`;
+  return formatClinicalInstant(dateStr);
 }
 
 function formatName(person?: { nombres?: string; apellidos?: string } | null) {

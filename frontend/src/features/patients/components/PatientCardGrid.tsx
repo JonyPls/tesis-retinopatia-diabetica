@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
 import { Patient, PatientReadScope } from "../types";
+import { formatClinicalDay } from "@/lib/clinicalDates";
 
 interface PatientCardGridProps {
   patients: Patient[];
@@ -118,11 +119,7 @@ export function PatientCardGrid({
                 {scope !== "administrative" && <div className="flex items-center gap-1.5">
                   <Calendar className="h-3 w-3" />
                   {p.ultima_visita ? (
-                    new Date(p.ultima_visita).toLocaleDateString("es-PE", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })
+                    formatClinicalDay(p.ultima_visita)
                   ) : (
                     <span className="italic opacity-70">Sin registros</span>
                   )}

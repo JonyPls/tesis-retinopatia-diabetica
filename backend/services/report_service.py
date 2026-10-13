@@ -40,7 +40,10 @@ SCOPE_NOTE = (
 try:
     LOCAL_TZ = ZoneInfo(APP_TIMEZONE)
 except ZoneInfoNotFoundError:
-    LOCAL_TZ = timezone(timedelta(hours=-5), name="America/Lima")
+    # Fixed offset is an intentional fallback only for contemporary Lima;
+    # never silently label another configured zone as Lima.
+    LOCAL_TZ = (timezone(timedelta(hours=-5), name="America/Lima")
+                if APP_TIMEZONE == "America/Lima" else None)
 
 PROBABILITY_LABELS = [
     ("G0_Sin_DR", "Sin RD"),
@@ -75,10 +78,14 @@ def _text(value, fallback="No disponible"):
 
 
 def _local_now():
+    if LOCAL_TZ is None:
+        raise ReportTemplateError("Zona horaria de presentación no disponible.")
     return datetime.now(LOCAL_TZ)
 
 
-def _display_datetime(value, naive_source_tz=timezone.utc):
+def _display_datetime(value, naive_source_tz=None):
+    if LOCAL_TZ is None:
+        raise ReportTemplateError("Zona horaria de presentación no disponible.")
     if value and getattr(value, "tzinfo", None):
         return value.astimezone(LOCAL_TZ).replace(tzinfo=None)
     if isinstance(value, datetime) and naive_source_tz:
@@ -86,9 +93,11 @@ def _display_datetime(value, naive_source_tz=timezone.utc):
     return value
 
 
-def _format_datetime(value, include_time=True, naive_source_tz=timezone.utc):
+def _format_datetime(value, include_time=True, naive_source_tz=None):
     if not value:
         return "No disponible"
+    if isinstance(value, datetime) and value.tzinfo is None and naive_source_tz is None:
+        return "Fecha pendiente de conciliación"
     value = _display_datetime(value, naive_source_tz=naive_source_tz)
     if include_time:
         return value.strftime("%d/%m/%Y %H:%M")
@@ -488,6 +497,7 @@ def generar_reporte_diagnostico_pdf(visita_id: int):
     pdf_bytes = _apply_institutional_template(buffer.getvalue())
     buffer.close()
 
-    date_part = visita.fecha_visita.strftime("%Y-%m-%d") if visita.fecha_visita else _local_now().strftime("%Y-%m-%d")
+    # Without row provenance, neither UTC nor a local civil day is proven.
+    date_part = "fecha-no-conciliada"
     filename = f"reporte_RD_{_safe_filename(paciente.nro_documento)}_{date_part}.pdf"
     return pdf_bytes, filename

@@ -1,6 +1,7 @@
 import { Info, Sparkles, UploadCloud } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatClinicalInstant } from "@/lib/clinicalDates";
 import { EyeKey, EyeState } from "../types";
 import { DropZone } from "./DropZone";
 
@@ -105,7 +106,7 @@ export function ImageUploader({
             <p className="text-xs text-muted-foreground">Paciente: {patientName || "Paciente seleccionado"}. Ojo R/L inferido del nombre, no verificado clínicamente.</p>
             <p className="break-all text-xs">Archivo: {state.candidate.filename}</p>
             <p className="text-xs text-muted-foreground">{state.candidate.tipo_imagen} · {state.candidate.fecha_exportacion} · {state.candidate.extension.toUpperCase()} · secuencia {state.candidate.secuencia}</p>
-            {confirmation === "CONFIRMADA" && state.expiresAt && <p className="text-xs">Vigente hasta {new Date(state.expiresAt).toLocaleString()}</p>}
+            {confirmation === "CONFIRMADA" && state.expiresAt && <p className="text-xs">Vigente hasta {formatClinicalInstant(state.expiresAt)}</p>}
             {confirmation === "pendiente" && <>
               <p className="text-xs text-muted-foreground">Revise la imagen ampliada arriba antes de confirmar. Declara expresamente que corresponde al paciente y al ojo indicado. Esto no valida el resultado IA.</p>
               <Button type="button" variant="outline" disabled={!state.preview || isSaving || isAutoSelecting}

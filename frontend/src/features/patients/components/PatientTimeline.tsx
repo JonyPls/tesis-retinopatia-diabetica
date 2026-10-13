@@ -16,6 +16,7 @@ import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { VisitStatusBadge } from "@/components/medical/VisitStatusBadge";
 import type { RDLevel } from "@/data/rdLevels";
 import { cn } from "@/lib/utils";
+import { clinicalDayKey, compareClinicalDesc, formatClinicalInstant } from "@/lib/clinicalDates";
 import type { Diagnosis } from "../types";
 
 interface PatientTimelineProps {
@@ -29,17 +30,7 @@ interface PatientTimelineProps {
 type ContentFilter = "todos" | "diagnostico_ia" | "informes";
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function toDateKey(iso: string) {
-  return iso.split("T")[0].split(" ")[0];
+  return formatClinicalInstant(dateStr);
 }
 
 function VisitCard({
@@ -146,10 +137,13 @@ export function PatientTimeline({
     let list = [...sortedDx];
 
     if (dateFrom) {
-      list = list.filter((dx) => toDateKey(dx.fecha_visita) >= dateFrom);
+      list = list.filter((dx) => (clinicalDayKey(dx.fecha_visita) ?? "") >= dateFrom);
     }
     if (dateTo) {
-      list = list.filter((dx) => toDateKey(dx.fecha_visita) <= dateTo);
+      list = list.filter((dx) => {
+        const key = clinicalDayKey(dx.fecha_visita);
+        return key !== null && key <= dateTo;
+      });
     }
     if (contentFilter === "diagnostico_ia") {
       list = list.filter((dx) => Number(dx.tiene_diagnostico_ia) === 1);
@@ -158,11 +152,7 @@ export function PatientTimeline({
       list = list.filter((dx) => Number(dx.tiene_informes) === 1);
     }
     if (sortAsc) {
-      list.sort(
-        (a, b) =>
-          new Date(a.fecha_visita).getTime() -
-          new Date(b.fecha_visita).getTime(),
-      );
+      list.sort((a, b) => compareClinicalDesc(b.fecha_visita, a.fecha_visita));
     }
 
     return list;

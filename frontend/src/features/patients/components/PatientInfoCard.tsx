@@ -1,6 +1,7 @@
 import { Mail, Phone, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCivilDay } from "@/lib/clinicalDates";
 import { Patient, PatientReadScope } from "../types";
 
 interface PatientInfoCardProps {
@@ -12,11 +13,7 @@ interface PatientInfoCardProps {
 
 function formatDate(date?: string | null) {
   if (!date) return "No registrado";
-  return new Date(date).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+  return formatCivilDay(date);
 }
 
 function getFullName(patient: Patient) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import { civilAge, compareClinicalDesc, formatClinicalDay } from "@/lib/clinicalDates";
 import { Patient, Diagnosis, PatientReadScope } from "../types";
 import { patientRequestError, type PatientRequestError } from "../patientAccess";
 
@@ -75,15 +76,7 @@ export function usePatientProfile(id: string | undefined) {
   }, [id]);
 
   const calculateAge = (birthDateStr: string) => {
-    if (!birthDateStr) return 0;
-    const today = new Date();
-    const birth = new Date(birthDateStr);
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
+    return civilAge(birthDateStr) ?? 0;
   };
 
   const getInitials = (nombres?: string, apellidos?: string) => {
@@ -107,10 +100,8 @@ export function usePatientProfile(id: string | undefined) {
     }
   };
 
-  const sortedDx = [...diagnoses].sort(
-    (a, b) =>
-      new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
-  );
+  const sortedDx = [...diagnoses].sort((a, b) =>
+    compareClinicalDesc(a.fecha_visita, b.fecha_visita));
 
   const maxLevel =
     diagnoses.length > 0
@@ -130,7 +121,7 @@ export function usePatientProfile(id: string | undefined) {
 
   const lastVisit =
     sortedDx.length > 0
-      ? new Date(sortedDx[0].fecha_visita).toLocaleDateString("es-PE")
+      ? formatClinicalDay(sortedDx[0].fecha_visita)
       : "Sin registros";
 
   return {

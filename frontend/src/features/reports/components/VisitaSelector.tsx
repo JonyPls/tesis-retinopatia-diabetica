@@ -1,5 +1,6 @@
 import { Calendar, Plus, Check, User, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { clinicalDayKey, formatClinicalDay, unknownClinicalDate } from "@/lib/clinicalDates";
 import { DiagnosticoVisita } from "@/features/patients/api/patientService";
 
 interface VisitaSelectorProps {
@@ -15,21 +16,17 @@ interface VisitaSelectorProps {
 }
 
 function daysAgo(dateStr: string): string {
-  const now = new Date();
-  const date = new Date(dateStr);
-  const diff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+  const today = clinicalDayKey(new Date().toISOString());
+  const visitDay = clinicalDayKey(dateStr);
+  if (!visitDay || !today) return unknownClinicalDate;
+  const diff = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${visitDay}T00:00:00Z`)) / 86400000;
   if (diff === 0) return "HOY";
   if (diff === 1) return "AYER";
   return `HACE ${diff} DÍAS`;
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  return formatClinicalDay(dateStr);
 }
 
 export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, expandida, onVerMas, onVerMenos, pacienteSeleccionado, cargandoVisitas }: VisitaSelectorProps) {

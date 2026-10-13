@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { formatClinicalInstant } from "@/lib/clinicalDates";
 import { descargarReporteDiagnostico } from "../api/patientService";
 import { usePatientVisitDetail } from "../hooks/usePatientVisitDetail";
 import { VisitContextBand } from "../components/visit-detail/VisitContextBand";
@@ -78,13 +79,7 @@ function EmptyState({
 }
 
 function formatVisitDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatClinicalInstant(dateStr);
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {

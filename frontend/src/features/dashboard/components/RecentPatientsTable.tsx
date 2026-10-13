@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
+import { formatClinicalDay } from "@/lib/clinicalDates";
 import { ArrowRight } from "lucide-react";
 import { Patient } from "../types";
 
@@ -121,12 +122,7 @@ export function RecentPatientsTable({
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {p.ultima_visita &&
-                      new Date(p.ultima_visita).toLocaleDateString("es-PE", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                    {p.ultima_visita && formatClinicalDay(p.ultima_visita)}
                   </TableCell>
                   <TableCell>
                     {"maxima_gravedad" in p

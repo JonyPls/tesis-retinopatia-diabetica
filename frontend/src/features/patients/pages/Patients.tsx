@@ -10,21 +10,14 @@ import {
 } from "@/components/ui/select";
 import { Search, Table2, LayoutGrid } from "lucide-react";
 import { usePatients } from "../hooks/usePatients";
+import { civilAge } from "@/lib/clinicalDates";
 import { PatientTable } from "../components/PatientTable";
 import { PatientCardGrid } from "../components/PatientCardGrid";
 import { CreatePatientDialog } from "../components/CreatePatientDialog";
 import { PatientLookupError } from "../components/PatientLookupError";
 
 const calculateAge = (birthDate: string) => {
-  if (!birthDate) return "-";
-  const today = new Date();
-  const birth = new Date(birthDate);
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-    age--;
-  }
-  return age;
+  return civilAge(birthDate) ?? "-";
 };
 
 export default function Patients() {

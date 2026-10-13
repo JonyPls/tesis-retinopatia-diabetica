@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from database import db
 from utils.utc_clock import utc_now_naive
+from utils.clinical_dates import utc_instant
 from src.models.diagnosis_entities import ConfirmacionExportacionRetinografo
 from src.repositories.patient_repository import PatientRepository
 from services import retinograph_import_service as exports
@@ -94,7 +95,7 @@ def register(patient_id, filename, eye, preview_hash, professional_id):
         'success': True, 'confirmacion': {
             'identificador': token, 'paciente_id': patient_id,
             'ojo_confirmado': eye, 'estado': 'CONFIRMADA',
-            'fecha_expiracion': expires_at.isoformat() + 'Z',
+            'fecha_expiracion': utc_instant(expires_at, naive_origin='UTC'),
         },
     }, 201
 
@@ -224,7 +225,7 @@ def status(token, professional_id):
         'estado': record.estado,
         'vigente': record.estado == 'CONFIRMADA' and not expired,
         'expirada': expired,
-        'fecha_expiracion': record.fecha_expiracion.isoformat() + 'Z',
+        'fecha_expiracion': utc_instant(record.fecha_expiracion, naive_origin='UTC'),
     }}, 200
 
 

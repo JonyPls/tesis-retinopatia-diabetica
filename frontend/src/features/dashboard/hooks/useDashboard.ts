@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
+import { civilAge, compareClinicalDesc } from "@/lib/clinicalDates";
 import { Patient } from "../types";
 import { patientRequestMessage } from "@/features/patients/patientAccess";
 
@@ -24,9 +25,7 @@ export function useDashboard(enabled: boolean) {
           const sorted = (data.data as Patient[])
             .filter((p) => p.ultima_visita)
             .sort(
-              (a, b) =>
-                new Date(b.ultima_visita!).getTime() -
-                new Date(a.ultima_visita!).getTime(),
+              (a, b) => compareClinicalDesc(a.ultima_visita, b.ultima_visita),
             );
 
           setRecentPatients(sorted.slice(0, 6));
@@ -47,15 +46,7 @@ export function useDashboard(enabled: boolean) {
   }, [enabled]);
 
   const calculateAge = (birthDate: string) => {
-    if (!birthDate) return "-";
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
+    return civilAge(birthDate) ?? "-";
   };
 
   return {

@@ -2,6 +2,7 @@ from database import db
 from src.models.auth_entities import Usuario
 from src.models.informe_entities import Informe, InformeVersion, TipoInforme
 from src.models.patient_entities import Paciente, VisitaClinica
+from utils.clinical_dates import unverified_wall_time
 
 class InformeRepository:
     class NotFound(Exception):
@@ -285,13 +286,13 @@ class InformeRepository:
             "datos_estructurados": inf.datos_estructurados,
             "conclusion": inf.conclusion,
             "estado": inf.estado,
-            "fecha_creado": inf.fecha_creado,
-            "fecha_actualizado": inf.fecha_actualizado,
+            "fecha_creado": unverified_wall_time(inf.fecha_creado),
+            "fecha_actualizado": unverified_wall_time(inf.fecha_actualizado),
         }
         if visita:
             data["visita"] = {
                 "id": visita.id,
-                "fecha_visita": visita.fecha_visita,
+                "fecha_visita": unverified_wall_time(visita.fecha_visita),
                 "motivo_consulta": visita.motivo_consulta,
                 "observaciones": visita.observaciones,
                 "estado": visita.estado,

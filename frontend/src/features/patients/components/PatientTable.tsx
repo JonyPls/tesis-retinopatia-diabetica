@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
 import { Patient, PatientReadScope } from "../types";
+import { formatClinicalDay } from "@/lib/clinicalDates";
 
 interface PatientTableProps {
   patients: Patient[];
@@ -118,11 +119,7 @@ export function PatientTable({
             </TableCell>
             {scope !== "administrative" && <TableCell className="text-sm">
               {p.ultima_visita ? (
-                new Date(p.ultima_visita).toLocaleDateString("es-PE", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })
+                formatClinicalDay(p.ultima_visita)
               ) : (
                 <span className="text-xs italic text-muted-foreground opacity-70">
                   Sin registros

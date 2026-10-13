@@ -9,6 +9,7 @@ from services.patient_service import (
     obtener_recientes
 )
 from utils.security import clinical_access_required, token_required
+from utils.clinical_dates import unverified_clinical_fields
 from utils.strict_authorization import (
     evaluate_operation, patient_create_scope, patient_read_scope,
     strict_authorization_required,
@@ -60,7 +61,7 @@ def _project_lookup(response, status, fields, scope, *, paginated=False):
             if any(isinstance(value, (dict, list)) for value in
                    projected['pagination'].values()):
                 raise TypeError('Invalid patient lookup pagination')
-        return jsonify(projected), status
+        return jsonify(unverified_clinical_fields(projected)), status
     except (KeyError, TypeError, AttributeError):
         # Una respuesta inesperada nunca debe serializar datos adicionales.
         return jsonify({'success': False, 'message': 'No se pudo procesar la solicitud.'}), 500
@@ -104,7 +105,7 @@ def _project_patient_response(response, status, scope, *, listing=False,
         projected = {'success': True, 'data': data, 'scope': scope}
         if not listing:
             projected['history_available'] = history_available
-        return jsonify(projected), status
+        return jsonify(unverified_clinical_fields(projected)), status
     except (KeyError, TypeError, AttributeError):
         return jsonify({'success': False, 'message': 'No se pudo procesar la solicitud.'}), 500
 
@@ -125,8 +126,9 @@ def _project_created_patient(response, status, read_scope):
         data = _project_patient_row(response['data'], fields)
         if not isinstance(data.get('id'), int):
             raise TypeError('Missing created patient ID')
-        return jsonify({'success': True, 'message': 'Paciente registrado correctamente',
-                        'data': data}), 201
+        return jsonify(unverified_clinical_fields({
+            'success': True, 'message': 'Paciente registrado correctamente',
+            'data': data})), 201
     except (KeyError, TypeError, AttributeError):
         return jsonify({'success': False, 'message': 'No se pudo procesar la solicitud.'}), 500
 
@@ -173,13 +175,13 @@ def get_detalle_paciente(id):
 @strict_authorization_required('history.full_read')
 def get_historial_diagnosticos(id):
     response_dict, status_code = obtener_historial_diagnosticos(id)
-    return jsonify(response_dict), status_code
+    return jsonify(unverified_clinical_fields(response_dict)), status_code
 
 @patient_bp.route('/api/pacientes/<int:id>/visitas', methods=['GET'])
 @strict_authorization_required('history.full_read')
 def get_visitas_paciente(id):
     response_dict, status_code = obtener_historial_diagnosticos(id)
-    return jsonify(response_dict), status_code
+    return jsonify(unverified_clinical_fields(response_dict)), status_code
 
 @patient_bp.route('/api/pacientes/buscar', methods=['GET'])
 @strict_authorization_required('patients.read')

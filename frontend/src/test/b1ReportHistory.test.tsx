@@ -66,6 +66,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Historial B1 (HTTP simulado, interfaz de solo lectura)", () => {
+  it("no convierte fechas históricas sin procedencia y presenta Z verificado en Lima", async () => {
+    versions.mockResolvedValue({
+      data: detail(1, patientA.id, "ANULADO", [
+        { ...version(1, "CREACION", "ACTIVO"), fecha_operacion: "2030-01-02T00:30:00Z" },
+        version(2, "CORRECCION", "ACTIVO"), version(3, "ANULACION", "ANULADO"),
+      ]), pagination: page(3),
+    });
+    render(<ReportHistoryPanel patient={patientA} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Campo visual 1/ }));
+    expect(await screen.findByText(/01\/01\/2030,? 19:30/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Fecha pendiente de conciliación/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /2 · Corrección/ }));
+    expect(screen.getByRole("region", { name: "Contenido de la revisión 2" }))
+      .toHaveTextContent("Fecha pendiente de conciliación");
+  });
+
   it("usa únicamente el cliente Axios autenticado, rutas sin token y paginación acotada", async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { data: [], pagination: page(0) } });
     // Las funciones reales se prueban aisladamente de las peticiones de la vista.

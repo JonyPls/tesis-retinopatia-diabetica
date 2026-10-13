@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { formatClinicalInstant } from "@/lib/clinicalDates";
 import { getPatientReportHistory, getReportVersions } from "../api/reportHistoryService";
 import type {
   HistoricalReportDetail,
@@ -33,11 +34,7 @@ function historyError(error: unknown): string {
   return "No se pudo consultar el historial. Inténtalo más tarde.";
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "Fecha no registrada";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Fecha no registrada" : date.toLocaleString("es-PE");
-}
+const formatDate = formatClinicalInstant;
 
 function Pager({ pagination, onPage }: {
   pagination: ReportHistoryPagination;

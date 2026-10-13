@@ -4523,6 +4523,60 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                         retinograph_confirmation_service._available(
                             record, self.patient_ids[0], 'Izquierdo')
 
+    def test_29d5b_read_contract_without_historical_origin(self):
+        with self.report_visit() as visit_id:
+            response, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                    json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(response.status_code, 201)
+            report_id = response.json['data']['id']
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
+                                              'REPORTS_ANNUL_ENABLED': True}):
+                corrected, _ = self.call(f'/api/informes/{report_id}', method='PUT',
+                                         token=self.token(), json_data={
+                    'datos_estructurados': {'nota': 'Sintetico'},
+                    'motivo': 'Sintetico', 'revision_esperada': 1,
+                })
+                self.assertEqual(corrected.status_code, 200)
+                annulled, _ = self.call(f'/api/informes/{report_id}/anulacion', method='POST',
+                                        token=self.token(), json_data={
+                    'motivo': 'Sintetico', 'revision_esperada': 2,
+                })
+                self.assertEqual(annulled.status_code, 200)
+            db.session.remove()
+            before = [(row.numero_version, row.fecha_operacion)
+                      for row in informe_entities.InformeVersion.query.filter_by(
+                          informe_id=report_id).order_by(informe_entities.InformeVersion.numero_version)]
+            expected_visit = db.session.get(VisitaClinica, visit_id).fecha_visita.isoformat()
+            db.session.remove()
+            with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True}):
+                versions, sql = self.call(f'/api/informes/{report_id}/versiones',
+                                          token=self.token(), measure=True)
+                self.assertEqual(versions.status_code, 200)
+                self.assertEqual(versions.headers['Cache-Control'], 'private, no-store')
+                self.assertFalse(any(q.strip().lower().startswith(('insert', 'update', 'delete')) for q in sql))
+                rows = versions.json['data']['versiones']
+                self.assertEqual([row['operacion'] for row in rows],
+                                 ['CREACION', 'CORRECCION', 'ANULACION'])
+                self.assertEqual([row['numero_version'] for row in rows], [1, 2, 3])
+                for row in rows:
+                    self.assertEqual(row['fecha_operacion'],
+                                     before[row['numero_version'] - 1][1].isoformat())
+                    self.assertNotIn('GMT', row['fecha_operacion'])
+                    self.assertFalse(row['fecha_operacion'].endswith('Z'))
+                catalog, _ = self.call('/api/informes/historial/paciente/' +
+                                       str(self.patient_ids[1]), token=self.token())
+                self.assertEqual(catalog.status_code, 200)
+                self.assertEqual(catalog.headers['Cache-Control'], 'private, no-store')
+                row = next(item for item in catalog.json['data'] if item['id'] == report_id)
+                self.assertEqual(row['fecha_visita'], expected_visit)
+                self.assertNotIn('GMT', row['fecha_creado'])
+            db.session.remove()
+            after = [(row.numero_version, row.fecha_operacion)
+                     for row in informe_entities.InformeVersion.query.filter_by(
+                         informe_id=report_id).order_by(informe_entities.InformeVersion.numero_version)]
+            self.assertEqual(after, before)
+            db.session.remove()
+
     def test_29d5a_report_instants_new_visit_revisions_and_closed_visit(self):
         # Requests include password hashing and SQL I/O; still far below a timezone offset.
         tolerance = timedelta(minutes=2)

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { convertToPreviewUrl, revokePreviewUrl } from "@/lib/imageUtils";
+import { clinicalTimestamp, compareClinicalDesc } from "@/lib/clinicalDates";
 import {
   buscarPacientesPaginado,
   DiagnosticoVisita,
@@ -341,15 +342,13 @@ export function useDiagnosis(): DiagnosisHook {
         .filter((visit) => {
           if (visit.estado === "ANULADA") return false;
           if (Number(visit.tiene_diagnostico_ia) === 1) return false;
-          const visitTime = new Date(visit.fecha_visita).getTime();
-          if (Number.isNaN(visitTime)) return false;
+          const visitTime = clinicalTimestamp(visit.fecha_visita);
+          if (visitTime === null) return false;
           const diffHours = (now - visitTime) / (1000 * 60 * 60);
           return diffHours >= 0 && diffHours <= RECENT_VISIT_HOURS;
         })
         .sort(
-          (a, b) =>
-            new Date(b.fecha_visita).getTime() -
-            new Date(a.fecha_visita).getTime(),
+          (a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita),
         );
       setVisitasRecientes(recent);
     } catch {

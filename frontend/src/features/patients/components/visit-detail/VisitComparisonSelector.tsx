@@ -9,15 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Diagnosis } from "../../types";
+import { compareClinicalDesc, formatClinicalInstant } from "@/lib/clinicalDates";
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatClinicalInstant(dateStr);
 }
 
 function hasDiagnosis(visit: Diagnosis) {
@@ -39,10 +34,7 @@ export function VisitComparisonSelector({
 }) {
   const candidates = [...visits]
     .filter((visit) => Number(visit.visita_id) !== Number(currentVisitId))
-    .sort(
-      (a, b) =>
-        new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
-    );
+    .sort((a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

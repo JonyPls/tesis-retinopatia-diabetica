@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { toast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import { compareClinicalDesc } from "@/lib/clinicalDates";
 import {
   buscarPacientes,
   obtenerPacientesRecientes,
@@ -166,7 +167,7 @@ export function useReports() {
       const data = await withMinDuration(obtenerVisitasPaciente(pacienteId));
       if (context !== patientContext.current) return;
       const sorted = (data || []).sort(
-        (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
+        (a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita),
       );
       setHasMoreVisitas(sorted.length > maxVisitas);
       setVisitas(sorted.slice(0, maxVisitas));
@@ -197,7 +198,7 @@ export function useReports() {
       const data = await obtenerVisitasPaciente(selectedPatient.id);
       if (context !== patientContext.current) return;
       const sorted = (data || []).sort(
-        (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
+        (a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita),
       );
       setHasMoreVisitas(sorted.length > maxVisitas);
       setVisitas(sorted.slice(0, maxVisitas));
@@ -214,7 +215,7 @@ export function useReports() {
       const data = await obtenerVisitasPaciente(selectedPatient.id);
       if (context !== patientContext.current) return;
       const sorted = (data || []).sort(
-        (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
+        (a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita),
       );
       setVisitas(sorted);
       setHasMoreVisitas(false);

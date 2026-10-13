@@ -4,16 +4,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { formatClinicalDay } from "@/lib/clinicalDates";
 import { getReportTypePresentation } from "@/features/reports/reportTypePresentation";
 import type { Diagnosis, PatientVisitReport } from "../../types";
 import { PatientReportDetailModal } from "../PatientReportDetailModal";
 
 function shortDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatClinicalDay(dateStr);
 }
 
 function ReportCard({
