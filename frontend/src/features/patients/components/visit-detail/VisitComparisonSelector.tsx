@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Diagnosis } from "../../types";
-import { compareClinicalDesc, formatClinicalInstant } from "@/lib/clinicalDates";
+import { compareVisitGroups, formatClinicalInstant } from "@/lib/clinicalDates";
 
 function formatDate(dateStr: string) {
   return formatClinicalInstant(dateStr);
@@ -34,7 +34,7 @@ export function VisitComparisonSelector({
 }) {
   const candidates = [...visits]
     .filter((visit) => Number(visit.visita_id) !== Number(currentVisitId))
-    .sort((a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita));
+    .sort((a, b) => compareVisitGroups(a, b));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

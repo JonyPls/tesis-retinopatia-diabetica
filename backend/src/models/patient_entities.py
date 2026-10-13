@@ -1,5 +1,11 @@
 from database import db
 from utils.utc_clock import utc_now_naive
+from utils.temporal_provenance import install_provenance, provenance_checks, UNVERIFIED
+
+
+def _origin():
+    return db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                     server_default=db.text("'NO_VERIFICADO'"))
 
 class Paciente(db.Model):
     __tablename__ = 'pacientes'
@@ -25,14 +31,21 @@ class Paciente(db.Model):
 
 class VisitaClinica(db.Model):
     __tablename__ = 'visitas_clinicas'
+    __table_args__ = provenance_checks('visitas', ('fecha_visita', 'fecha_creado', 'fecha_actualizado'))
     id = db.Column(db.BigInteger, primary_key=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey('pacientes.id'), nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     fecha_visita = db.Column(db.DateTime, default=utc_now_naive, nullable=False)
+    fecha_visita_origen = _origin()
     motivo_consulta = db.Column(db.String(255))
     observaciones = db.Column(db.Text)
     estado = db.Column(db.Enum('ACTIVA', 'CERRADA', 'ANULADA'), default='ACTIVA')
     fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_creado_origen = _origin()
     fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    fecha_actualizado_origen = _origin()
 
     paciente = db.relationship('Paciente', backref='visitas')
+
+
+install_provenance(VisitaClinica, fields=('fecha_visita', 'fecha_creado', 'fecha_actualizado'), updated=True)

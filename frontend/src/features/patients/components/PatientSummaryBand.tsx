@@ -47,7 +47,7 @@ export function PatientSummaryBand({
           </span>
         )}
       </SummaryItem>
-      <SummaryItem label="Última visita">{lastVisit}</SummaryItem>
+      <SummaryItem label="Última visita acreditada">{lastVisit}</SummaryItem>
       <SummaryItem label="Visitas">
         <span className="tabular-nums">{visitCount}</span>
       </SummaryItem>

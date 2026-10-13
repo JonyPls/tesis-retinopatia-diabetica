@@ -33,7 +33,8 @@ def check_report_version_schema(connection):
         'datos_estructurados': ('json', 'YES'), 'conclusion': ('text', 'YES'),
         'estado': ("enum('ACTIVO','INACTIVO','ANULADO')".lower(), 'NO'),
         'autor_operacion_id': ('int unsigned', 'YES'),
-        'fecha_operacion': ('datetime(6)', 'NO'), 'motivo': ('varchar(1000)', 'YES'),
+        'fecha_operacion': ('datetime(6)', 'NO'),
+        'fecha_operacion_origen': ('varchar(16)', 'NO'), 'motivo': ('varchar(1000)', 'YES'),
     }, 'Columnas o tipos reales de informes_versiones incorrectos.')
     report_columns = {name: (kind, nullable, default) for name, kind, nullable, default in rows(connection, """
         SELECT column_name, column_type, is_nullable, column_default
@@ -80,10 +81,12 @@ def check_report_version_schema(connection):
         WHERE constraint_schema=%s AND table_name IN ('informes',%s)
           AND constraint_type='CHECK'""", (SCHEMA, TABLE)))
     check(checks == {(table, name, 'YES') for table, names in {
-        'informes': ('ck_informes_revision',),
+        'informes': ('ck_informes_revision', 'ck_informes_fecha_creado_origen',
+                     'ck_informes_fecha_actualizado_origen'),
         TABLE: ('ck_informes_versiones_numero', 'ck_informes_versiones_operacion',
-                'ck_informes_versiones_estado', 'ck_informes_versiones_inicial',
-                'ck_informes_versiones_autor', 'ck_informes_versiones_motivo'),
+                 'ck_informes_versiones_estado', 'ck_informes_versiones_inicial',
+                 'ck_informes_versiones_autor', 'ck_informes_versiones_motivo',
+                 'ck_versiones_fecha_operacion_origen'),
     }.items() for name in names}, 'CHECK de informe/versiones no activos.')
     check(rows(connection, """SELECT delete_rule, update_rule FROM
         information_schema.referential_constraints WHERE constraint_schema=%s

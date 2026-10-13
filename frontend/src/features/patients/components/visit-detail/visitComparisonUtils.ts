@@ -1,6 +1,7 @@
 import { RDLevel, RD_LEVELS } from "@/data/rdLevels";
 import type { DetalleDiagnosticoExistente } from "@/features/diagnosis/api/diagnosisService";
 import type { Diagnosis, PatientDiagnosisEyeDetail, PatientVisitReport } from "../../types";
+import { verifiedVisitInstant } from "@/lib/clinicalDates";
 
 export type EyeKey = "OD" | "OI";
 export type EffectiveGradeSource = "medical" | "ia_pending" | "none";
@@ -133,8 +134,11 @@ export function orderVisitsChronologically(
   currentDetails: DetalleDiagnosticoExistente[],
   selectedDetails: DetalleDiagnosticoExistente[],
 ) {
-  const currentTime = new Date(currentVisit.fecha_visita).getTime();
-  const selectedTime = new Date(selectedVisit.fecha_visita).getTime();
+  const currentTime = verifiedVisitInstant(currentVisit)?.getTime();
+  const selectedTime = verifiedVisitInstant(selectedVisit)?.getTime();
+  if (currentTime === undefined || selectedTime === undefined) {
+    throw new Error("No se puede ordenar visitas sin procedencia temporal acreditada");
+  }
   const currentFirst = currentTime <= selectedTime;
 
   return {
@@ -146,9 +150,10 @@ export function orderVisitsChronologically(
 }
 
 export function daysBetweenVisits(previous: Diagnosis, later: Diagnosis) {
-  const diffMs =
-    new Date(later.fecha_visita).getTime() - new Date(previous.fecha_visita).getTime();
-  if (!Number.isFinite(diffMs)) return null;
+  const laterTime = verifiedVisitInstant(later)?.getTime();
+  const previousTime = verifiedVisitInstant(previous)?.getTime();
+  if (laterTime === undefined || previousTime === undefined) return null;
+  const diffMs = laterTime - previousTime;
   return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 }
 

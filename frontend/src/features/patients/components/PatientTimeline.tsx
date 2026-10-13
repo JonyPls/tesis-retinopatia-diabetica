@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowUpDown,
@@ -16,7 +16,7 @@ import { RDLevelBadge } from "@/components/medical/RDLevelBadge";
 import { VisitStatusBadge } from "@/components/medical/VisitStatusBadge";
 import type { RDLevel } from "@/data/rdLevels";
 import { cn } from "@/lib/utils";
-import { clinicalDayKey, compareClinicalDesc, formatClinicalInstant } from "@/lib/clinicalDates";
+import { clinicalDayKey, compareVisitGroups, formatClinicalInstant, verifiedVisitInstant } from "@/lib/clinicalDates";
 import type { Diagnosis } from "../types";
 
 interface PatientTimelineProps {
@@ -136,13 +136,12 @@ export function PatientTimeline({
   const filtered = useMemo(() => {
     let list = [...sortedDx];
 
-    if (dateFrom) {
-      list = list.filter((dx) => (clinicalDayKey(dx.fecha_visita) ?? "") >= dateFrom);
-    }
-    if (dateTo) {
+    if (dateFrom || dateTo) {
+      // Ambiguous visits cannot be compared with a civil-day range; keep them consultable.
       list = list.filter((dx) => {
+        if (!verifiedVisitInstant(dx)) return true;
         const key = clinicalDayKey(dx.fecha_visita);
-        return key !== null && key <= dateTo;
+        return key !== null && (!dateFrom || key >= dateFrom) && (!dateTo || key <= dateTo);
       });
     }
     if (contentFilter === "diagnostico_ia") {
@@ -151,9 +150,7 @@ export function PatientTimeline({
     if (contentFilter === "informes") {
       list = list.filter((dx) => Number(dx.tiene_informes) === 1);
     }
-    if (sortAsc) {
-      list.sort((a, b) => compareClinicalDesc(b.fecha_visita, a.fecha_visita));
-    }
+    list.sort((a, b) => compareVisitGroups(a, b, sortAsc));
 
     return list;
   }, [sortedDx, dateFrom, dateTo, contentFilter, sortAsc]);
@@ -275,6 +272,12 @@ export function PatientTimeline({
             </div>
           </div>
         )}
+        {filtered.some((visit) => !verifiedVisitInstant(visit)) && (
+          <p className="text-xs text-muted-foreground">
+            Visitas con fecha pendiente de conciliación: visibles en orden operativo por identificador;
+            los filtros de fecha solo se aplican a instantes acreditados.
+          </p>
+        )}
       </CardHeader>
 
       <CardContent>
@@ -284,12 +287,14 @@ export function PatientTimeline({
           </p>
         ) : (
           <div className="space-y-3">
-            {filtered.map((visit) => (
-              <VisitCard
-                key={visit.visita_id}
-                patientId={patientId}
-                visit={visit}
-              />
+            {filtered.map((visit, index) => (
+              <Fragment key={visit.visita_id}>
+                {!verifiedVisitInstant(visit) &&
+                  (index === 0 || verifiedVisitInstant(filtered[index - 1])) && (
+                    <p className="text-xs font-medium text-muted-foreground">Fechas no verificadas · orden operativo</p>
+                  )}
+                <VisitCard patientId={patientId} visit={visit} />
+              </Fragment>
             ))}
           </div>
         )}

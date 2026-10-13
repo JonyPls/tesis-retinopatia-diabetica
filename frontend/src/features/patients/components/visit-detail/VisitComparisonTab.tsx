@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DetalleDiagnosticoExistente } from "@/features/diagnosis/api/diagnosisService";
 import type { Diagnosis, PatientVisitReport } from "../../types";
-import { clinicalInstant, compareClinicalDesc, formatClinicalDay, formatClinicalInstant } from "@/lib/clinicalDates";
+import { compareReportGroups, formatClinicalDay, formatClinicalInstant, verifiedVisitInstant } from "@/lib/clinicalDates";
 import {
   compareRetinopathyGrades,
   daysBetweenVisits,
@@ -583,7 +583,7 @@ function ReportPresence({
   }
 
   const latest = [...reports].sort(
-    (a, b) => compareClinicalDesc(a.fecha_creado, b.fecha_creado),
+    (a, b) => compareReportGroups(a, b),
   )[0];
 
   return (
@@ -650,7 +650,7 @@ export function VisitComparisonTab({
     );
   }
 
-  if (!clinicalInstant(currentVisit.fecha_visita) || !clinicalInstant(comparisonVisit.fecha_visita)) {
+  if (!verifiedVisitInstant(currentVisit) || !verifiedVisitInstant(comparisonVisit)) {
     return <Card><CardContent className="p-6 text-sm">
       No se puede establecer el orden temporal de estas visitas hasta conciliar sus fechas.
       <Button type="button" variant="outline" size="sm" className="ml-3" onClick={onExit}>Quitar comparación</Button>

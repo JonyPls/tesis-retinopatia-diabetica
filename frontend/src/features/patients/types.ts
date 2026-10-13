@@ -1,3 +1,5 @@
+import type { ClinicalOrigin } from "@/lib/clinicalDates";
+
 export type PatientReadScope = "clinical" | "assistance" | "administrative";
 
 export interface Patient {
@@ -19,6 +21,8 @@ export interface Patient {
   consentimiento_informado?: boolean;
   fecha_consentimiento?: string | null;
   ultima_visita?: string;
+  ultima_visita_origen?: ClinicalOrigin;
+  visitas_sin_fecha_verificada?: number;
   maxima_gravedad?: number | null;
 }
 
@@ -27,6 +31,7 @@ export interface Diagnosis {
   diagnostico_id?: number;
   diagnostico_retinopatia_id?: number | null;
   fecha_visita: string;
+  fecha_visita_origen?: ClinicalOrigin;
   medico_tratante?: string;
   motivo_consulta?: string | null;
   observaciones?: string | null;
@@ -75,7 +80,9 @@ export interface PatientVisitReport {
   conclusion?: string | null;
   estado: "ACTIVO" | "INACTIVO" | "ANULADO";
   fecha_creado: string;
+  fecha_creado_origen?: ClinicalOrigin;
   fecha_actualizado: string;
+  fecha_actualizado_origen?: ClinicalOrigin;
 }
 
 export interface PatientReportDetail extends PatientVisitReport {

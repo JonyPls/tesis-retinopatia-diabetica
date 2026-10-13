@@ -120,6 +120,8 @@ export function PatientCardGrid({
                   <Calendar className="h-3 w-3" />
                   {p.ultima_visita ? (
                     formatClinicalDay(p.ultima_visita)
+                  ) : p.visitas_sin_fecha_verificada ? (
+                    <span className="text-xs">Visitas con fecha pendiente de conciliación</span>
                   ) : (
                     <span className="italic opacity-70">Sin registros</span>
                   )}

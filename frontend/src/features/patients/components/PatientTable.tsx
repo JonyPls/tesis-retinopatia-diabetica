@@ -120,6 +120,8 @@ export function PatientTable({
             {scope !== "administrative" && <TableCell className="text-sm">
               {p.ultima_visita ? (
                 formatClinicalDay(p.ultima_visita)
+              ) : p.visitas_sin_fecha_verificada ? (
+                <span className="text-xs text-muted-foreground">Visitas con fecha pendiente de conciliación</span>
               ) : (
                 <span className="text-xs italic text-muted-foreground opacity-70">
                   Sin registros

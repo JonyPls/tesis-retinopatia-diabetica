@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { convertToPreviewUrl, revokePreviewUrl } from "@/lib/imageUtils";
-import { clinicalTimestamp, compareClinicalDesc } from "@/lib/clinicalDates";
+import { clinicalInstant, compareVisitGroups } from "@/lib/clinicalDates";
 import {
   buscarPacientesPaginado,
   DiagnosticoVisita,
@@ -342,13 +342,15 @@ export function useDiagnosis(): DiagnosisHook {
         .filter((visit) => {
           if (visit.estado === "ANULADA") return false;
           if (Number(visit.tiene_diagnostico_ia) === 1) return false;
-          const visitTime = clinicalTimestamp(visit.fecha_visita);
+          const visitTime = visit.fecha_visita_origen === "UTC_VERIFICADO"
+            ? clinicalInstant(visit.fecha_visita, visit.fecha_visita_origen)?.getTime() ?? null
+            : null;
           if (visitTime === null) return false;
           const diffHours = (now - visitTime) / (1000 * 60 * 60);
           return diffHours >= 0 && diffHours <= RECENT_VISIT_HOURS;
         })
         .sort(
-          (a, b) => compareClinicalDesc(a.fecha_visita, b.fecha_visita),
+          (a, b) => compareVisitGroups(a, b),
         );
       setVisitasRecientes(recent);
     } catch {
@@ -615,7 +617,8 @@ export function useDiagnosis(): DiagnosisHook {
           );
           const file = new File([blob], image.filename, {
             type: image.mime_type || inferMimeType(image.filename),
-            lastModified: new Date(image.fecha_exportacion).getTime(),
+            // File is constructed at download; export filename has no verified timezone.
+            lastModified: Date.now(),
           });
 
           let preview: string | null = null;

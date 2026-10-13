@@ -1,8 +1,9 @@
 from database import db
+from sqlalchemy import case
 from src.models.auth_entities import Usuario
 from src.models.informe_entities import Informe, InformeVersion, TipoInforme
 from src.models.patient_entities import Paciente, VisitaClinica
-from utils.clinical_dates import unverified_wall_time
+from utils.clinical_dates import clinical_instant
 
 class InformeRepository:
     class NotFound(Exception):
@@ -225,7 +226,10 @@ class InformeRepository:
                 .join(Usuario, Informe.usuario_id == Usuario.id)
                 .filter(VisitaClinica.paciente_id == paciente_id))
         total = base.count()
-        rows = (base.order_by(Informe.fecha_creado.desc(), Informe.id.desc())
+        rows = (base.order_by(
+            case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', 0), else_=1),
+            case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', Informe.fecha_creado)).desc(),
+            Informe.id.desc())
                 .limit(per_page).offset((page - 1) * per_page).all())
         return total, rows
 
@@ -247,7 +251,10 @@ class InformeRepository:
         ).filter(
             VisitaClinica.paciente_id == paciente_id,
             Informe.estado == 'ACTIVO'
-        ).order_by(Informe.fecha_creado.desc()).all()
+        ).order_by(
+            case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', 0), else_=1),
+            case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', Informe.fecha_creado)).desc(),
+            Informe.id.desc()).all()
 
         return [
             InformeRepository._to_dict(inf, ti)
@@ -286,13 +293,16 @@ class InformeRepository:
             "datos_estructurados": inf.datos_estructurados,
             "conclusion": inf.conclusion,
             "estado": inf.estado,
-            "fecha_creado": unverified_wall_time(inf.fecha_creado),
-            "fecha_actualizado": unverified_wall_time(inf.fecha_actualizado),
+            "fecha_creado": clinical_instant(inf.fecha_creado, inf.fecha_creado_origen),
+            "fecha_creado_origen": inf.fecha_creado_origen,
+            "fecha_actualizado": clinical_instant(inf.fecha_actualizado, inf.fecha_actualizado_origen),
+            "fecha_actualizado_origen": inf.fecha_actualizado_origen,
         }
         if visita:
             data["visita"] = {
                 "id": visita.id,
-                "fecha_visita": unverified_wall_time(visita.fecha_visita),
+                "fecha_visita": clinical_instant(visita.fecha_visita, visita.fecha_visita_origen),
+                "fecha_visita_origen": visita.fecha_visita_origen,
                 "motivo_consulta": visita.motivo_consulta,
                 "observaciones": visita.observaciones,
                 "estado": visita.estado,

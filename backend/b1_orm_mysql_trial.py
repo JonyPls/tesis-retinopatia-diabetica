@@ -29,7 +29,7 @@ from flask import Flask, jsonify, request
 import jwt
 from sqlalchemy import event, inspect, select, text
 from sqlalchemy.engine import URL
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from pymysql.err import IntegrityError as MySQLIntegrityError
 from werkzeug.security import generate_password_hash
 from PIL import Image
@@ -1746,7 +1746,8 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertEqual(found, set(self.patient_documents))
         self.assertEqual(set(first.json["data"][0]), {
             "id", "tipo_doc_abrev", "tipo_doc_id", "tipo_doc", "nro_documento",
-            "nombres", "apellidos", "ultima_visita",
+            "nombres", "apellidos", "ultima_visita", "ultima_visita_origen",
+            "visitas_sin_fecha_verificada",
         })
         empty, _ = self.call("/api/pacientes/buscar?q=P&page=2&per_page=2", token=token)
         self.assertEqual(empty.json["data"], [])
@@ -1759,7 +1760,8 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         self.assertTrue(set(self.patient_documents) <=
                         {row["nro_documento"] for row in recent.json["data"]})
         self.assertEqual(set(recent.json["data"][0]), {
-            "id", "tipo_doc_abrev", "nro_documento", "nombres", "apellidos", "ultima_visita",
+            "id", "tipo_doc_abrev", "nro_documento", "nombres", "apellidos", "ultima_visita", "ultima_visita_origen",
+            "visitas_sin_fecha_verificada",
         })
 
     def test_real_patient_routes_roles_and_denied_handler_queries(self):
@@ -1796,6 +1798,8 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                     expected = identifiers | ({"tipo_doc_id", "tipo_doc"} if path == search else set())
                     if profile != "assistant":
                         expected.add("ultima_visita")
+                        expected.add("ultima_visita_origen")
+                        expected.add("visitas_sin_fecha_verificada")
                     self.assertEqual(set(response.json["data"][0]), expected)
                     for forbidden in ("Antecedente sintetico", "Alergia sintetica",
                                       "Conclusion sintetica", "Modelo sintetico", "synthetic-only.jpg",
@@ -1803,13 +1807,16 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                         self.assertNotIn(forbidden, response.get_data(as_text=True))
                     if profile == "assistant":
                         self.assertNotIn("ultima_visita", response.get_data(as_text=True))
-        # Orden clínico: visita sintética reciente. Orden administrativo: alta,
-        # sin deducir cuándo hubo una visita.
+        # Ambas visitas de fixture se asignaron sin acreditar UTC: orden
+        # operativo por ID, nunca por sus valores de calendario artificiales.
         clinician, _ = self.call(recent, token=self.token())
         assistant, _ = self.call(recent, token=self.token("assistant"))
-        self.assertEqual(clinician.json["data"][0]["id"], self.patient_ids[0])
+        self.assertEqual(clinician.json["data"][0]["id"], self.patient_ids[1])
         self.assertEqual(assistant.json["data"][0]["id"], self.patient_ids[1])
-        self.assertIsNotNone(clinician.json["data"][0]["ultima_visita"])
+        historical = next(row for row in clinician.json['data']
+                          if row['id'] == self.patient_ids[0])
+        self.assertIsNone(historical['ultima_visita'])
+        self.assertEqual(historical['visitas_sin_fecha_verificada'], 1)
 
     def test_real_patient_routes_scope_follows_eligible_grant_source_between_requests(self):
         path = "/api/pacientes/recientes?limit=30"
@@ -4523,10 +4530,17 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                         retinograph_confirmation_service._available(
                             record, self.patient_ids[0], 'Izquierdo')
 
-    def test_29d5b_read_contract_without_historical_origin(self):
+    def test_29d5d_read_contract_with_persisted_origin(self):
         with self.report_visit() as visit_id:
+            payload = self.report_payload(visit_id=visit_id)
+            for injected in ({**payload, 'fecha_creado_origen': 'UTC_VERIFICADO'},
+                             {**payload, 'datos_estructurados': {'fecha_visita_origen': 'UTC_VERIFICADO'}}):
+                rejected, sql = self.call('/api/informes', method='POST', token=self.token(),
+                                          json_data=injected, measure=True)
+                self.assertIn(rejected.status_code, (400, 422))
+                self.assertFalse(any(q.strip().lower().startswith('insert') for q in sql))
             response, _ = self.call('/api/informes', method='POST', token=self.token(),
-                                    json_data=self.report_payload(visit_id=visit_id))
+                                    json_data=payload)
             self.assertEqual(response.status_code, 201)
             report_id = response.json['data']['id']
             with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
@@ -4543,11 +4557,20 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 })
                 self.assertEqual(annulled.status_code, 200)
             db.session.remove()
-            before = [(row.numero_version, row.fecha_operacion)
+            before = [(row.numero_version, row.fecha_operacion, row.fecha_operacion_origen)
                       for row in informe_entities.InformeVersion.query.filter_by(
                           informe_id=report_id).order_by(informe_entities.InformeVersion.numero_version)]
-            expected_visit = db.session.get(VisitaClinica, visit_id).fecha_visita.isoformat()
+            visit = db.session.get(VisitaClinica, visit_id)
+            expected_visit = visit.fecha_visita.isoformat() + 'Z'
+            self.assertEqual(visit.fecha_visita_origen, 'UTC_VERIFICADO')
             db.session.remove()
+            visits, _ = self.call(f'/api/pacientes/{self.patient_ids[1]}/visitas',
+                                  token=self.token())
+            self.assertEqual(visits.status_code, 200)
+            verified_visit = next(item for item in visits.json['data']
+                                  if item['visita_id'] == visit_id)
+            self.assertEqual(verified_visit['fecha_visita'], expected_visit)
+            self.assertEqual(verified_visit['fecha_visita_origen'], 'UTC_VERIFICADO')
             with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True}):
                 versions, sql = self.call(f'/api/informes/{report_id}/versiones',
                                           token=self.token(), measure=True)
@@ -4560,21 +4583,303 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 self.assertEqual([row['numero_version'] for row in rows], [1, 2, 3])
                 for row in rows:
                     self.assertEqual(row['fecha_operacion'],
-                                     before[row['numero_version'] - 1][1].isoformat())
+                                     before[row['numero_version'] - 1][1].isoformat() + 'Z')
+                    self.assertEqual(row['fecha_operacion_origen'], 'UTC_VERIFICADO')
                     self.assertNotIn('GMT', row['fecha_operacion'])
-                    self.assertFalse(row['fecha_operacion'].endswith('Z'))
+                    self.assertTrue(row['fecha_operacion'].endswith('Z'))
                 catalog, _ = self.call('/api/informes/historial/paciente/' +
                                        str(self.patient_ids[1]), token=self.token())
                 self.assertEqual(catalog.status_code, 200)
                 self.assertEqual(catalog.headers['Cache-Control'], 'private, no-store')
                 row = next(item for item in catalog.json['data'] if item['id'] == report_id)
                 self.assertEqual(row['fecha_visita'], expected_visit)
+                self.assertEqual(row['fecha_visita_origen'], 'UTC_VERIFICADO')
+                self.assertEqual(row['fecha_creado_origen'], 'UTC_VERIFICADO')
                 self.assertNotIn('GMT', row['fecha_creado'])
             db.session.remove()
-            after = [(row.numero_version, row.fecha_operacion)
+            after = [(row.numero_version, row.fecha_operacion, row.fecha_operacion_origen)
                      for row in informe_entities.InformeVersion.query.filter_by(
                          informe_id=report_id).order_by(informe_entities.InformeVersion.numero_version)]
             self.assertEqual(after, before)
+            db.session.remove()
+
+    def test_29d5d_history_update_and_utc_checkout_guard(self):
+        from utils.temporal_provenance import require_utc_connection
+        with self.report_visit() as visit_id:
+            visit = db.session.get(VisitaClinica, visit_id)
+            self.assertEqual(visit.fecha_creado_origen, 'UTC_VERIFICADO')
+            self.assertEqual(visit.fecha_actualizado_origen, 'UTC_VERIFICADO')
+            self.assertEqual(visit.fecha_visita_origen, 'UTC_VERIFICADO')
+            db.session.remove()
+
+            response, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                    json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(response.status_code, 201)
+            report_id = response.json['data']['id']
+            report = db.session.get(informe_entities.Informe, report_id)
+            first = report.versiones[0]
+            self.assertEqual((report.fecha_creado_origen, report.fecha_actualizado_origen,
+                              first.fecha_operacion_origen), ('UTC_VERIFICADO',) * 3)
+            # Emulate the pre-cutover row: preserve its stored values and mark
+            # only their provenance unknown; a later revision must not relabel it.
+            db.session.execute(text('UPDATE informes SET fecha_creado_origen = :u, '
+                                    'fecha_actualizado_origen = :u WHERE id = :id'),
+                               {'u': 'NO_VERIFICADO', 'id': report_id})
+            db.session.execute(text('UPDATE informes_versiones SET fecha_operacion_origen = :u '
+                                    'WHERE id = :id'), {'u': 'NO_VERIFICADO', 'id': first.id})
+            db.session.commit()
+            db.session.remove()
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
+                                              'REPORTS_ANNUL_ENABLED': True}):
+                fixed, _ = self.call(f'/api/informes/{report_id}', method='PUT',
+                                     token=self.token(), json_data={
+                    'datos_estructurados': {'nota': 'Cambio sintetico'},
+                    'motivo': 'Correccion sintetica', 'revision_esperada': 1})
+                self.assertEqual(fixed.status_code, 200, fixed.json)
+                annulled, _ = self.call(f'/api/informes/{report_id}/anulacion', method='POST',
+                                        token=self.token(), json_data={
+                    'motivo': 'Anulacion sintetica', 'revision_esperada': 2})
+                self.assertEqual(annulled.status_code, 200, annulled.json)
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            self.assertEqual(report.fecha_creado_origen, 'NO_VERIFICADO')
+            self.assertEqual(report.fecha_actualizado_origen, 'UTC_VERIFICADO')
+            self.assertEqual([v.fecha_operacion_origen for v in report.versiones],
+                             ['NO_VERIFICADO', 'UTC_VERIFICADO', 'UTC_VERIFICADO'])
+            db.session.remove()
+            with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True}):
+                result, _ = self.call(f'/api/informes/{report_id}/versiones', token=self.token())
+                self.assertEqual(result.status_code, 200)
+                self.assertFalse(result.json['data']['versiones'][0]['fecha_operacion'].endswith('Z'))
+                self.assertTrue(result.json['data']['versiones'][1]['fecha_operacion'].endswith('Z'))
+            db.session.remove()
+            visit = db.session.get(VisitaClinica, visit_id)
+            visit.motivo_consulta = 'Cambio sintetico'
+            db.session.commit()
+            self.assertEqual(visit.fecha_actualizado_origen, 'UTC_VERIFICADO')
+            db.session.remove()
+            with self.assertRaises(DBAPIError):
+                db.session.execute(text('UPDATE visitas_clinicas SET fecha_visita_origen = :bad '
+                                        'WHERE id = :id'), {'bad': 'FALSO', 'id': visit_id})
+                db.session.commit()
+            db.session.rollback()
+            db.session.execute(text("SET SESSION time_zone = '-05:00'"))
+            with self.assertRaises(RuntimeError):
+                visit = db.session.get(VisitaClinica, visit_id)
+                visit.motivo_consulta = 'No permitido'
+                db.session.flush()
+            db.session.rollback()
+            db.session.remove()
+            with db.engine.connect() as connection:
+                require_utc_connection(connection)
+                self.assertEqual(connection.exec_driver_sql('SELECT @@session.time_zone').scalar(), '+00:00')
+            # A direct SQL writer bypasses mapper hooks: demonstrate the risk
+            # in a rollback-only transaction, never leave a falsely marked row.
+            with db.engine.connect() as connection:
+                trans = connection.begin()
+                try:
+                    connection.exec_driver_sql(
+                        "UPDATE visitas_clinicas SET fecha_visita = '2030-01-01 00:00:00' WHERE id = %s",
+                        (visit_id,))
+                    changed = connection.exec_driver_sql(
+                        'SELECT fecha_visita_origen FROM visitas_clinicas WHERE id = %s',
+                        (visit_id,)).scalar()
+                    self.assertEqual(changed, 'UTC_VERIFICADO')
+                finally:
+                    trans.rollback()
+            db.session.remove()
+
+    def test_29d5e2_verified_authorization_is_not_reusable(self):
+        from utils.temporal_provenance import set_verified_utc
+        with self.report_visit() as visit_id:
+            visit = db.session.get(VisitaClinica, visit_id)
+            set_verified_utc(visit, 'fecha_visita')
+            db.session.flush()
+            self.assertEqual(visit.fecha_visita_origen, 'UTC_VERIFICADO')
+            visit.fecha_visita = datetime(2030, 1, 2, 0, 30)
+            db.session.commit()
+            db.session.remove()
+            reloaded = db.session.get(VisitaClinica, visit_id)
+            self.assertEqual(reloaded.fecha_visita_origen, 'NO_VERIFICADO')
+            self.assertEqual(reloaded.fecha_visita, datetime(2030, 1, 2, 0, 30))
+            db.session.remove()
+
+    def test_29d5e2_approval_lifecycle_and_independent_fields(self):
+        from utils.temporal_provenance import set_verified_utc
+        with self.report_visit() as visit_id:
+            visit = db.session.get(VisitaClinica, visit_id)
+            visit.fecha_creado = datetime(2030, 1, 1)
+            db.session.flush()
+            self.assertEqual(visit.fecha_creado_origen, 'NO_VERIFICADO')
+            set_verified_utc(visit, 'fecha_visita')
+            visit.fecha_visita = datetime(2030, 2, 1)  # overwrite before the first flush
+            db.session.flush()
+            self.assertEqual(visit.fecha_visita_origen, 'NO_VERIFICADO')
+            set_verified_utc(visit, 'fecha_visita')
+            db.session.flush()
+            self.assertEqual(visit.fecha_visita_origen, 'UTC_VERIFICADO')
+            self.assertEqual(visit.fecha_creado_origen, 'NO_VERIFICADO')
+            visit.motivo_consulta = 'Actualizacion parcial sintetica'
+            db.session.commit()
+            self.assertEqual(visit.fecha_actualizado_origen, 'UTC_VERIFICADO')
+            self.assertEqual(visit.fecha_creado_origen, 'NO_VERIFICADO')
+            visit.fecha_visita = datetime(2030, 2, 2)
+            db.session.commit()  # same Python instance after commit/expiry
+            self.assertEqual(visit.fecha_visita_origen, 'NO_VERIFICADO')
+            set_verified_utc(visit, 'fecha_visita')
+            db.session.flush()
+            db.session.rollback()
+            db.session.remove()
+            visit = db.session.get(VisitaClinica, visit_id)
+            self.assertEqual(visit.fecha_visita_origen, 'NO_VERIFICADO')
+            set_verified_utc(visit, 'fecha_visita')  # new approval after rollback
+            db.session.commit()
+            db.session.remove()
+            self.assertEqual(db.session.get(VisitaClinica, visit_id).fecha_visita_origen,
+                             'UTC_VERIFICADO')
+            db.session.remove()
+
+    def test_29d5e2_marker_promotion_without_new_instant_is_rejected(self):
+        with self.report_visit() as visit_id:
+            visit = db.session.get(VisitaClinica, visit_id)
+            visit.fecha_visita = datetime(2030, 2, 3)
+            db.session.commit()
+            visit.fecha_visita_origen = 'UTC_VERIFICADO'
+            with self.assertRaisesRegex(ValueError, 'No se puede acreditar'):
+                db.session.flush()
+            db.session.rollback()
+            db.session.remove()
+            visit = db.session.get(VisitaClinica, visit_id)
+            self.assertEqual(visit.fecha_visita_origen, 'NO_VERIFICADO')
+            visit.fecha_visita_origen = 'MARCA_INVALIDA'
+            with self.assertRaises(Exception):
+                db.session.flush()  # MySQL CHECK, no promotion through the mapper
+            db.session.rollback()
+            db.session.remove()
+
+    def test_29d5e2_sql_writers_are_not_mapper_writers(self):
+        from sqlalchemy import update
+        from b1_mysql_disposable_trial import connect, ensure_own_server
+        with self.report_visit() as visit_id:
+            with db.engine.connect() as connection:
+                trans = connection.begin()
+                try:
+                    current = connection.exec_driver_sql(
+                        'SELECT fecha_visita, fecha_actualizado FROM visitas_clinicas WHERE id = %s',
+                        (visit_id,)).first()
+                    connection.exec_driver_sql(
+                        'UPDATE visitas_clinicas SET fecha_visita = fecha_visita WHERE id = %s',
+                        (visit_id,))
+                    unchanged = connection.exec_driver_sql(
+                        'SELECT fecha_visita, fecha_actualizado FROM visitas_clinicas WHERE id = %s',
+                        (visit_id,)).first()
+                    self.assertEqual(unchanged, current)
+                    connection.execute(update(VisitaClinica).where(VisitaClinica.id == visit_id)
+                                       .values(fecha_visita=datetime(2030, 3, 1)))
+                    origin = connection.exec_driver_sql(
+                        'SELECT fecha_visita_origen FROM visitas_clinicas WHERE id = %s',
+                        (visit_id,)).scalar()
+                    self.assertEqual(origin, 'UTC_VERIFICADO')  # documented unsafe bypass
+                    connection.exec_driver_sql(
+                        "UPDATE visitas_clinicas SET fecha_actualizado = '2020-01-01 00:00:00' WHERE id = %s",
+                        (visit_id,))
+                    connection.exec_driver_sql(
+                        "UPDATE visitas_clinicas SET motivo_consulta = 'Cambio externo' WHERE id = %s",
+                        (visit_id,))
+                    updated = connection.exec_driver_sql(
+                        'SELECT fecha_actualizado, fecha_actualizado_origen FROM visitas_clinicas WHERE id = %s',
+                        (visit_id,)).first()
+                    self.assertNotEqual(updated[0], datetime(2020, 1, 1))
+                    self.assertEqual(updated[1], 'UTC_VERIFICADO')  # MySQL ON UPDATE bypass
+                finally:
+                    trans.rollback()
+            db.session.remove()
+            db.session.query(VisitaClinica).filter_by(id=visit_id).update(
+                {'fecha_visita': datetime(2030, 4, 1)}, synchronize_session=False)
+            self.assertEqual(db.session.get(VisitaClinica, visit_id).fecha_visita_origen,
+                             'UTC_VERIFICADO')
+            db.session.rollback()
+            db.session.remove()
+            db.session.execute(update(VisitaClinica).where(VisitaClinica.id == visit_id)
+                               .values(fecha_visita=datetime(2030, 5, 1)))
+            self.assertEqual(db.session.get(VisitaClinica, visit_id).fecha_visita_origen,
+                             'UTC_VERIFICADO')
+            db.session.rollback()
+            db.session.remove()
+            port, password = self.config
+            with connect(port, password, 'centro_oftalmologico_db_v2') as external:
+                self.assertEqual(ensure_own_server(external, self.own_datadir, port),
+                                 self.own_server_uuid)
+                external.begin()
+                try:
+                    with external.cursor() as cursor:
+                        cursor.execute("SET SESSION time_zone = '-05:00'")
+                        cursor.execute('UPDATE visitas_clinicas SET fecha_visita = %s WHERE id = %s',
+                                       (datetime(2030, 6, 1), visit_id))
+                        cursor.execute('SELECT fecha_visita_origen FROM visitas_clinicas WHERE id = %s',
+                                       (visit_id,))
+                        self.assertEqual(cursor.fetchone()[0], 'UTC_VERIFICADO')
+                finally:
+                    external.rollback()
+
+    def test_29d5e2_verified_first_historical_group_is_consultable(self):
+        from src.repositories.patient_repository import PatientRepository
+        with self.report_visit() as verified_id, self.report_visit() as historic_id:
+            db.session.execute(text('UPDATE visitas_clinicas SET fecha_visita_origen = :origin, '
+                                    'fecha_visita = :date WHERE id = :id'),
+                               {'origin': 'NO_VERIFICADO', 'date': datetime(2099, 1, 1),
+                                'id': historic_id})
+            db.session.commit()
+            db.session.remove()
+            rows = PatientRepository.obtener_diagnosticos_paciente(self.patient_ids[1])
+            ids = [row['visita_id'] for row in rows]
+            self.assertLess(ids.index(verified_id), ids.index(historic_id))
+            self.assertEqual(rows[ids.index(historic_id)]['fecha_visita_origen'], 'NO_VERIFICADO')
+            lookup, total = PatientRepository.buscar_paciente(self.patient_documents[1])
+            self.assertEqual(total, 1)
+            self.assertEqual(lookup[0]['visitas_sin_fecha_verificada'], 1)
+            self.assertIsNotNone(lookup[0]['ultima_visita'])
+            plan = db.session.execute(text("""EXPLAIN SELECT id FROM visitas_clinicas
+                WHERE paciente_id = :patient AND estado <> 'ANULADA'
+                ORDER BY CASE WHEN fecha_visita_origen = 'UTC_VERIFICADO' THEN 0 ELSE 1 END,
+                         CASE WHEN fecha_visita_origen = 'UTC_VERIFICADO' THEN fecha_visita END DESC,
+                         id DESC"""), {'patient': self.patient_ids[1]}).all()
+            self.assertTrue(plan)
+            db.session.remove()
+
+    def test_29d5e2_report_history_pages_are_stable_across_origins(self):
+        from src.repositories.informe_repository import InformeRepository
+        with (self.report_visit() as one, self.report_visit() as two,
+              self.report_visit() as three):
+            ids = []
+            for visit_id in (one, two, three):
+                report = informe_entities.Informe(
+                    visita_id=visit_id, tipo_informe_id=2,
+                    usuario_id=self.user_ids['ophthalmologist'],
+                    datos_estructurados={'nota': 'Sintetico'}, schema_version=1)
+                db.session.add(report)
+                db.session.flush()
+                ids.append(report.id)
+            db.session.commit()
+            db.session.execute(text('UPDATE informes SET fecha_creado = :date, '
+                                    'fecha_creado_origen = :origin WHERE id = :id'),
+                               {'date': datetime(2037, 1, 1), 'origin': 'NO_VERIFICADO',
+                                'id': ids[2]})
+            db.session.commit()
+            db.session.remove()
+            total, first = InformeRepository.listar_historial_paciente(self.patient_ids[1], 1, 2)
+            _, second = InformeRepository.listar_historial_paciente(self.patient_ids[1], 2, 2)
+            # Other fixtures for the same patient may exist; compare the three
+            # synthetic rows on their actual pages rather than assuming total=3.
+            self.assertGreaterEqual(total, 3)
+            _, all_rows = InformeRepository.listar_historial_paciente(self.patient_ids[1], 1, total)
+            matching = [report for report, *_ in all_rows if report.id in ids]
+            ordered = [report.id for report in matching]
+            verified = sorted((report for report in matching if report.id != ids[2]),
+                              key=lambda report: (report.fecha_creado, report.id), reverse=True)
+            self.assertEqual(ordered, [report.id for report in verified] + [ids[2]])
+            self.assertTrue(set(report.id for report, *_ in first).isdisjoint(
+                report.id for report, *_ in second))
             db.session.remove()
 
     def test_29d5a_report_instants_new_visit_revisions_and_closed_visit(self):
@@ -4675,6 +4980,8 @@ def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_a
         if ensure_own_server(connection, datadir, port) != server_uuid:
             raise RuntimeError("La instancia ORM no coincide con la instancia temporal verificada.")
     RealORMStrictIntegrationTests.config = (port, password)
+    RealORMStrictIntegrationTests.own_datadir = datadir
+    RealORMStrictIntegrationTests.own_server_uuid = server_uuid
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(RealORMStrictIntegrationTests)
     if not confirmations_available:  # Ensayo histórico de 14 tablas, anterior a 28C.2.
         suite = unittest.TestSuite(test for test in suite

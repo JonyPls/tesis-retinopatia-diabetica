@@ -1,5 +1,5 @@
 from database import db
-from utils.utc_clock import utc_now_naive
+from utils.temporal_provenance import set_verified_utc
 from src.models.diagnosis_entities import Diagnostico, DiagnosticoDetalle, GradoRetinopatia
 from src.models.patient_entities import Paciente, VisitaClinica
 
@@ -192,7 +192,7 @@ class DiagnosisRepository:
         detalle.comentario_medico = comentario_medico
         detalle.motivo_correccion = motivo_correccion
         detalle.validado_por = usuario_id
-        detalle.fecha_validacion = utc_now_naive()
+        set_verified_utc(detalle, 'fecha_validacion')
 
         db.session.flush()
         # Lectura actual (locking read): la autenticación pudo iniciar una

@@ -171,6 +171,9 @@ function SelectedPatient({
                   Última visita: {formatDate(patient.ultima_visita)}
                 </span>
               )}
+              {!patient.ultima_visita && patient.visitas_sin_fecha_verificada ? (
+                <span>Visitas históricas con fecha pendiente de conciliación</span>
+              ) : null}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import type { ClinicalOrigin } from "@/lib/clinicalDates";
 import type { PatientReportDetail } from "../types";
 
 export interface PatientSearchResult {
@@ -10,6 +11,8 @@ export interface PatientSearchResult {
   nombres: string;
   apellidos: string;
   ultima_visita?: string | null;
+  ultima_visita_origen?: ClinicalOrigin;
+  visitas_sin_fecha_verificada?: number;
 }
 
 export interface PatientSearchPagination {
@@ -71,6 +74,7 @@ export interface VisitaClinica {
   diagnostico_id?: number;
   diagnostico_retinopatia_id?: number | null;
   fecha_visita: string;
+  fecha_visita_origen?: ClinicalOrigin;
   medico_tratante: string;
   motivo_consulta?: string | null;
   observaciones?: string | null;

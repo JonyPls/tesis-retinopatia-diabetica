@@ -4,13 +4,13 @@ from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from pypdf import PdfReader
 from reportlab.platypus import Paragraph
 
-from utils.clinical_dates import (civil_date, unverified_clinical_fields,
-                                  unverified_wall_time, utc_instant)
+from utils.clinical_dates import (civil_date, clinical_instant, unverified_clinical_fields,
+                                   unverified_wall_time, utc_instant)
 
 
 class ClinicalDateContracts(unittest.TestCase):
@@ -29,6 +29,13 @@ class ClinicalDateContracts(unittest.TestCase):
         self.assertEqual(unverified_wall_time(moment), '2030-01-01T19:30:00')
         self.assertNotIn('GMT', unverified_wall_time(moment))
         self.assertIsNone(unverified_wall_time(None))
+
+    def test_persisted_provenance_controls_serialization(self):
+        moment = datetime(2030, 1, 2, 0, 30)
+        self.assertEqual(clinical_instant(moment, 'UTC_VERIFICADO'), '2030-01-02T00:30:00Z')
+        for origin in ('NO_VERIFICADO', None, 'UNKNOWN'):
+            self.assertEqual(clinical_instant(moment, origin), '2030-01-02T00:30:00')
+        self.assertIsNone(clinical_instant(None, 'UTC_VERIFICADO'))
 
     def test_civil_dates_and_nested_unverified_projection(self):
         self.assertEqual(civil_date(date(2000, 1, 1)), '2000-01-01')
@@ -65,10 +72,12 @@ class ClinicalDateContracts(unittest.TestCase):
                                   nro_documento='DOC-SINTETICO', sexo='Femenino',
                                   fecha_nacimiento=date(2000, 1, 1), tipo_documento=None)
         visit = SimpleNamespace(fecha_visita=datetime(2030, 1, 2, 0, 30),
+                                fecha_visita_origen='NO_VERIFICADO',
                                 paciente=patient, usuario_id=1, motivo_consulta=None,
                                 estado='ACTIVA')
         diagnosis = SimpleNamespace(estado='PROCESADO', modelo_nombre='Modelo sintético',
-                                    modelo_version='1', detalles=[SimpleNamespace(ojo_evaluado='Derecho')])
+                                    modelo_version='1', detalles=[SimpleNamespace(
+                                        ojo_evaluado='Derecho', fecha_validacion_origen='NO_VERIFICADO')])
         with (patch.object(report_service, 'VisitaClinica') as visits,
               patch.object(report_service, 'Diagnostico') as diagnoses,
               patch.object(report_service, 'Usuario') as users,
@@ -85,6 +94,29 @@ class ClinicalDateContracts(unittest.TestCase):
         self.assertIn('Fecha pendiente de conciliación', pdf)
         self.assertIn('01/01/2030 19:30', pdf)
         self.assertIn('01/01/2000', pdf)
+
+        visit.fecha_visita_origen = 'UTC_VERIFICADO'
+        diagnosis.detalles = [SimpleNamespace(
+            ojo_evaluado='Derecho', resultado_completo={}, resultado_ia=None,
+            resultado_final=None, validado_por=None, imagen_original_url=None,
+            imagen_gradcam_url=None, resultado_ia_id=0, probabilidad_ia=None,
+            estado_validacion='APROBADO', comentario_medico='Sintetico',
+            motivo_correccion=None, fecha_validacion=datetime(2030, 1, 2, 0, 30),
+            fecha_validacion_origen='UTC_VERIFICADO')]
+        with (patch.object(report_service, 'VisitaClinica') as visits,
+              patch.object(report_service, 'Diagnostico') as diagnoses,
+              patch.object(report_service, 'Usuario') as users,
+              patch.object(report_service, '_apply_institutional_template', side_effect=lambda value: value),
+              patch.object(report_service, '_image_flowable', return_value=None),
+              patch.object(report_service, '_local_now', return_value=utc)):
+            visits.query.filter.return_value.first.return_value = visit
+            diagnoses.query.filter.return_value.first.return_value = diagnosis
+            users.query.get.return_value = None
+            content, name = report_service.generar_reporte_diagnostico_pdf(1)
+        self.assertIn('2030-01-01.pdf', name)
+        pdf = ' '.join(page.extract_text() for page in PdfReader(BytesIO(content)).pages)
+        self.assertIn('01/01/2030 19:30', pdf)
+        self.assertIn('Fecha de validación', pdf)
 
 
 if __name__ == '__main__':

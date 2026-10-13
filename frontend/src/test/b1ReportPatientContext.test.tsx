@@ -29,6 +29,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Contexto de paciente en informes", () => {
+  it("prioriza fechas acreditadas antes del recorte sin ocultar históricos al expandir", async () => {
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([
+      { visita_id: 99, fecha_visita: "2099-01-01T00:00:00", fecha_visita_origen: "NO_VERIFICADO", medico_tratante: "Sintético" },
+      { visita_id: 98, fecha_visita: "1900-01-01T00:00:00", fecha_visita_origen: "NO_VERIFICADO", medico_tratante: "Sintético" },
+      { visita_id: 8, fecha_visita: "2030-01-01T01:00:00Z", fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético" },
+      { visita_id: 7, fecha_visita: "2030-01-02T01:00:00Z", fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético" },
+    ]);
+    const { result } = renderHook(() => useReports(), { wrapper });
+    act(() => result.current.selectPatient(patient(7)));
+    await waitFor(() => expect(result.current.visitas.map((v) => v.visita_id)).toEqual([7, 8]));
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([
+      { visita_id: 99, fecha_visita: "2099-01-01T00:00:00", fecha_visita_origen: "NO_VERIFICADO", medico_tratante: "Sintético" },
+      { visita_id: 98, fecha_visita: "1900-01-01T00:00:00", fecha_visita_origen: "NO_VERIFICADO", medico_tratante: "Sintético" },
+      { visita_id: 8, fecha_visita: "2030-01-01T01:00:00Z", fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético" },
+      { visita_id: 7, fecha_visita: "2030-01-02T01:00:00Z", fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético" },
+    ]);
+    await act(async () => result.current.verMasVisitas());
+    expect(result.current.visitas.map((v) => v.visita_id)).toEqual([7, 8, 99, 98]);
+  });
+
   it("no acepta respuestas clínicas tardías de otro paciente ni tras limpiar la selección", async () => {
     const oldVisits = pending<Awaited<ReturnType<typeof obtenerVisitasPaciente>>>();
     const oldReports = pending<{ data: { data: { id: number }[] } }>();

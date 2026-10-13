@@ -27,6 +27,7 @@ from reportlab.platypus import (
 from src.models.auth_entities import Usuario
 from src.models.diagnosis_entities import Diagnostico
 from src.models.patient_entities import VisitaClinica
+from utils.temporal_provenance import VERIFIED
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 UPLOAD_FOLDER = os.path.join(BACKEND_DIR, "uploads", "retinas")
@@ -384,7 +385,10 @@ def _build_eye_section(detail, styles):
                 ("Resultado final", final_display),
                 ("Comentario médico", detail.comentario_medico),
                 ("Motivo de corrección", detail.motivo_correccion),
-                ("Fecha de validación", _format_datetime(detail.fecha_validacion) if detail.fecha_validacion else None),
+                ("Fecha de validación", _format_datetime(
+                    detail.fecha_validacion,
+                    naive_source_tz=timezone.utc if detail.fecha_validacion_origen == VERIFIED else None
+                ) if detail.fecha_validacion else None),
                 ("Profesional validador", _professional_label(validation_user) if validation_user else None),
             ],
             styles,
@@ -478,7 +482,9 @@ def generar_reporte_diagnostico_pdf(visita_id: int):
         Paragraph("Datos de la visita", styles["SectionTitle"]),
         _key_value_table(
             [
-                ("Fecha y hora", _format_datetime(visita.fecha_visita)),
+                ("Fecha y hora", _format_datetime(
+                    visita.fecha_visita,
+                    naive_source_tz=timezone.utc if visita.fecha_visita_origen == VERIFIED else None)),
                 ("Motivo de consulta", _presentation_label(visita.motivo_consulta)),
                 ("Profesional responsable", _professional_label(profesional)),
                 ("Estado de la visita", visita.estado),
@@ -497,7 +503,8 @@ def generar_reporte_diagnostico_pdf(visita_id: int):
     pdf_bytes = _apply_institutional_template(buffer.getvalue())
     buffer.close()
 
-    # Without row provenance, neither UTC nor a local civil day is proven.
-    date_part = "fecha-no-conciliada"
+    date_part = (_display_datetime(visita.fecha_visita, naive_source_tz=timezone.utc)
+                 .strftime('%Y-%m-%d') if visita.fecha_visita_origen == VERIFIED
+                 else 'fecha-no-conciliada')
     filename = f"reporte_RD_{_safe_filename(paciente.nro_documento)}_{date_part}.pdf"
     return pdf_bytes, filename

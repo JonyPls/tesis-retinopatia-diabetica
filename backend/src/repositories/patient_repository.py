@@ -30,7 +30,14 @@ class PatientRepository:
             raise ValueError('Invalid patient scope')
         if include_severity and scope != 'clinical':
             raise ValueError('Severity requires clinical scope')
-        visit_column = ', MAX(v.fecha_visita) AS ultima_visita' if scope != 'administrative' else ''
+        visit_column = (", MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' "
+                        "THEN v.fecha_visita END) AS ultima_visita, "
+                        "CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' "
+                        "THEN 1 END) > 0 THEN 'UTC_VERIFICADO' ELSE 'NO_VERIFICADO' "
+                        "END AS ultima_visita_origen, "
+                        "CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'NO_VERIFICADO' "
+                        "THEN 1 END) > 0 THEN 1 ELSE 0 END AS visitas_sin_fecha_verificada"
+                        if scope != 'administrative' else '')
         consent_columns = (', p.consentimiento_informado, p.fecha_consentimiento'
                            if scope != 'administrative' else '')
         consent_group = (', p.consentimiento_informado, p.fecha_consentimiento'
@@ -143,6 +150,7 @@ class PatientRepository:
                 dr.modelo_nombre,
                 dr.modelo_version,
                 v.fecha_visita AS fecha_visita,
+                v.fecha_visita_origen AS fecha_visita_origen,
                 CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante,
                 v.motivo_consulta,
                 v.observaciones,
@@ -166,12 +174,15 @@ class PatientRepository:
                 dr.modelo_nombre,
                 dr.modelo_version,
                 v.fecha_visita,
+                v.fecha_visita_origen,
                 u.nombres,
                 u.apellidos,
                 v.motivo_consulta,
                 v.observaciones,
                 v.estado
-            ORDER BY v.fecha_visita DESC
+            ORDER BY CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 0 ELSE 1 END,
+                     CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END DESC,
+                     v.id DESC
         """)
         visitas_result = db.session.execute(visitas_query, {"paciente_id": paciente_id})
         visitas = [dict(row._mapping) for row in visitas_result]
@@ -196,6 +207,7 @@ class PatientRepository:
                 drd.imagen_gradcam_url,
                 drd.nombre_archivo_original,
                 drd.fecha_validacion
+                , drd.fecha_validacion_origen
             FROM diagnosticos_retinopatia dr
             JOIN visitas_clinicas v ON v.id = dr.visita_id
             JOIN diagnosticos_retinopatia_detalle drd ON drd.diagnostico_retinopatia_id = dr.id
@@ -225,7 +237,9 @@ class PatientRepository:
                 i.datos_estructurados,
                 i.estado,
                 i.fecha_creado,
-                i.fecha_actualizado
+                i.fecha_creado_origen,
+                i.fecha_actualizado,
+                i.fecha_actualizado_origen
             FROM informes i
             JOIN tipos_informe ti ON ti.id = i.tipo_informe_id
             JOIN visitas_clinicas v ON v.id = i.visita_id
@@ -288,7 +302,9 @@ class PatientRepository:
                 p.nro_documento,
                 p.nombres,
                 p.apellidos,
-                MAX(v.fecha_visita) AS ultima_visita
+                MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) AS ultima_visita,
+                CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 'UTC_VERIFICADO' ELSE 'NO_VERIFICADO' END AS ultima_visita_origen,
+                CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'NO_VERIFICADO' THEN 1 END) > 0 THEN 1 ELSE 0 END AS visitas_sin_fecha_verificada
             FROM pacientes p
             LEFT JOIN tipos_documento td ON p.tipo_doc_id = td.id
             LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id AND v.estado <> 'ANULADA'
@@ -311,7 +327,9 @@ class PatientRepository:
                     WHEN CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :prefix_pattern THEN 2
                     ELSE 3
                 END,
-                COALESCE(MAX(v.fecha_visita), p.fecha_creado) DESC
+                 CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 0 ELSE 1 END,
+                 MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) DESC,
+                 p.id DESC
             LIMIT :per_page OFFSET :offset
         """) if include_last_visit else text("""
             SELECT
@@ -336,7 +354,7 @@ class PatientRepository:
                     WHEN CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :prefix_pattern THEN 2
                     ELSE 3
                 END,
-                p.fecha_creado DESC, p.id DESC
+                p.id DESC
             LIMIT :per_page OFFSET :offset
         """)
         params = {
@@ -359,13 +377,17 @@ class PatientRepository:
                 p.nro_documento,
                 p.nombres,
                 p.apellidos,
-                MAX(v.fecha_visita) AS ultima_visita
+                MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) AS ultima_visita,
+                CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 'UTC_VERIFICADO' ELSE 'NO_VERIFICADO' END AS ultima_visita_origen,
+                CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'NO_VERIFICADO' THEN 1 END) > 0 THEN 1 ELSE 0 END AS visitas_sin_fecha_verificada
             FROM pacientes p
             JOIN tipos_documento td ON p.tipo_doc_id = td.id
             LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id AND v.estado <> 'ANULADA'
             WHERE p.estado = 'ACTIVO'
             GROUP BY p.id, td.codigo, p.nro_documento, p.nombres, p.apellidos
-            ORDER BY COALESCE(MAX(v.fecha_visita), p.fecha_creado) DESC
+            ORDER BY CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 0 ELSE 1 END,
+                     MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) DESC,
+                     p.id DESC
             LIMIT :limit
         """) if include_last_visit else text("""
             SELECT
@@ -377,7 +399,7 @@ class PatientRepository:
             FROM pacientes p
             JOIN tipos_documento td ON p.tipo_doc_id = td.id
             WHERE p.estado = 'ACTIVO'
-            ORDER BY p.fecha_creado DESC, p.id DESC
+            ORDER BY p.id DESC
             LIMIT :limit
         """)
         result = db.session.execute(query, {"limit": limit})

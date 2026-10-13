@@ -4,7 +4,7 @@ from flask import current_app
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from database import db
 from src.repositories.informe_repository import InformeRepository
-from utils.clinical_dates import unverified_wall_time
+from utils.clinical_dates import clinical_instant
 
 
 def _extraer_conclusion(datos_estructurados):
@@ -30,7 +30,9 @@ def obtener_tipos():
 _FIELDS = {'paciente_id', 'tipo_informe_id', 'datos_estructurados', 'visita_id', 'diagnostico_id'}
 _RESERVED = {'id', 'usuario_id', 'user_id', 'creador', 'estado', 'fecha_creado', 'fecha_actualizado',
              'paciente_id', 'tipo_informe_id', 'visita_id', 'diagnostico_id', 'schema_version',
-             'revision_actual', 'numero_version', 'editor_id', 'autor_operacion_id', 'fecha_operacion'}
+              'revision_actual', 'numero_version', 'editor_id', 'autor_operacion_id', 'fecha_operacion',
+              'fecha_visita_origen', 'fecha_creado_origen', 'fecha_actualizado_origen',
+              'fecha_operacion_origen', 'fecha_validacion_origen'}
 
 
 class InvalidReportData(Exception):
@@ -228,7 +230,9 @@ def obtener_versiones_informe(informe_id, page, per_page):
             return {"success": False, "message": "Historial no disponible por inconsistencia."}, 409
         return {"success": True, "data": {
             "informe": {"id": informe.id, "paciente_id": paciente.id,
-                        "visita_id": visita.id, "fecha_visita": unverified_wall_time(visita.fecha_visita),
+                         "visita_id": visita.id,
+                         "fecha_visita": clinical_instant(visita.fecha_visita, visita.fecha_visita_origen),
+                         "fecha_visita_origen": visita.fecha_visita_origen,
                         "estado_visita": visita.estado, "tipo_informe_id": tipo.id,
                         "tipo_informe_nombre": tipo.nombre, "usuario_id": creador.id,
                         "estado": informe.estado, "revision_actual": informe.revision_actual},
@@ -240,7 +244,8 @@ def obtener_versiones_informe(informe_id, page, per_page):
                  "autor_operacion_id": version.autor_operacion_id,
                  "autor_operacion": ({"id": autor.id, "nombres": autor.nombres,
                                        "apellidos": autor.apellidos} if autor else None),
-                 "fecha_operacion": unverified_wall_time(version.fecha_operacion), "motivo": version.motivo,
+                  "fecha_operacion": clinical_instant(version.fecha_operacion, version.fecha_operacion_origen),
+                  "fecha_operacion_origen": version.fecha_operacion_origen, "motivo": version.motivo,
                  "es_actual": version.numero_version == informe.revision_actual}
                 for version, autor in versiones],
         }, "pagination": _paginacion(total, page, per_page)}, 200
@@ -255,13 +260,16 @@ def obtener_historial_paciente(paciente_id, page, per_page):
         return {"success": True, "data": [
             {"id": informe.id, "tipo_informe_id": tipo.id,
              "tipo_informe_nombre": tipo.nombre, "visita_id": visita.id,
-             "fecha_visita": unverified_wall_time(visita.fecha_visita), "estado_visita": visita.estado,
+              "fecha_visita": clinical_instant(visita.fecha_visita, visita.fecha_visita_origen),
+              "fecha_visita_origen": visita.fecha_visita_origen, "estado_visita": visita.estado,
              "usuario_id": creador.id,
              "autor_original": {"id": creador.id, "nombres": creador.nombres,
                                 "apellidos": creador.apellidos},
              "estado": informe.estado, "revision_actual": informe.revision_actual,
-             "fecha_creado": unverified_wall_time(informe.fecha_creado),
-             "fecha_actualizado": unverified_wall_time(informe.fecha_actualizado)}
+              "fecha_creado": clinical_instant(informe.fecha_creado, informe.fecha_creado_origen),
+              "fecha_creado_origen": informe.fecha_creado_origen,
+              "fecha_actualizado": clinical_instant(informe.fecha_actualizado, informe.fecha_actualizado_origen),
+              "fecha_actualizado_origen": informe.fecha_actualizado_origen}
             for informe, tipo, visita, creador in rows],
             "pagination": _paginacion(total, page, per_page)}, 200
     except InformeRepository.NotFound:

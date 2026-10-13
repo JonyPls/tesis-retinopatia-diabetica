@@ -7,6 +7,7 @@ import { crearDiagnostico, descargarImagenRetinografo, obtenerDetallesVisita, ob
 import type { DetalleDiagnosticoExistente, DiagnosisResult } from "../features/diagnosis/api/diagnosisService";
 import { toast } from "../hooks/use-toast";
 import { revokePreviewUrl } from "../lib/imageUtils";
+import { obtenerVisitasPaciente } from "../features/patients/api/patientService";
 
 vi.mock("../features/patients/api/patientService", () => ({
   obtenerPacientesRecientes: vi.fn().mockResolvedValue([]),
@@ -62,6 +63,27 @@ beforeEach(() => {
 });
 
 describe("creación secuencial y conciliación por ojo", () => {
+  it("selecciona visitas UTC acreditadas de las últimas 24 h, incluso con históricos ambiguos", async () => {
+    const now = new Date("2030-01-02T00:30:00Z").getTime();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    const visits = vi.mocked(obtenerVisitasPaciente);
+    visits.mockResolvedValueOnce([
+      { visita_id: 9, fecha_visita: "2030-01-02T00:30:00", fecha_visita_origen: "NO_VERIFICADO", estado: "ACTIVA", tiene_diagnostico_ia: 0 },
+      { visita_id: 10, fecha_visita: new Date(now - 24 * 3600_000).toISOString(), fecha_visita_origen: "UTC_VERIFICADO", estado: "ACTIVA", tiene_diagnostico_ia: 0 },
+      { visita_id: 11, fecha_visita: new Date(now - 24 * 3600_000 - 1).toISOString(), fecha_visita_origen: "UTC_VERIFICADO", estado: "ACTIVA", tiene_diagnostico_ia: 0 },
+      { visita_id: 12, fecha_visita: new Date(now - 3600_000).toISOString(), fecha_visita_origen: "UTC_VERIFICADO", estado: "ACTIVA", tiene_diagnostico_ia: 0 },
+      { visita_id: 13, fecha_visita: new Date(now - 3600_000).toISOString(), estado: "ACTIVA", tiene_diagnostico_ia: 0 },
+    ] as Awaited<ReturnType<typeof obtenerVisitasPaciente>>);
+    try {
+      const hook = renderHook(() => useDiagnosis(), { wrapper });
+      act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
+      await waitFor(() => expect(hook.result.current.visitasRecientes.map((v) => v.visita_id)).toEqual([12, 10]));
+      hook.unmount();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("la selección automática queda como candidata y no habilita inferencia sin confirmación 28C", async () => {
     selectExport.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: {
       OD: { filename: "12345678_01012026_101010_fundus_R_1.jpg", ojo: "OD", ojo_original: "R",

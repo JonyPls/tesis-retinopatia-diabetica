@@ -1,3 +1,5 @@
+import type { ClinicalOrigin } from "@/lib/clinicalDates";
+
 export interface TipoInforme {
   id: number;
   nombre: string;
@@ -32,6 +34,7 @@ export interface HistoricalReportSummary {
   id: number;
   visita_id: number;
   fecha_visita: string;
+  fecha_visita_origen?: ClinicalOrigin;
   estado_visita: string;
   tipo_informe_id: number;
   tipo_informe_nombre: string;
@@ -40,7 +43,9 @@ export interface HistoricalReportSummary {
   estado: ReportStatus;
   revision_actual: number;
   fecha_creado: string;
+  fecha_creado_origen?: ClinicalOrigin;
   fecha_actualizado: string;
+  fecha_actualizado_origen?: ClinicalOrigin;
 }
 
 export interface HistoricalReportVersion {
@@ -53,6 +58,7 @@ export interface HistoricalReportVersion {
   autor_operacion_id: number | null;
   autor_operacion: { id: number; nombres: string; apellidos: string } | null;
   fecha_operacion: string;
+  fecha_operacion_origen?: ClinicalOrigin;
   motivo: string | null;
   es_actual: boolean;
 }
@@ -63,6 +69,7 @@ export interface HistoricalReportDetail {
     paciente_id: number;
     visita_id: number;
     fecha_visita: string;
+    fecha_visita_origen?: ClinicalOrigin;
     estado_visita: string;
     tipo_informe_id: number;
     tipo_informe_nombre: string;

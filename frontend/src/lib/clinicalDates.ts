@@ -4,8 +4,10 @@ const explicitZone = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-
 const lima = "America/Lima";
 export const unknownClinicalDate = "Fecha pendiente de conciliación";
 
-export function clinicalInstant(value: string | null | undefined): Date | null {
-  if (!value || !explicitZone.test(value)) return null;
+export type ClinicalOrigin = "NO_VERIFICADO" | "UTC_VERIFICADO";
+
+export function clinicalInstant(value: string | null | undefined, origin?: ClinicalOrigin): Date | null {
+  if (origin === "NO_VERIFICADO" || !value || !explicitZone.test(value)) return null;
   const result = new Date(value);
   return Number.isNaN(result.getTime()) ? null : result;
 }
@@ -21,8 +23,41 @@ export function compareClinicalDesc(a: string | null | undefined, b: string | nu
   return first === null || second === null ? 0 : second - first;
 }
 
-export function formatClinicalInstant(value: string | null | undefined): string {
-  const instant = clinicalInstant(value);
+type DatedVisit = { visita_id: number; fecha_visita: string; fecha_visita_origen?: ClinicalOrigin };
+
+export function verifiedVisitInstant(visit: Pick<DatedVisit, "fecha_visita" | "fecha_visita_origen">): Date | null {
+  return visit.fecha_visita_origen === "UTC_VERIFICADO"
+    ? clinicalInstant(visit.fecha_visita, visit.fecha_visita_origen) : null;
+}
+
+export function compareVisitGroups(a: DatedVisit, b: DatedVisit, ascending = false): number {
+  const first = verifiedVisitInstant(a)?.getTime() ?? null;
+  const second = verifiedVisitInstant(b)?.getTime() ?? null;
+  if (first !== null && second === null) return -1;
+  if (first === null && second !== null) return 1;
+  if (first !== null && second !== null && first !== second) {
+    return ascending ? first - second : second - first;
+  }
+  // Unverified entries have an operational ID order, not an inferred time.
+  return b.visita_id - a.visita_id;
+}
+
+export function compareReportGroups(
+  a: { id: number; fecha_creado: string; fecha_creado_origen?: ClinicalOrigin },
+  b: { id: number; fecha_creado: string; fecha_creado_origen?: ClinicalOrigin },
+): number {
+  const first = a.fecha_creado_origen === "UTC_VERIFICADO"
+    ? clinicalInstant(a.fecha_creado, a.fecha_creado_origen)?.getTime() : undefined;
+  const second = b.fecha_creado_origen === "UTC_VERIFICADO"
+    ? clinicalInstant(b.fecha_creado, b.fecha_creado_origen)?.getTime() : undefined;
+  if (first !== undefined && second === undefined) return -1;
+  if (first === undefined && second !== undefined) return 1;
+  if (first !== undefined && second !== undefined && first !== second) return second - first;
+  return b.id - a.id;
+}
+
+export function formatClinicalInstant(value: string | null | undefined, origin?: ClinicalOrigin): string {
+  const instant = clinicalInstant(value, origin);
   if (!instant) return unknownClinicalDate;
   return new Intl.DateTimeFormat("es-PE", {
     timeZone: lima, day: "2-digit", month: "2-digit", year: "numeric",

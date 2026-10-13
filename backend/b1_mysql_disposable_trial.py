@@ -26,6 +26,7 @@ CLIENT = SERVER.with_name("mysql.exe")
 ADMIN = SERVER.with_name("mysqladmin.exe")
 APPROVED_TEMP = Path(r"C:\Users\ricar\AppData\Local\Temp\opencode")
 SCHEMA = "centro_oftalmologico_db_v2"
+HABITUAL_UUID = "1b48ef4a-4e14-11f1-acd7-107c616721bd"
 
 ROLES = {
     "ADMINISTRADOR_SISTEMA", "OFTALMOLOGO", "ENFERMERO", "ASISTENTE_ADMINISTRATIVO"
@@ -83,6 +84,32 @@ SEED_COUNTS = {
 }
 CONFIRMATIONS = 'confirmaciones_exportacion_retinografo'
 REPORT_VERSIONS = 'informes_versiones'
+PROVENANCE_FIELDS = {
+    'visitas_clinicas': ('fecha_visita', 'fecha_creado', 'fecha_actualizado'),
+    'informes': ('fecha_creado', 'fecha_actualizado'),
+    'informes_versiones': ('fecha_operacion',),
+    'diagnosticos_retinopatia': ('fecha_creado', 'fecha_actualizado'),
+    'diagnosticos_retinopatia_detalle': ('fecha_creado', 'fecha_actualizado', 'fecha_validacion'),
+}
+
+
+def check_provenance_schema(connection):
+    columns = {(table, name): (kind, nullable, default) for table, name, kind, nullable, default
+               in rows(connection, """SELECT table_name, column_name, column_type, is_nullable, column_default
+                   FROM information_schema.columns WHERE table_schema = DATABASE()
+                   AND column_name LIKE '%_origen'""")}
+    expected = {(table, field + '_origen') for table, fields in PROVENANCE_FIELDS.items()
+                for field in fields}
+    require(set(columns) == expected, 'Columnas de procedencia no corresponden al maestro.')
+    for key in expected:
+        kind, nullable, default = columns[key]
+        require((kind, nullable, default) == ('varchar(16)', 'NO', 'NO_VERIFICADO'),
+                'Default/tipo de procedencia incorrecto.')
+    constraints = {(table, name) for table, name in rows(connection, """
+        SELECT table_name, constraint_name FROM information_schema.table_constraints
+        WHERE constraint_schema = DATABASE() AND constraint_type = 'CHECK'
+          AND constraint_name LIKE '%_origen'""")}
+    require(len(constraints) == len(expected), 'CHECK de procedencia ausente.')
 UNAFFECTED_TABLES = (
     "usuarios", "usuario_rol", "pacientes", "visitas_clinicas",
     "diagnosticos_retinopatia", "diagnosticos_retinopatia_detalle", "informes",
@@ -120,7 +147,8 @@ def ensure_own_server(connection, datadir, port):
     )[0]
     own_path = str(datadir.resolve()).replace("/", "\\").rstrip("\\").casefold()
     db_path = str(server_datadir).replace("/", "\\").rstrip("\\").casefold()
-    require(db_path == own_path and int(server_port) == port and version.startswith("8.0."),
+    require(db_path == own_path and int(server_port) == port and port != 3306 and
+            server_uuid != HABITUAL_UUID and version.startswith("8.0."),
             "El servidor no coincide con el datadir/puerto temporal creado; se aborta sin SQL.")
     return server_uuid
 
@@ -421,6 +449,7 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                 "La conexión no es a la instancia temporal propia.")
         verify_seed(connection, historical=historical_seed is not None)
         if historical_seed is None:
+            check_provenance_schema(connection)
             from b1_retinograph_schema_trial import check_confirmation_schema
 
             check_confirmation_schema(connection)
@@ -434,6 +463,7 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                     "Cambió la identidad del servidor antes de reconstruir B1.")
             client_script(port, password, v2)
             verify_seed(connection)
+            check_provenance_schema(connection)
             check_confirmation_schema(connection)
             check_report_version_schema(connection)
             require(seed_signature(connection) == original_signature,

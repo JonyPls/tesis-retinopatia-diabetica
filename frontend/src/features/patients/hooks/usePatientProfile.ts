@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
-import { civilAge, compareClinicalDesc, formatClinicalDay } from "@/lib/clinicalDates";
+import { civilAge, compareVisitGroups, formatClinicalDay, unknownClinicalDate, verifiedVisitInstant } from "@/lib/clinicalDates";
 import { Patient, Diagnosis, PatientReadScope } from "../types";
 import { patientRequestError, type PatientRequestError } from "../patientAccess";
 
@@ -100,8 +100,7 @@ export function usePatientProfile(id: string | undefined) {
     }
   };
 
-  const sortedDx = [...diagnoses].sort((a, b) =>
-    compareClinicalDesc(a.fecha_visita, b.fecha_visita));
+  const sortedDx = [...diagnoses].sort((a, b) => compareVisitGroups(a, b));
 
   const maxLevel =
     diagnoses.length > 0
@@ -121,7 +120,8 @@ export function usePatientProfile(id: string | undefined) {
 
   const lastVisit =
     sortedDx.length > 0
-      ? formatClinicalDay(sortedDx[0].fecha_visita)
+      ? !verifiedVisitInstant(sortedDx[0])
+        ? unknownClinicalDate : formatClinicalDay(sortedDx[0].fecha_visita)
       : "Sin registros";
 
   return {

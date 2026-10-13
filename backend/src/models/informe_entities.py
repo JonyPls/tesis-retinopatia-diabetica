@@ -1,5 +1,6 @@
 from database import db
 from utils.utc_clock import utc_now_naive
+from utils.temporal_provenance import install_provenance, provenance_checks, UNVERIFIED
 from sqlalchemy.dialects.mysql import BIGINT, INTEGER, SMALLINT, DATETIME
 
 class TipoInforme(db.Model):
@@ -18,7 +19,7 @@ class Informe(db.Model):
     __table_args__ = (
         db.UniqueConstraint('visita_id', 'tipo_informe_id', name='uq_informes_visita_tipo'),
         db.CheckConstraint('revision_actual >= 1', name='ck_informes_revision'),
-    )
+    ) + provenance_checks('informes', ('fecha_creado', 'fecha_actualizado'))
     id = db.Column(BIGINT(unsigned=True), primary_key=True)
     visita_id = db.Column(BIGINT(unsigned=True), db.ForeignKey('visitas_clinicas.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
     tipo_informe_id = db.Column(SMALLINT(unsigned=True), db.ForeignKey('tipos_informe.id', onupdate='CASCADE', ondelete='RESTRICT'), nullable=False)
@@ -29,7 +30,11 @@ class Informe(db.Model):
     conclusion = db.Column(db.Text)
     estado = db.Column(db.Enum('ACTIVO', 'INACTIVO', 'ANULADO'), default='ACTIVO')
     fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_creado_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                    server_default=db.text("'NO_VERIFICADO'"))
     fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    fecha_actualizado_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                         server_default=db.text("'NO_VERIFICADO'"))
 
     visita = db.relationship('VisitaClinica', backref='informes')
     tipo_informe = db.relationship('TipoInforme')
@@ -53,7 +58,7 @@ class InformeVersion(db.Model):
         db.CheckConstraint("operacion IN ('CREACION','MIGRACION_INICIAL') OR "
                            "(motivo IS NOT NULL AND REGEXP_LIKE(motivo, '[^[:space:]]'))",
                            name='ck_informes_versiones_motivo'),
-    )
+    ) + provenance_checks('versiones', ('fecha_operacion',))
 
     id = db.Column(BIGINT(unsigned=True), primary_key=True)
     informe_id = db.Column(BIGINT(unsigned=True), db.ForeignKey('informes.id', ondelete='RESTRICT', onupdate='RESTRICT'), nullable=False)
@@ -65,7 +70,13 @@ class InformeVersion(db.Model):
     estado = db.Column(db.Enum('ACTIVO', 'INACTIVO', 'ANULADO'), nullable=False)
     autor_operacion_id = db.Column(INTEGER(unsigned=True), db.ForeignKey('usuarios.id', ondelete='RESTRICT', onupdate='RESTRICT'))
     fecha_operacion = db.Column(DATETIME(fsp=6), nullable=False, server_default=db.text('CURRENT_TIMESTAMP(6)'))
+    fecha_operacion_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                       server_default=db.text("'NO_VERIFICADO'"))
     motivo = db.Column(db.String(1000))
 
     informe = db.relationship('Informe', back_populates='versiones')
     autor_operacion = db.relationship('Usuario')
+
+
+install_provenance(Informe, fields=('fecha_creado', 'fecha_actualizado'), updated=True)
+install_provenance(InformeVersion, fields=('fecha_operacion',), server_fields=('fecha_operacion',))

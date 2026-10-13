@@ -69,7 +69,7 @@ function VersionContent({ version }: { version: HistoricalReportVersion }) {
             ? `${version.autor_operacion.nombres} ${version.autor_operacion.apellidos}`
             : "Autor histórico no acreditado"}
         </dd></div>
-        <div><dt className="text-muted-foreground">Fecha de operación</dt><dd>{formatDate(version.fecha_operacion)}</dd></div>
+        <div><dt className="text-muted-foreground">Fecha de operación</dt><dd>{formatDate(version.fecha_operacion, version.fecha_operacion_origen)}</dd></div>
       </dl>
       {version.operacion === "MIGRACION_INICIAL" && (
         <p className="text-sm text-muted-foreground">
@@ -198,11 +198,11 @@ export function ReportHistoryPanel({ patient }: {
                     onClick={() => chooseReport(report.id)}>
                     <span className="block font-medium">{report.tipo_informe_nombre}</span>
                     <span className="block text-xs text-muted-foreground">
-                      Visita {report.visita_id} · {formatDate(report.fecha_visita)} · {statusLabel[report.estado]} · Revisión {report.revision_actual}
+                      Visita {report.visita_id} · {formatDate(report.fecha_visita, report.fecha_visita_origen)} · {statusLabel[report.estado]} · Revisión {report.revision_actual}
                     </span>
                     <span className="block text-xs text-muted-foreground">Estado de la visita: {report.estado_visita}</span>
                     <span className="block text-xs text-muted-foreground">
-                      Autor original: {report.autor_original.nombres} {report.autor_original.apellidos} · Registrado: {formatDate(report.fecha_creado)}
+                      Autor original: {report.autor_original.nombres} {report.autor_original.apellidos} · Registrado: {formatDate(report.fecha_creado, report.fecha_creado_origen)}
                     </span>
                   </button>
                 </li>
@@ -218,7 +218,7 @@ export function ReportHistoryPanel({ patient }: {
               <div className="space-y-4">
                 <div>
                   <h4 className="text-sm font-semibold">{detail.informe.tipo_informe_nombre}</h4>
-                  <p className="text-xs text-muted-foreground">Paciente {patient.nombres} {patient.apellidos} · Visita {detail.informe.visita_id} · {formatDate(detail.informe.fecha_visita)} · {detail.informe.estado_visita}</p>
+                  <p className="text-xs text-muted-foreground">Paciente {patient.nombres} {patient.apellidos} · Visita {detail.informe.visita_id} · {formatDate(detail.informe.fecha_visita, detail.informe.fecha_visita_origen)} · {detail.informe.estado_visita}</p>
                   <p className="mt-1 text-xs">{statusLabel[detail.informe.estado]} · Revisión clínica actual {detail.informe.revision_actual}</p>
                 </div>
                 {detail.informe.estado !== "ACTIVO" && (

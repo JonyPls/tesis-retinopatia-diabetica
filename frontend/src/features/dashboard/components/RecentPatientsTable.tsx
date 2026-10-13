@@ -122,7 +122,8 @@ export function RecentPatientsTable({
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {p.ultima_visita && formatClinicalDay(p.ultima_visita)}
+                      {p.ultima_visita ? formatClinicalDay(p.ultima_visita) :
+                        p.visitas_sin_fecha_verificada ? "Fecha pendiente de conciliación" : "Sin registros"}
                   </TableCell>
                   <TableCell>
                     {"maxima_gravedad" in p

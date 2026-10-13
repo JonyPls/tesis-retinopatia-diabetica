@@ -1,5 +1,6 @@
 from database import db
 from utils.utc_clock import utc_now_naive
+from utils.temporal_provenance import install_provenance, provenance_checks, UNVERIFIED
 from sqlalchemy.dialects.mysql import BIGINT, BINARY, CHAR, DATETIME, INTEGER
 
 class GradoRetinopatia(db.Model):
@@ -15,6 +16,7 @@ class GradoRetinopatia(db.Model):
 
 class Diagnostico(db.Model):
     __tablename__ = 'diagnosticos_retinopatia'
+    __table_args__ = provenance_checks('diagnosticos', ('fecha_creado', 'fecha_actualizado'))
     id = db.Column(db.BigInteger, primary_key=True)
     visita_id = db.Column(db.BigInteger, db.ForeignKey('visitas_clinicas.id'), nullable=False, unique=True)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
@@ -22,12 +24,17 @@ class Diagnostico(db.Model):
     modelo_version = db.Column(db.String(50))
     estado = db.Column(db.Enum('PENDIENTE', 'PROCESADO', 'VALIDADO', 'ANULADO'), default='PENDIENTE')
     fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_creado_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                    server_default=db.text("'NO_VERIFICADO'"))
     fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    fecha_actualizado_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                         server_default=db.text("'NO_VERIFICADO'"))
 
     detalles = db.relationship('DiagnosticoDetalle', backref='diagnostico', cascade='all, delete-orphan')
 
 class DiagnosticoDetalle(db.Model):
     __tablename__ = 'diagnosticos_retinopatia_detalle'
+    __table_args__ = provenance_checks('detalle', ('fecha_validacion', 'fecha_creado', 'fecha_actualizado'))
     id = db.Column(db.BigInteger, primary_key=True)
     diagnostico_retinopatia_id = db.Column(db.BigInteger, db.ForeignKey('diagnosticos_retinopatia.id'), nullable=False)
     ojo_evaluado = db.Column(db.Enum('Derecho', 'Izquierdo'), nullable=False)
@@ -48,8 +55,14 @@ class DiagnosticoDetalle(db.Model):
     motivo_correccion = db.Column(db.Text)
     validado_por = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     fecha_validacion = db.Column(db.DateTime)
+    fecha_validacion_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                        server_default=db.text("'NO_VERIFICADO'"))
     fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_creado_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                    server_default=db.text("'NO_VERIFICADO'"))
     fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    fecha_actualizado_origen = db.Column(db.String(16), nullable=False, default=UNVERIFIED,
+                                         server_default=db.text("'NO_VERIFICADO'"))
 
     resultado_ia = db.relationship('GradoRetinopatia', foreign_keys=[resultado_ia_id])
     resultado_final = db.relationship('GradoRetinopatia', foreign_keys=[resultado_final_id])
@@ -104,3 +117,9 @@ class ConfirmacionExportacionRetinografo(db.Model):
     confirmador = db.relationship('Usuario', foreign_keys=[confirmado_por])
     revocador = db.relationship('Usuario', foreign_keys=[revocada_por])
     detalle = db.relationship('DiagnosticoDetalle', foreign_keys=[detalle_id], uselist=False)
+
+
+install_provenance(Diagnostico, fields=('fecha_creado', 'fecha_actualizado'), updated=True)
+install_provenance(DiagnosticoDetalle,
+                   fields=('fecha_creado', 'fecha_actualizado', 'fecha_validacion'),
+                   updated=True, nullable_fields=('fecha_validacion',))

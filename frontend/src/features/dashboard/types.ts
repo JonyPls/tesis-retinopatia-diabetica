@@ -1,3 +1,5 @@
+import type { ClinicalOrigin } from "@/lib/clinicalDates";
+
 export interface Patient {
   id: string | number;
   tipo_doc?: string;
@@ -8,6 +10,8 @@ export interface Patient {
   apellidos?: string;
   fecha_nacimiento: string;
   ultima_visita?: string;
+  ultima_visita_origen?: ClinicalOrigin;
+  visitas_sin_fecha_verificada?: number;
   maxima_gravedad?: number | null;
 }
 

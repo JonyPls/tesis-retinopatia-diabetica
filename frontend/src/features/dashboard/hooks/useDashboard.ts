@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
-import { civilAge, compareClinicalDesc } from "@/lib/clinicalDates";
+import { civilAge, clinicalInstant } from "@/lib/clinicalDates";
 import { Patient } from "../types";
 import { patientRequestMessage } from "@/features/patients/patientAccess";
 
@@ -23,10 +23,17 @@ export function useDashboard(enabled: boolean) {
         const { data } = await api.get("/pacientes");
         if (active && data.data) {
           const sorted = (data.data as Patient[])
-            .filter((p) => p.ultima_visita)
-            .sort(
-              (a, b) => compareClinicalDesc(a.ultima_visita, b.ultima_visita),
-            );
+            .filter((p) => p.ultima_visita || p.visitas_sin_fecha_verificada)
+            .sort((a, b) => {
+              const first = a.ultima_visita_origen === "UTC_VERIFICADO"
+                ? clinicalInstant(a.ultima_visita, a.ultima_visita_origen)?.getTime() : undefined;
+              const second = b.ultima_visita_origen === "UTC_VERIFICADO"
+                ? clinicalInstant(b.ultima_visita, b.ultima_visita_origen)?.getTime() : undefined;
+              if (first !== undefined && second === undefined) return -1;
+              if (first === undefined && second !== undefined) return 1;
+              if (first !== undefined && second !== undefined && first !== second) return second - first;
+              return Number(b.id) - Number(a.id);
+            });
 
           setRecentPatients(sorted.slice(0, 6));
           setError(null);

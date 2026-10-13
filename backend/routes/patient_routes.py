@@ -49,7 +49,8 @@ def _project_lookup(response, status, fields, scope, *, paginated=False):
             raise TypeError('Invalid patient lookup row')
         if response['success'] is not True:
             raise TypeError('Invalid patient lookup success')
-        allowed = fields + (('ultima_visita',) if scope != 'administrative' else ())
+        allowed = fields + (('ultima_visita', 'ultima_visita_origen',
+                             'visitas_sin_fecha_verificada') if scope != 'administrative' else ())
         projected = {'success': True, 'data': [
             _project_patient_row(row, allowed) for row in response['data']
         ]}
@@ -87,7 +88,8 @@ def _project_patient_response(response, status, scope, *, listing=False,
                 raise TypeError('Invalid patient list')
             fields = LIST_FIELDS
             if scope != 'administrative':
-                fields += CONSENT_FIELDS + ('ultima_visita',)
+                fields += CONSENT_FIELDS + ('ultima_visita', 'ultima_visita_origen',
+                                             'visitas_sin_fecha_verificada')
             if include_severity:
                 fields += ('maxima_gravedad',)
             data = [_project_patient_row(row, fields) for row in response['data']]
