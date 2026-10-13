@@ -1,0 +1,31 @@
+# 29D.5A — UTC para nuevas escrituras (no es una migración histórica)
+
+## Convención y cobertura
+
+`backend/database.py` instala, tras `db.init_app`, un listener `checkout` en **cada motor MySQL de Flask-SQLAlchemy**, incluidos los binds. Antes de entregar una conexión física nueva, reabierta o reutilizada del pool, ejecuta `SET SESSION time_zone = '+00:00'`. No cambia `GLOBAL`, Windows ni el maestro. Una excepción impide entregar la conexión al ORM; el error público no incluye la excepción DBAPI ni una URL. No hay un `SET` por consulta clínica: hay uno por préstamo de conexión. Al levantar un proceso Flask nuevo se vuelven a instalar los listeners en sus motores. Los motores que **no** provienen de esta instancia de `db` (p. ej., PyMySQL directo, scripts, otros motores SQLAlchemy o procesos ya arrancados sin reinicio) no quedan cubiertos; deben configurar y verificar su propia política antes de escribir. El arnés ORM que usa `db.init_app` directamente llama también a `configure_utc_sessions`.
+
+`utils.utc_clock.utc_now_naive()` obtiene primero `datetime.now(timezone.utc)` y retira `tzinfo` intencionalmente para columnas MySQL que PyMySQL lee como `datetime` naive. En la conexión UTC, un `TIMESTAMP` introducido mediante ese valor representa el instante UTC y se vuelve a leer como el mismo valor naive; un `DATETIME` guarda los componentes sin conversión. `CURRENT_TIMESTAMP(6)` para las versiones representa UTC **solo** bajo esta sesión. Defaults SQL `CURRENT_TIMESTAMP` y `ON UPDATE CURRENT_TIMESTAMP` del maestro siguen siendo válidos para las sesiones UTC; defaults Python y `onupdate` ORM ahora usan el mismo reloj explícito. `UTC_TIMESTAMP()` no sustituye indiscriminadamente esos defaults, especialmente en `TIMESTAMP` con sesiones no UTC. No se modificaron tipos, defaults ni SQL del maestro.
+
+| Campo(s) | MySQL en el maestro | Fuente anterior → nueva | Riesgo anterior / decisión |
+| --- | --- | --- | --- |
+| `visitas_clinicas.fecha_visita` | `DATETIME` | ORM `datetime.utcnow` → `utc_now_naive` | Ya era UTC naive; explicitado. |
+| `visitas_clinicas.fecha_creado/actualizado`, `informes.fecha_creado/actualizado` | `TIMESTAMP` | ORM UTC naive y `onupdate` → reloj explícito, sesión UTC | Antes MySQL podía interpretar UTC como hora local y desplazar el instante almacenado. |
+| `informes_versiones.fecha_operacion` | `DATETIME(6)` | `CURRENT_TIMESTAMP(6)` → misma expresión, sesión UTC | Antes recogía hora local de la sesión. No se altera la versión histórica. |
+| `diagnosticos_retinopatia` y `_detalle`, `fecha_creado/actualizado` | `TIMESTAMP` | ORM UTC naive y `onupdate` → reloj explícito, sesión UTC | Misma incompatibilidad anterior de TIMESTAMP. |
+| `_detalle.fecha_validacion` | `DATETIME` | asignación `datetime.utcnow` → reloj explícito | UTC naive con la misma semántica; sin cambio de validación por ojo. |
+| `confirmaciones_exportacion_retinografo`: confirmación, expiración, consumo, revocación | `DATETIME(6)` | reloj UTC naive previo → reloj explícito, comparaciones con el mismo reloj | Sin conversiones por sesión; se mantienen 60 minutos y comparaciones `>=`. |
+| `pacientes.fecha_creado/actualizado`, tipos/catálogos y usuarios | `TIMESTAMP` | defaults Python previos UTC naive (sin modificar en esta fase) | La sesión UTC evita nuevas interpretaciones locales; inventariar escritores independientes. |
+
+**No convertir fechas civiles:** `pacientes.fecha_nacimiento` (`DATE`), `fecha_consentimiento` local/declarativa y las fechas sin zona inferidas de nombres de exportación. No se cambió ninguna de ellas ni la semántica de IA, graduación, imagen o autorización.
+
+## Compatibilidad histórica y despliegue
+
+Las tres filas sintéticas de 29D.3 **no** se actualizan. Un `TIMESTAMP` anterior insertado bajo `SYSTEM` puede leerse cinco horas distinto en sesiones UTC aunque sus bytes no cambien. No inferir una zona histórica a partir de una sola fila ni restar horas masivamente. Guardar evidencia externa de zona de sesión, procedencia/versión y valores originales; conciliar en copia aislada, con autorización y respaldo nuevo verificable antes de cualquier operación destructiva. El respaldo de 29D.1 antecede al POST sintético. Un `DATETIME` anterior generado por SQL local, como `fecha_operacion`, queda ambiguo y **no** cambia al cambiar la sesión.
+
+**No desplegar esta fase sola** sobre MySQL habitual sin revisar primero lecturas históricas, reconciliar el contrato temporal y coordinar 29D.5B (API, React y PDF) y 29D.5C (tratamiento conservador de históricos). Flask todavía serializa datetimes naive como `GMT`; ahora esa representación de las *nuevas* fechas es congruente con UTC, pero valores históricos `DATETIME` locales y `TIMESTAMP` desplazados continúan siendo engañosos. Se requiere una ventana supervisada, comprobación de `@@session.time_zone` en la conexión real de producción, revisión de pools y procesos ajenos, y decisión explícita sobre coexistencia de filas antiguas/nuevas antes de liberar. Las banderas de edición, anulación e historial permanecen deshabilitadas en el entorno habitual; los ensayos solo las activan en la app desechable.
+
+## Ensayos aislados
+
+El arnés `b1_mysql_disposable_trial.py --run-disposable --orm-integration` crea su propio MySQL 8, verifica datadir, UUID y puerto antes de usar el maestro en **esa** instancia. La integración ORM ensaya creación por POST (una visita, informe y CREACION), revisión CORRECCION/ANULACION y visita CERRADA; compara tiempos con `UTC_TIMESTAMP(6)` y el reloj Python con tolerancias por latencia real, prueba `TIMESTAMP` desde otra sesión `-05:00` contra el `DATETIME` intacto y compara el instante con `UNIX_TIMESTAMP`; prueba conexión física nueva, reuso con sesión alterada, consulta ORM y fallo de checkout: la ruta devuelve 500 sin escribir una versión clínica. Las pruebas B1 existentes comprueban fuente y copia retinográficas, consumo, revocación y dobles validaciones; el límite exacto de caducidad se prueba con reloj controlado. El offset de prueba es fijo y **no** demuestra ninguna regla de horario de verano. No se creó una tabla ni se modificó el maestro.
+
+Registrar los resultados exactos de la ejecución, `unittest` y hash en el informe de entrega; no confundir estos ensayos con despliegue o corrección completa de la cronología visible.

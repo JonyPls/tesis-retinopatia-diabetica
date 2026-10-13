@@ -1,5 +1,5 @@
 from database import db
-from datetime import datetime
+from utils.utc_clock import utc_now_naive
 
 class Paciente(db.Model):
     __tablename__ = 'pacientes'
@@ -18,8 +18,8 @@ class Paciente(db.Model):
     consentimiento_informado = db.Column(db.Boolean, default=False, nullable=False)
     fecha_consentimiento = db.Column(db.DateTime)
     estado = db.Column(db.Enum('ACTIVO', 'INACTIVO'), default='ACTIVO')
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     tipo_documento = db.relationship('TipoDocumento')
 
@@ -28,11 +28,11 @@ class VisitaClinica(db.Model):
     id = db.Column(db.BigInteger, primary_key=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey('pacientes.id'), nullable=False)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
-    fecha_visita = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    fecha_visita = db.Column(db.DateTime, default=utc_now_naive, nullable=False)
     motivo_consulta = db.Column(db.String(255))
     observaciones = db.Column(db.Text)
     estado = db.Column(db.Enum('ACTIVA', 'CERRADA', 'ANULADA'), default='ACTIVA')
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     paciente = db.relationship('Paciente', backref='visitas')

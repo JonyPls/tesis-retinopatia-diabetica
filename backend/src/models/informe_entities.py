@@ -1,5 +1,5 @@
 from database import db
-from datetime import datetime
+from utils.utc_clock import utc_now_naive
 from sqlalchemy.dialects.mysql import BIGINT, INTEGER, SMALLINT, DATETIME
 
 class TipoInforme(db.Model):
@@ -10,8 +10,8 @@ class TipoInforme(db.Model):
     codigo_formulario = db.Column(db.String(50), nullable=False)
     schema_version_actual = db.Column(SMALLINT(unsigned=True), default=1, nullable=False)
     estado = db.Column(db.Enum('ACTIVO', 'INACTIVO'), default='ACTIVO')
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 class Informe(db.Model):
     __tablename__ = 'informes'
@@ -28,8 +28,8 @@ class Informe(db.Model):
     datos_estructurados = db.Column(db.JSON)
     conclusion = db.Column(db.Text)
     estado = db.Column(db.Enum('ACTIVO', 'INACTIVO', 'ANULADO'), default='ACTIVO')
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     visita = db.relationship('VisitaClinica', backref='informes')
     tipo_informe = db.relationship('TipoInforme')

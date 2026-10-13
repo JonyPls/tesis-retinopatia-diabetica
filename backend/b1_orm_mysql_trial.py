@@ -21,22 +21,23 @@ import sys
 import tempfile
 import time
 from threading import Barrier, Event
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from flask import Flask, jsonify, request
 import jwt
-from sqlalchemy import event, inspect, select
+from sqlalchemy import event, inspect, select, text
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError, OperationalError
 from pymysql.err import IntegrityError as MySQLIntegrityError
 from werkzeug.security import generate_password_hash
 from PIL import Image
+from utils.utc_clock import utc_now_naive
 
 # database.py llama load_dotenv al importarse: impedir incluso su lectura.
 with patch("dotenv.load_dotenv", return_value=False):
-    from database import db
+    from database import db, configure_utc_sessions, _set_utc_on_checkout
     from routes.auth_routes import auth_bp
     from routes.patient_routes import patient_bp
     from routes import patient_routes, files_routes, informe_routes
@@ -103,6 +104,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
         )
         db.init_app(cls.app)  # Nunca init_db(app) ni db.create_all().
+        configure_utc_sessions(cls.app)  # Misma politica que init_db, sin .env.
         cls.context = cls.app.app_context()
         cls.context.push()
         cls.addClassCleanup(cls.context.pop)
@@ -2129,6 +2131,9 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                         first.motivo_correccion, first.ojo_evaluado)
             self.assertEqual(snapshot[:4], (2, 3, "CORREGIDO", self.user_ids["colleague"]))
             self.assertIsInstance(first.fecha_validacion, datetime)
+            self.assertLess(abs(first.fecha_validacion - utc_now_naive()), timedelta(minutes=2))
+            self.assertLess(abs(first.fecha_validacion - first.fecha_actualizado),
+                            timedelta(seconds=3))
             self.assertEqual(snapshot[5:], ("Nota sintética", "Justificación sintética", "Derecho"))
             self.assertEqual(db.session.get(diagnosis_entities.DiagnosticoDetalle, oi).estado_validacion,
                              "PENDIENTE")
@@ -4430,6 +4435,183 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 db.session.remove()
                 self.assertEqual(informe_entities.InformeVersion.query.filter_by(
                     informe_id=report_id).one().datos_estructurados['nota'], 'Estado conocido')
+
+
+    def test_29d5a_utc_checkout_pool_and_failure_closed(self):
+        from b1_mysql_disposable_trial import connect
+
+        port, password = self.config
+        with connect(port, password, 'centro_oftalmologico_db_v2') as raw:
+            with raw.cursor() as cursor:
+                cursor.execute('SELECT @@session.time_zone')
+                initial_zone = cursor.fetchone()[0]
+                cursor.execute("SET SESSION time_zone = 'SYSTEM'")
+                cursor.execute('SELECT @@session.time_zone')
+                self.assertEqual(cursor.fetchone()[0], 'SYSTEM')
+                # Simulate the historical five-hour offset without changing the server.
+                cursor.execute("SET SESSION time_zone = '-05:00'")
+                cursor.execute('SELECT TIMEDIFF(NOW(6), UTC_TIMESTAMP(6))')
+                self.assertEqual(cursor.fetchone()[0], timedelta(hours=-5))
+            # No changes to global timezone or any clinical row.
+        self.assertIn(initial_zone, ('SYSTEM', '+00:00'))
+
+        db.session.remove()
+        engine = db.engine
+        engine.dispose()  # Force a new physical connection with UTC checkout.
+        with engine.connect() as connection:
+            self.assertEqual(connection.exec_driver_sql('SELECT @@session.time_zone').scalar(), '+00:00')
+            self.assertLess(abs(connection.exec_driver_sql(
+                'SELECT TIMESTAMPDIFF(SECOND, NOW(6), UTC_TIMESTAMP(6))').scalar()), 2)
+            # Tamper with a pooled connection in the *disposable* server only.
+            connection.exec_driver_sql("SET SESSION time_zone = '-05:00'")
+        with engine.connect() as connection:
+            self.assertEqual(connection.exec_driver_sql('SELECT @@session.time_zone').scalar(), '+00:00')
+            first_id = connection.exec_driver_sql('SELECT CONNECTION_ID()').scalar()
+        with engine.connect() as connection:
+            self.assertEqual(connection.exec_driver_sql('SELECT @@session.time_zone').scalar(), '+00:00')
+            self.assertEqual(connection.exec_driver_sql('SELECT CONNECTION_ID()').scalar(), first_id)
+        db.session.remove()
+        self.assertEqual(db.session.execute(text('SELECT @@session.time_zone')).scalar(), '+00:00')
+        db.session.remove()
+
+        class BrokenConnection:
+            def cursor(self):
+                raise ValueError('private connection data')
+
+        with self.assertRaisesRegex(RuntimeError, 'No se pudo configurar la sesion MySQL en UTC') as failure:
+            _set_utc_on_checkout(BrokenConnection(), None, None)
+        self.assertNotIn('private', str(failure.exception))
+
+        before = db.session.query(informe_entities.InformeVersion).count()
+        db.session.remove()
+        event.remove(engine, 'checkout', _set_utc_on_checkout)
+
+        def reject_checkout(*_):
+            raise RuntimeError('No se pudo configurar la sesion MySQL en UTC')
+
+        event.listen(engine, 'checkout', reject_checkout)
+        try:
+            with patch.object(self.app.logger, 'exception'):
+                blocked, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                       json_data=self.report_payload())
+            self.assertEqual(blocked.status_code, 500)
+            self.assertNotIn('UTC', blocked.get_data(as_text=True))
+        finally:
+            db.session.remove()
+            event.remove(engine, 'checkout', reject_checkout)
+            event.listen(engine, 'checkout', _set_utc_on_checkout)
+        self.assertEqual(db.session.query(informe_entities.InformeVersion).count(), before)
+        db.session.remove()
+
+    def test_29d5a_retinograph_expiration_boundary_utc(self):
+        expiry = datetime(2030, 1, 2, 3, 4, 5, 123456)
+        record = SimpleNamespace(
+            estado='CONFIRMADA', detalle_id=None, fecha_expiracion=expiry,
+            paciente_id=self.patient_ids[0], ojo_confirmado='Izquierdo',
+            nombre_exportacion=self.retino_files['L'][0],
+        )
+        for instant, available in ((expiry - timedelta(microseconds=1), True),
+                                   (expiry, False),
+                                   (expiry + timedelta(microseconds=1), False)):
+            with self.subTest(instant=instant), patch.object(
+                    retinograph_confirmation_service, 'utc_now_naive', return_value=instant):
+                if available:
+                    self.assertIsNotNone(retinograph_confirmation_service._available(
+                        record, self.patient_ids[0], 'Izquierdo'))
+                else:
+                    with self.assertRaises(retinograph_confirmation_service.ConfirmationUseError):
+                        retinograph_confirmation_service._available(
+                            record, self.patient_ids[0], 'Izquierdo')
+
+    def test_29d5a_report_instants_new_visit_revisions_and_closed_visit(self):
+        # Requests include password hashing and SQL I/O; still far below a timezone offset.
+        tolerance = timedelta(minutes=2)
+
+        def check_utc(*values):
+            with db.engine.connect() as connection:
+                self.assertEqual(connection.exec_driver_sql('SELECT @@session.time_zone').scalar(), '+00:00')
+                sql_now = connection.exec_driver_sql('SELECT UTC_TIMESTAMP(6)').scalar()
+            for value in values:
+                self.assertIsNone(value.tzinfo)
+                self.assertLess(abs(value - sql_now), tolerance)
+
+        def run_revision_chain(report_id):
+            path = f'/api/informes/{report_id}'
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
+                                              'REPORTS_ANNUL_ENABLED': True}):
+                corrected, _ = self.call(path, method='PUT', token=self.token(), json_data={
+                    'datos_estructurados': {'nota': 'Cambio sintetico'},
+                    'motivo': 'Aclaracion sintetica', 'revision_esperada': 1,
+                })
+                self.assertEqual(corrected.status_code, 200, corrected.json)
+                annulled, _ = self.call(path + '/anulacion', method='POST', token=self.token(),
+                                         json_data={'motivo': 'Anulacion sintetica', 'revision_esperada': 2})
+                self.assertEqual(annulled.status_code, 200, annulled.json)
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            versions = report.versiones
+            self.assertEqual([v.operacion for v in versions], ['CREACION', 'CORRECCION', 'ANULACION'])
+            self.assertEqual([v.numero_version for v in versions], [1, 2, 3])
+            self.assertEqual(report.usuario_id, self.user_ids['ophthalmologist'])
+            self.assertEqual(report.estado, 'ANULADO')
+            self.assertEqual(versions[0].datos_estructurados,
+                             self.report_payload()['datos_estructurados'])
+            self.assertEqual(versions[1].datos_estructurados, {'nota': 'Cambio sintetico'})
+            self.assertTrue(versions[0].fecha_operacion <= versions[1].fecha_operacion
+                            <= versions[2].fecha_operacion)
+            check_utc(report.fecha_creado, report.fecha_actualizado,
+                      *(v.fecha_operacion for v in versions))
+            self.assertLess(abs(report.fecha_actualizado - versions[2].fecha_operacion), tolerance)
+            db.session.remove()
+
+        started = utc_now_naive()
+        created, sql = self.call('/api/informes', method='POST', token=self.token(),
+                                 json_data=self.report_payload(), measure=True)
+        self.assertEqual(created.status_code, 201, created.json)
+        self.assertEqual(sum('insert into ' in statement.lower() for statement in sql), 3)
+        visit_id, report_id = created.json['data']['visita_id'], created.json['data']['id']
+        try:
+            db.session.remove()
+            visit = db.session.get(VisitaClinica, visit_id)
+            report = db.session.get(informe_entities.Informe, report_id)
+            initial = report.versiones[0]
+            check_utc(visit.fecha_visita, visit.fecha_creado, visit.fecha_actualizado,
+                      report.fecha_creado, report.fecha_actualizado, initial.fecha_operacion)
+            self.assertLess(abs(visit.fecha_visita - initial.fecha_operacion), tolerance)
+            self.assertLess(abs(report.fecha_creado - initial.fecha_operacion), tolerance)
+            self.assertLess(abs(visit.fecha_creado - started), tolerance)
+            from b1_mysql_disposable_trial import connect
+            with connect(*self.config, 'centro_oftalmologico_db_v2') as raw:
+                with raw.cursor() as cursor:
+                    cursor.execute("SET SESSION time_zone = '-05:00'")
+                    cursor.execute('SELECT fecha_visita, fecha_creado FROM visitas_clinicas WHERE id = %s',
+                                   (visit_id,))
+                    local_date, local_timestamp = cursor.fetchone()
+                    self.assertEqual(local_date, visit.fecha_visita)  # DATETIME is unchanged.
+                    self.assertEqual(local_timestamp, visit.fecha_creado - timedelta(hours=5))
+                    cursor.execute('SELECT UNIX_TIMESTAMP(fecha_creado) FROM visitas_clinicas WHERE id = %s',
+                                   (visit_id,))
+                    local_epoch = cursor.fetchone()[0]
+            with db.engine.connect() as connection:
+                utc_epoch = connection.exec_driver_sql(
+                    'SELECT UNIX_TIMESTAMP(fecha_creado) FROM visitas_clinicas WHERE id = %s',
+                    (visit_id,)).scalar()
+            self.assertEqual(local_epoch, utc_epoch)  # TIMESTAMP stores one UTC instant.
+            db.session.remove()
+            run_revision_chain(report_id)
+        finally:
+            db.session.remove()
+            db.session.query(informe_entities.InformeVersion).filter_by(informe_id=report_id).delete()
+            db.session.query(informe_entities.Informe).filter_by(id=report_id).delete()
+            db.session.query(VisitaClinica).filter_by(id=visit_id).delete()
+            db.session.commit()
+            db.session.remove()
+
+        with self.report_visit(state='CERRADA') as visit_id:
+            created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201, created.json)
+            run_revision_chain(created.json['data']['id'])
 
 
 def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_available=True):

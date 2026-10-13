@@ -1,5 +1,5 @@
 from database import db
-from datetime import datetime
+from utils.utc_clock import utc_now_naive
 from sqlalchemy.dialects.mysql import BIGINT, BINARY, CHAR, DATETIME, INTEGER
 
 class GradoRetinopatia(db.Model):
@@ -10,8 +10,8 @@ class GradoRetinopatia(db.Model):
     descripcion = db.Column(db.String(255))
     requiere_alerta = db.Column(db.Boolean, default=False, nullable=False)
     estado = db.Column(db.Enum('ACTIVO', 'INACTIVO'), default='ACTIVO', nullable=False)
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 class Diagnostico(db.Model):
     __tablename__ = 'diagnosticos_retinopatia'
@@ -21,8 +21,8 @@ class Diagnostico(db.Model):
     modelo_nombre = db.Column(db.String(100), nullable=False, default='ResNet50')
     modelo_version = db.Column(db.String(50))
     estado = db.Column(db.Enum('PENDIENTE', 'PROCESADO', 'VALIDADO', 'ANULADO'), default='PENDIENTE')
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     detalles = db.relationship('DiagnosticoDetalle', backref='diagnostico', cascade='all, delete-orphan')
 
@@ -48,8 +48,8 @@ class DiagnosticoDetalle(db.Model):
     motivo_correccion = db.Column(db.Text)
     validado_por = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     fecha_validacion = db.Column(db.DateTime)
-    fecha_creado = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_actualizado = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creado = db.Column(db.DateTime, default=utc_now_naive)
+    fecha_actualizado = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     resultado_ia = db.relationship('GradoRetinopatia', foreign_keys=[resultado_ia_id])
     resultado_final = db.relationship('GradoRetinopatia', foreign_keys=[resultado_final_id])

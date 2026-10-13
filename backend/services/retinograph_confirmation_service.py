@@ -1,7 +1,7 @@
 """Confirmación profesional declarada; no crea diagnósticos ni acredita origen del equipo."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 import hashlib
 import hmac
 import re
@@ -10,6 +10,7 @@ import secrets
 from sqlalchemy.exc import SQLAlchemyError
 
 from database import db
+from utils.utc_clock import utc_now_naive
 from src.models.diagnosis_entities import ConfirmacionExportacionRetinografo
 from src.repositories.patient_repository import PatientRepository
 from services import retinograph_import_service as exports
@@ -65,7 +66,7 @@ def register(patient_id, filename, eye, preview_hash, professional_id):
         db.session.rollback()
         return failure(503, 'Almacenamiento privado no disponible.')
 
-    now = datetime.utcnow()  # DATETIME(6) UTC naive, igual que el maestro.
+    now = utc_now_naive()  # DATETIME(6) UTC naive, igual que el maestro.
     record = ConfirmacionExportacionRetinografo(
         token_verificador=hashlib.sha256(bytes.fromhex(token)).digest(),
         paciente_id=patient_id, confirmado_por=professional_id,
@@ -125,7 +126,7 @@ class ConfirmedImage:
 
 def _available(record, patient_id, eye):
     if (record.estado != 'CONFIRMADA' or record.detalle_id is not None or
-            datetime.utcnow() >= record.fecha_expiracion):
+            utc_now_naive() >= record.fecha_expiracion):
         raise ConfirmationUseError(409, 'Confirmación no disponible.')
     if record.paciente_id != patient_id or record.ojo_confirmado != eye:
         raise ConfirmationUseError(409, 'Confirmación incompatible con paciente u ojo.')
@@ -208,7 +209,7 @@ def consume_with_detail(token, patient_id, eye, professional_id, confirmed, deta
         raise ConfirmationUseError(409, 'La copia confirmada cambió.')
     record.estado = 'CONSUMIDA'
     record.detalle_id = detail_id
-    record.fecha_consumo = datetime.utcnow()
+    record.fecha_consumo = utc_now_naive()
     db.session.flush()  # Misma transacción de la visita, diagnóstico y detalle.
 
 
@@ -216,7 +217,7 @@ def status(token, professional_id):
     record = _owned(token, professional_id)
     if record is None:
         return failure(404, 'Confirmación no encontrada.')
-    expired = datetime.utcnow() >= record.fecha_expiracion
+    expired = utc_now_naive() >= record.fecha_expiracion
     return {'success': True, 'confirmacion': {
         'paciente_id': record.paciente_id,
         'ojo_confirmado': record.ojo_confirmado,
@@ -233,7 +234,7 @@ def revoke(token, professional_id):
         if record is None:
             db.session.rollback()
             return failure(404, 'Confirmación no encontrada.')
-        now = datetime.utcnow()
+        now = utc_now_naive()
         if record.estado != 'CONFIRMADA' or now >= record.fecha_expiracion:
             db.session.rollback()
             return failure(409, 'Confirmación no revocable.')
