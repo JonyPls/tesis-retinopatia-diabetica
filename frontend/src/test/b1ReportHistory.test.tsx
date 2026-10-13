@@ -171,4 +171,18 @@ describe("Historial B1 (HTTP simulado, interfaz de solo lectura)", () => {
     expect(alert).not.toHaveTextContent("SECRETO DEL SERVIDOR");
     expect(screen.queryByText(/Contenido reservado/)).not.toBeInTheDocument();
   });
+
+  it("un 403 de historial desactivado no aparenta sesión caducada ni conserva datos del paciente anterior", async () => {
+    const { rerender } = render(<ReportHistoryPanel key={patientA.id} patient={patientA} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Campo visual 1/ }));
+    expect(await screen.findByRole("region", { name: "Contenido de la revisión 1" }))
+      .toHaveTextContent("Contenido reservado 1");
+    history.mockRejectedValue({ response: { status: 403 } });
+    rerender(<ReportHistoryPanel key={patientB.id} patient={patientB} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Acceso denegado");
+    expect(screen.queryByText(/sesión no está disponible/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Contenido reservado 1/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Campo visual 1/ })).not.toBeInTheDocument();
+    expect(versions).toHaveBeenCalledTimes(1);
+  });
 });

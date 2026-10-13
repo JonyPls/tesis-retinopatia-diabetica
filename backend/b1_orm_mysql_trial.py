@@ -4210,6 +4210,155 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                          for r in informe_entities.Informe.query.filter_by(visita_id=visit_id).all()]
                 self.assertEqual(after, before)
 
+    def test_29c6_three_flags_independent_on_real_http(self):
+        with self.report_visit() as visit_id:
+            created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201, created.json)
+            report_id = created.json['data']['id']
+            paths = (
+                (f'/api/informes/{report_id}', 'PUT',
+                 {'datos_estructurados': {'nota': 'Sin escribir'},
+                  'motivo': 'Prueba de guardia', 'revision_esperada': 0}),
+                (f'/api/informes/{report_id}/anulacion', 'POST',
+                 {'motivo': 'Prueba de guardia', 'revision_esperada': 0}),
+                (f'/api/informes/{report_id}/versiones', 'GET', None),
+                (f'/api/informes/historial/paciente/{self.patient_ids[1]}', 'GET', None),
+            )
+            keys = ('REPORTS_EDIT_ENABLED', 'REPORTS_ANNUL_ENABLED', 'REPORTS_HISTORY_ENABLED')
+            self.assertTrue(all(self.app.config.get(key) is not True for key in keys))
+            for mask in range(8):
+                flags = {key: bool(mask & (1 << index)) for index, key in enumerate(keys)}
+                with self.subTest(flags=flags), patch.dict(self.app.config, flags):
+                    for index, (path, method, body) in enumerate(paths):
+                        enabled = flags[keys[min(index, 2)]]
+                        response, sql = self.call(path, method=method, token=self.token(),
+                                                  json_data=body, measure=True)
+                        self.assertEqual(response.status_code,
+                                         (400 if index < 2 else 200) if enabled else 403,
+                                         (flags, path, response.json))
+                        if not enabled:
+                            self.assertFalse(any('from informes' in statement.lower().replace('`', '')
+                                                 or 'informes_versiones' in statement.lower().replace('`', '')
+                                                 for statement in sql))
+                            self.assertFalse(any(statement.lstrip().lower().startswith(
+                                ('insert ', 'update ', 'delete ')) for statement in sql))
+                        if index >= 2:
+                            self.assertEqual(response.headers['Cache-Control'], 'private, no-store')
+                    self.assertEqual(self.call(f'/api/informes/{report_id}', method='DELETE',
+                                               token=self.token())[0].status_code, 403)
+                    denied, sql = self.call(paths[2][0], token=self.token('administrator'), measure=True)
+                    self.assertEqual(denied.status_code, 403)
+                    self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+                    for bearer in (None, 'invalid'):
+                        for path, method, body in paths:
+                            denied, sql = self.call(path, method=method, token=bearer,
+                                                    json_data=body, measure=True)
+                            self.assertEqual(denied.status_code, 401)
+                            self.assertEqual(sql, [])
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            self.assertEqual((report.revision_actual, report.estado, len(report.versiones)),
+                             (1, 'ACTIVO', 1))
+            self.assertTrue(all(self.app.config.get(key) is not True for key in keys))
+
+    def test_29c6_full_cycle_create_two_edits_annul_history(self):
+        with self.report_visit(state='CERRADA') as visit_id:
+            path = '/api/informes'
+            created, sql = self.call(path, method='POST', token=self.token(),
+                                     json_data=self.report_payload(visit_id=visit_id), measure=True)
+            self.assertEqual(created.status_code, 201, created.json)
+            self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                                 for q in sql), 1)
+            report_id = created.json['data']['id']
+            target = f'{path}/{report_id}'
+            db.session.remove()
+            visit = db.session.get(VisitaClinica, visit_id)
+            before_visit = {column.name: getattr(visit, column.name)
+                            for column in VisitaClinica.__table__.columns}
+            initial = db.session.get(informe_entities.Informe, report_id).versiones[0]
+            before_initial = (initial.id, initial.fecha_operacion, initial.datos_estructurados,
+                              initial.conclusion, initial.operacion, initial.autor_operacion_id)
+            with patch.dict(self.app.config, {'REPORTS_EDIT_ENABLED': True,
+                                              'REPORTS_ANNUL_ENABLED': True,
+                                              'REPORTS_HISTORY_ENABLED': True}):
+                for expected in (1, 2):
+                    corrected, sql = self.call(target, method='PUT', token=self.token(),
+                                               json_data={
+                                                   'revision_esperada': expected,
+                                                   'motivo': f'Motivo sintético {expected}',
+                                                   'datos_estructurados': {
+                                                       'nota': f'Contenido sintético {expected}',
+                                                       'conclusion': f'Conclusión sintética {expected}',
+                                                   },
+                                               }, measure=True)
+                    self.assertEqual(corrected.status_code, 200, corrected.json)
+                    self.assertEqual(corrected.json['data']['revision_actual'], expected + 1)
+                    self.assertEqual(sum('insert into informes_versiones' in q.lower().replace('`', '')
+                                         for q in sql), 1)
+                annulled, _ = self.call(target + '/anulacion', method='POST', token=self.token(),
+                                         json_data={'revision_esperada': 3,
+                                                    'motivo': 'Anulación sintética final'})
+                self.assertEqual(annulled.status_code, 200, annulled.json)
+                self.assertEqual(annulled.json['data']['revision_actual'], 4)
+                catalog, catalog_sql = self.call(
+                    f'{path}/historial/paciente/{self.patient_ids[1]}',
+                    token=self.token('colleague'), measure=True)
+                self.assertEqual(catalog.status_code, 200, catalog.json)
+                self.assertEqual(catalog.headers['Cache-Control'], 'private, no-store')
+                self.assertTrue(any(row['id'] == report_id and row['estado'] == 'ANULADO'
+                                    for row in catalog.json['data']))
+                history, history_sql = self.call(target + '/versiones?per_page=2&page=1',
+                                                 token=self.token('colleague'), measure=True)
+                second, second_sql = self.call(target + '/versiones?per_page=2&page=2',
+                                               token=self.token('colleague'), measure=True)
+                self.assertEqual((history.status_code, second.status_code), (200, 200))
+                self.assertEqual(history.headers['Cache-Control'], 'private, no-store')
+                self.assertEqual(history.json['pagination']['total'], 4)
+                self.assertTrue(history.json['pagination']['has_more'])
+                self.assertFalse(second.json['pagination']['has_more'])
+                versions = history.json['data']['versiones'] + second.json['data']['versiones']
+                self.assertEqual([(v['numero_version'], v['operacion'], v['es_actual']) for v in versions],
+                                 [(1, 'CREACION', False), (2, 'CORRECCION', False),
+                                  (3, 'CORRECCION', False), (4, 'ANULACION', True)])
+                self.assertEqual([v['motivo'] for v in versions],
+                                 [None, 'Motivo sintético 1', 'Motivo sintético 2',
+                                  'Anulación sintética final'])
+                self.assertEqual([v['datos_estructurados']['nota'] for v in versions],
+                                 ['Resultado sintético', 'Contenido sintético 1',
+                                  'Contenido sintético 2', 'Contenido sintético 2'])
+                self.assertEqual([v['schema_version'] for v in versions], [1] * 4)
+                self.assertEqual({v['autor_operacion_id'] for v in versions},
+                                 {self.user_ids['ophthalmologist']})
+                self.assertTrue(all(v['fecha_operacion'] for v in versions))
+                self.assertEqual(history.json['data']['informe']['revision_actual'], 4)
+                self.assertEqual(second.json['data']['informe']['estado'], 'ANULADO')
+                self.assertFalse(any(q.lstrip().lower().startswith(('insert ', 'update ', 'delete '))
+                                     for q in catalog_sql + history_sql + second_sql))
+                regular, _ = self.call(f'{path}/visita/{visit_id}', token=self.token())
+                self.assertNotIn(report_id, [row['id'] for row in regular.json['data']])
+                self.assertEqual(self.call(target, token=self.token())[0].status_code, 404)
+            db.session.remove()
+            report = db.session.get(informe_entities.Informe, report_id)
+            self.assertEqual((report.usuario_id, report.revision_actual, report.estado),
+                             (self.user_ids['ophthalmologist'], 4, 'ANULADO'))
+            self.assertEqual((report.versiones[0].id, report.versiones[0].fecha_operacion,
+                              report.versiones[0].datos_estructurados,
+                              report.versiones[0].conclusion, report.versiones[0].operacion,
+                              report.versiones[0].autor_operacion_id), before_initial)
+            self.assertEqual([(v.numero_version, v.operacion) for v in report.versiones],
+                             [(1, 'CREACION'), (2, 'CORRECCION'),
+                              (3, 'CORRECCION'), (4, 'ANULACION')])
+            self.assertEqual((report.datos_estructurados, report.conclusion, report.schema_version,
+                              report.estado),
+                             (report.versiones[-1].datos_estructurados,
+                              report.versiones[-1].conclusion, report.versiones[-1].schema_version,
+                              report.versiones[-1].estado))
+            self.assertEqual({column.name: getattr(db.session.get(VisitaClinica, visit_id),
+                                                   column.name) for column in VisitaClinica.__table__.columns},
+                             before_visit)
+            self.assertIsNone(diagnosis_entities.Diagnostico.query.filter_by(visita_id=visit_id).first())
+
     def test_29c5_history_denials_inactive_patient_and_inconsistency(self):
         with self.report_visit(state='ANULADA') as visit_id:
             # Solo fixtures SQL sintéticos; el POST ordinario prohíbe visita anulada.
