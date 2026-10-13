@@ -298,7 +298,7 @@ export function useReports() {
   const goNext = () => {
     if (step === 1 && selectedTipos.length > 0) {
       setStep(2);
-    } else if (step === 2 && selectedPatient && selectedVisita !== undefined) {
+    } else if (step === 2 && selectedPatient && selectedVisita !== undefined && !isLoadingVisitas) {
       setStep(3);
     }
   };
@@ -312,12 +312,13 @@ export function useReports() {
       setStep(2);
       setInformesExistentes([]);
       setActiveTipoIndex(0);
+      if (selectedPatient) void loadVisitas(selectedPatient.id);
     }
   };
 
   const canNext =
     (step === 1 && selectedTipos.length > 0) ||
-    (step === 2 && !!selectedPatient && selectedVisita !== undefined);
+    (step === 2 && !!selectedPatient && selectedVisita !== undefined && !isLoadingVisitas);
 
   const removeTipo = (tipoId: number) => {
     setSelectedTipos((prev) => prev.filter((t) => t.id !== tipoId));

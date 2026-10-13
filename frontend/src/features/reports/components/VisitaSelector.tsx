@@ -1,6 +1,6 @@
 import { Calendar, Plus, Check, User, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { clinicalDayKey, formatClinicalDay, unknownClinicalDate } from "@/lib/clinicalDates";
+import { clinicalDayKey, formatClinicalInstant, unknownClinicalDate } from "@/lib/clinicalDates";
 import { DiagnosticoVisita } from "@/features/patients/api/patientService";
 
 interface VisitaSelectorProps {
@@ -23,10 +23,6 @@ function daysAgo(dateStr: string): string {
   if (diff === 0) return "HOY";
   if (diff === 1) return "AYER";
   return `HACE ${diff} DÍAS`;
-}
-
-function formatDate(dateStr: string): string {
-  return formatClinicalDay(dateStr);
 }
 
 export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, expandida, onVerMas, onVerMenos, pacienteSeleccionado, cargandoVisitas }: VisitaSelectorProps) {
@@ -92,7 +88,7 @@ export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, e
         </button>
 
         {/* Visitas existentes */}
-        {visitas.length > 0 && (
+        {!cargandoVisitas && visitas.length > 0 && (
           <>
             <div className="flex items-center gap-2 pt-2 pb-1">
               <div className="flex-1 h-px bg-border" />
@@ -105,6 +101,10 @@ export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, e
             <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
               {visitas.map((v) => {
                 const active = selectedVisitaId === v.visita_id;
+                const count = v.total_informes ?? v.informes?.filter((informe) => informe.estado === "ACTIVO").length ?? 0;
+                const date = v.fecha_visita_origen === "UTC_VERIFICADO"
+                  ? formatClinicalInstant(v.fecha_visita, v.fecha_visita_origen).replace(", ", " · ")
+                  : unknownClinicalDate;
                 return (
                   <button
                     key={v.visita_id}
@@ -124,12 +124,17 @@ export function VisitaSelector({ visitas, selectedVisitaId, onSelect, hasMore, e
                       <Calendar className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{formatDate(v.fecha_visita)}</p>
+                      <p className="text-sm font-medium">{date}</p>
                       <p className="text-xs text-muted-foreground truncate">{v.medico_tratante}</p>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                        {daysAgo(v.fecha_visita)}
+                    <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                      {v.fecha_visita_origen === "UTC_VERIFICADO" && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                          {daysAgo(v.fecha_visita)}
+                        </span>
+                      )}
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {count} {count === 1 ? "informe" : "informes"}
                       </span>
                     </div>
                     {active && (

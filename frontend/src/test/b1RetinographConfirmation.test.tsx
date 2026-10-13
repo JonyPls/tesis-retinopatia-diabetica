@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDiagnosis } from "../features/diagnosis/hooks/useDiagnosis";
 import { ImageUploader } from "../features/diagnosis/components/ImageUploader";
+import { AutoSelectionModal } from "../features/diagnosis/components/AutoSelectionModal";
 import { crearDiagnostico, crearDiagnosticoConfirmado, consultarConfirmacionRetinografo,
   descargarImagenRetinografo, obtenerSeleccionAutomaticaRetinografo,
   registrarConfirmacionRetinografo, revocarConfirmacionRetinografo, sha256Blob,
@@ -40,26 +41,29 @@ const hash = vi.mocked(sha256Blob);
 const token = "d".repeat(64);
 const expires = "2099-01-01T00:00:00Z";
 
-const candidate = (eye: EyeKey) => ({ filename: `synthetic_fundus_${eye === "OD" ? "R" : "L"}.png`,
+const candidate = (eye: EyeKey) => ({ filename: `synthetic_Color_${eye === "OD" ? "R" : "L"}.png`,
   ojo: eye, ojo_original: eye === "OD" ? "R" as const : "L" as const,
-  tipo_imagen: "fundus", secuencia: 1, extension: "png", fecha_exportacion: "2026-01-01T10:00:00",
+  tipo_imagen: "Color", secuencia: 1, extension: "png", fecha_exportacion: "2026-01-01T10:00:00",
   mime_type: "image/png" });
 
 async function setup(eyes: EyeKey[] = ["OD"], patient = 7) {
   selection.mockResolvedValueOnce({ paciente_id: patient, encontradas: eyes.length,
-    imagenes: Object.fromEntries(eyes.map((eye) => [eye, candidate(eye)])) });
+    imagenes: Object.fromEntries(eyes.map((eye) => [eye, candidate(eye)])),
+    candidatas: eyes.map(candidate) });
   const hook = renderHook(() => useDiagnosis(), { wrapper });
   act(() => {
     hook.result.current.selectPatient({ id: patient, nombres: "Paciente", apellidos: "Sintético" } as Parameters<typeof hook.result.current.selectPatient>[0]);
     hook.result.current.selectVisita(null);
   });
   await act(async () => hook.result.current.autoSelectRetinographImages());
+  if (eyes.length) await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[0]));
   act(() => hook.result.current.goNext());
   return hook;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  [selection, download, register, status, revoke, hash, confirmedPost, manualPost].forEach((mock) => mock.mockReset());
   download.mockResolvedValue(new Blob(["original-blob"], { type: "image/png" }));
   hash.mockResolvedValue("a".repeat(64));
   register.mockImplementation(async ({ paciente_id, ojo_confirmado }) => ({
@@ -67,6 +71,7 @@ beforeEach(() => {
   }));
   status.mockImplementation(async () => ({ paciente_id: 7, ojo_confirmado: "Derecho",
     estado: "CONFIRMADA", vigente: true, expirada: false, fecha_expiracion: expires }));
+  revoke.mockImplementation(async () => ({ paciente_id: 7, ojo_confirmado: "Derecho", estado: "REVOCADA" }));
   confirmedPost.mockResolvedValue({ visita_id: 30, detalle_id: 11, diagnostico_codigo: 2,
     diagnostico_texto: "Moderada", confianza_general: 80, probabilidades_detalle: {}, mensaje: "Guardado" });
   manualPost.mockResolvedValue({ visita_id: 30, detalle_id: 12, diagnostico_codigo: 2,
@@ -74,12 +79,39 @@ beforeEach(() => {
 });
 
 describe("28C.5 revisión profesional separada de IA", () => {
+  it("ofrece varias fotografías Color de OD y no incorpora ninguna hasta confirmar la elegida", async () => {
+    const first = candidate("OD");
+    const second = { ...first, filename: "synthetic_Color_R_2.png", secuencia: 2 };
+    selection.mockResolvedValueOnce({ paciente_id: 7, encontradas: 3,
+      imagenes: { OD: second, OI: candidate("OI") }, candidatas: [first, second, candidate("OI")] });
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    act(() => {
+      hook.result.current.selectPatient({ id: 7, nombres: "Paciente", apellidos: "Sintético" } as Parameters<typeof hook.result.current.selectPatient>[0]);
+      hook.result.current.selectVisita(null);
+    });
+    await act(async () => hook.result.current.autoSelectRetinographImages());
+    expect(hook.result.current.autoCandidates).toHaveLength(3);
+    expect(download).not.toHaveBeenCalled();
+    await act(async () => hook.result.current.selectAutoCandidate(first));
+    await act(async () => hook.result.current.selectAutoCandidate(second));
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    expect(register).not.toHaveBeenCalled();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ nombre_exportacion: second.filename }));
+    expect(hook.result.current.eyes.OD.file?.name).toBe(second.filename);
+    expect(hook.result.current.eyes.OI.file).toBeNull();
+    expect(hook.result.current.autoPreview?.image.filename).toBe(second.filename);
+    await act(async () => hook.result.current.confirmEye("OD"));
+    expect(register).toHaveBeenCalledOnce();
+    hook.unmount();
+  });
+
   it("OD y OI son candidatas independientes; selección y nombre no inician IA", async () => {
     const hook = await setup(["OD", "OI"]);
-    expect(download).toHaveBeenCalledTimes(2);
-    expect(hook.result.current.eyes.OD.candidate?.ojo_original).toBe("R");
-    expect(hook.result.current.eyes.OI.candidate?.ojo_original).toBe("L");
-    expect(hook.result.current.eyes.OD.confirmation).toBe("pendiente");
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.autoCandidates.map((image) => image.ojo_original)).toEqual(["R", "L"]);
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    expect(hook.result.current.eyes.OI.file).toBeNull();
     expect(hook.result.current.canNext).toBe(false);
     expect(register).not.toHaveBeenCalled();
     expect(confirmedPost).not.toHaveBeenCalled();
@@ -93,7 +125,7 @@ describe("28C.5 revisión profesional separada de IA", () => {
     register.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     act(() => { void hook.result.current.confirmEye(eye); void hook.result.current.confirmEye(eye); });
     await waitFor(() => expect(register).toHaveBeenCalledTimes(1));
-    expect(hash).toHaveBeenCalledWith(hook.result.current.eyes[eye].file);
+    expect(hash).toHaveBeenCalledWith(hook.result.current.autoPreview?.file);
     expect(register).toHaveBeenCalledWith({ paciente_id: 7, nombre_exportacion: candidate(eye).filename,
       ojo_confirmado: eye === "OD" ? "Derecho" : "Izquierdo", sha256_previsualizacion: "a".repeat(64) });
     await act(async () => finish({ identificador: token, paciente_id: 7,
@@ -110,8 +142,9 @@ describe("28C.5 revisión profesional separada de IA", () => {
     hash.mockRejectedValueOnce(new Error("SHA-256 no disponible en este navegador."));
     await act(async () => hook.result.current.confirmEye("OD"));
     expect(register).not.toHaveBeenCalled();
-    expect(hook.result.current.eyes.OD.confirmation).toBe("pendiente");
-    expect(hook.result.current.processingNotice).toMatch(/SHA-256/);
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    expect(hook.result.current.eyeActionError.OD).toMatch(/No se pudo confirmar/);
+    expect(hook.result.current.autoFocusEye).toBe("OD");
     expect(hook.result.current.canNext).toBe(false);
     hook.unmount();
   });
@@ -126,7 +159,7 @@ describe("28C.5 revisión profesional separada de IA", () => {
     expect(confirmedPost).toHaveBeenCalledWith(7, "Derecho", token, undefined);
     expect(manualPost).not.toHaveBeenCalled();
     expect(hook.result.current.eyes.OD.confirmation).toBe("CONSUMIDA");
-    expect(hook.result.current.eyes.OI.confirmation).toBe("pendiente");
+    expect(hook.result.current.eyes.OI.file).toBeNull();
     expect(hook.result.current.eyeProcessing.OD).toBe("pendiente_validacion");
     expect(hook.result.current.results.OI).toBeUndefined();
     await act(async () => hook.result.current.revokeConfirmation("OD"));
@@ -134,15 +167,21 @@ describe("28C.5 revisión profesional separada de IA", () => {
     hook.unmount();
   });
 
-  it("revoca solamente confirmación vigente, no consumida, y consulta estados expirado/revocado", async () => {
+  it("quita OD solo después de verificar su revocación real y permite reabrir el modal", async () => {
     const hook = await setup();
     await act(async () => hook.result.current.confirmEye("OD"));
-    await act(async () => hook.result.current.revokeConfirmation("OD"));
+    await act(async () => hook.result.current.clearEye("OD"));
     expect(revoke).toHaveBeenCalledOnce();
-    expect(hook.result.current.eyes.OD.confirmation).toBe("REVOCADA");
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    expect(hook.result.current.autoPreview).toBeNull();
     expect(hook.result.current.canNext).toBe(false);
-    await act(async () => hook.result.current.revokeConfirmation("OD"));
+    await act(async () => hook.result.current.clearEye("OD"));
     expect(revoke).toHaveBeenCalledOnce();
+    act(() => hook.result.current.closeAutoSelection());
+    selection.mockResolvedValueOnce({ paciente_id: 7, encontradas: 1,
+      imagenes: { OD: candidate("OD") }, candidatas: [candidate("OD")] });
+    await act(async () => hook.result.current.autoSelectRetinographImages());
+    expect(hook.result.current.autoModalOpen).toBe(true);
     hook.unmount();
   });
 
@@ -159,22 +198,224 @@ describe("28C.5 revisión profesional separada de IA", () => {
     hook.unmount();
   });
 
-  it("respuesta tardía de registro no restaura comprobante de otro paciente u otro archivo", async () => {
+  it.each(["OD", "OI"] as EyeKey[])("%s conserva la imagen y el token si falla la revocación", async (eye) => {
+    const hook = await setup([eye]);
+    status.mockImplementation(async () => ({ paciente_id: 7, ojo_confirmado: eye === "OD" ? "Derecho" : "Izquierdo",
+      estado: "CONFIRMADA", vigente: true, expirada: false, fecha_expiracion: expires }));
+    revoke.mockRejectedValueOnce({ response: { status: 503 } });
+    await act(async () => hook.result.current.confirmEye(eye));
+    const original = hook.result.current.eyes[eye].file;
+    await act(async () => hook.result.current.clearEye(eye));
+    expect(hook.result.current.eyes[eye].file).toBe(original);
+    expect(hook.result.current.eyes[eye].confirmation).toBe("CONFIRMADA");
+    expect(hook.result.current.eyeActionError[eye]).toMatch(/No se pudo quitar/);
+    expect(hook.result.current.processingNotice).toBeNull();
+    expect(revoke).toHaveBeenCalledOnce();
+    revoke.mockResolvedValueOnce({ paciente_id: 7, ojo_confirmado: eye === "OD" ? "Derecho" : "Izquierdo", estado: "REVOCADA" });
+    await act(async () => hook.result.current.clearEye(eye));
+    expect(hook.result.current.eyes[eye].file).toBeNull();
+    expect(hook.result.current.eyeActionError[eye]).toBeUndefined();
+    hook.unmount();
+  });
+
+  it("quita OI confirmada y permite una carga manual de OD sin revocación de OD", async () => {
+    const hook = await setup(["OI"]);
+    status.mockResolvedValue({ paciente_id: 7, ojo_confirmado: "Izquierdo", estado: "CONFIRMADA",
+      vigente: true, expirada: false, fecha_expiracion: expires });
+    revoke.mockResolvedValue({ paciente_id: 7, ojo_confirmado: "Izquierdo", estado: "REVOCADA" });
+    await act(async () => hook.result.current.confirmEye("OI"));
+    await act(async () => hook.result.current.handleFile("OD", new File(["manual"], "manual.jpg", { type: "image/jpeg" })));
+    await act(async () => hook.result.current.clearEye("OI"));
+    expect(revoke).toHaveBeenCalledWith(token);
+    expect(hook.result.current.eyes.OI.file).toBeNull();
+    expect(hook.result.current.eyes.OD.file?.name).toBe("manual.jpg");
+    expect(hook.result.current.canNext).toBe(true);
+    hook.unmount();
+  });
+
+  it("el error OI no se convierte en error OD y la consulta posterior permite reintentar", async () => {
+    const hook = await setup(["OD", "OI"]);
+    const otherToken = "e".repeat(64);
+    register.mockImplementation(async ({ paciente_id, ojo_confirmado }) => ({ identificador: ojo_confirmado === "Derecho" ? token : otherToken,
+      paciente_id, ojo_confirmado, estado: "CONFIRMADA", fecha_expiracion: expires }));
+    status.mockImplementation(async (value) => ({ paciente_id: 7,
+      ojo_confirmado: value === token ? "Derecho" : "Izquierdo", estado: "CONFIRMADA",
+      vigente: true, expirada: false, fecha_expiracion: expires }));
+    await act(async () => hook.result.current.confirmEye("OD"));
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[1]));
+    await act(async () => hook.result.current.confirmEye("OI"));
+    status.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => hook.result.current.clearEye("OI"));
+    expect(revoke).not.toHaveBeenCalled();
+    expect(hook.result.current.eyeActionError.OI).toBeTruthy();
+    expect(hook.result.current.eyeActionError.OD).toBeUndefined();
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[0]));
+    expect(hook.result.current.autoFocusEye).toBe("OD");
+    expect(hook.result.current.eyeActionError.OI).toBeTruthy();
+    expect(hook.result.current.eyeActionError.OD).toBeUndefined();
+    revoke.mockResolvedValueOnce({ paciente_id: 7, ojo_confirmado: "Izquierdo", estado: "REVOCADA" });
+    await act(async () => hook.result.current.clearEye("OI"));
+    expect(hook.result.current.eyeActionError.OI).toBeUndefined();
+    hook.unmount();
+  });
+
+  it("quita OI sin alterar OD y resuelve respuesta perdida consultando estado, sin segundo POST", async () => {
+    const hook = await setup(["OD", "OI"]);
+    const otherToken = "e".repeat(64);
+    register.mockImplementation(async ({ paciente_id, ojo_confirmado }) => ({ identificador: ojo_confirmado === "Derecho" ? token : otherToken,
+      paciente_id, ojo_confirmado, estado: "CONFIRMADA", fecha_expiracion: expires }));
+    status.mockImplementation(async (value) => ({ paciente_id: 7,
+      ojo_confirmado: value === token ? "Derecho" : "Izquierdo", estado: "CONFIRMADA",
+      vigente: true, expirada: false, fecha_expiracion: expires }));
+    await act(async () => hook.result.current.confirmEye("OD"));
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[1]));
+    await act(async () => hook.result.current.confirmEye("OI"));
+    revoke.mockRejectedValueOnce(new Error("lost response"));
+    status.mockResolvedValueOnce({ paciente_id: 7, ojo_confirmado: "Izquierdo", estado: "CONFIRMADA",
+      vigente: true, expirada: false, fecha_expiracion: expires }).mockResolvedValueOnce({
+      paciente_id: 7, ojo_confirmado: "Izquierdo", estado: "REVOCADA", vigente: false,
+      expirada: false, fecha_expiracion: expires });
+    await act(async () => hook.result.current.clearEye("OI"));
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.eyes.OI.file).toBeNull();
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONFIRMADA");
+    expect(hook.result.current.canNext).toBe(true);
+    hook.unmount();
+  });
+
+  it("bloquea doble clic, cierre y reemplazo mientras la revocación está pendiente", async () => {
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    let finish!: (value: Awaited<ReturnType<typeof revocarConfirmacionRetinografo>>) => void;
+    revoke.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    act(() => { void hook.result.current.clearEye("OD"); });
+    await waitFor(() => expect(revoke).toHaveBeenCalledOnce());
+    act(() => { void hook.result.current.clearEye("OD"); hook.result.current.closeAutoSelection();
+      void hook.result.current.handleFile("OD", new File(["manual"], "manual.jpg", { type: "image/jpeg" })); });
+    expect(hook.result.current.autoModalOpen).toBe(true);
+    expect(hook.result.current.eyes.OD.file).not.toBeNull();
+    expect(hook.result.current.busyEyes.OD).toBe(true);
+    await act(async () => finish({ paciente_id: 7, ojo_confirmado: "Derecho", estado: "REVOCADA" }));
+    expect(revoke).toHaveBeenCalledOnce();
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    hook.unmount();
+  });
+
+  it("si se pierden ambas respuestas, mantiene comprobante y no repite la revocación a ciegas", async () => {
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    revoke.mockRejectedValueOnce(new Error("lost response"));
+    status.mockResolvedValueOnce({ paciente_id: 7, ojo_confirmado: "Derecho", estado: "CONFIRMADA",
+      vigente: true, expirada: false, fecha_expiracion: expires }).mockRejectedValueOnce(new Error("offline"));
+    await act(async () => hook.result.current.clearEye("OD"));
+    expect(revoke).toHaveBeenCalledOnce();
+    expect(status).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.eyes.OD.file).not.toBeNull();
+    expect(hook.result.current.eyes.OD.confirmation).toBe("incierta");
+    expect(hook.result.current.canNext).toBe(false);
+    expect(hook.result.current.eyeActionError.OD).toMatch(/No se pudo quitar/);
+    hook.unmount();
+  });
+
+  it("no revoca al previsualizar otra candidata, solo al confirmar sustitución", async () => {
+    const first = candidate("OD");
+    const second = { ...first, filename: "synthetic_Color_R_2.png", secuencia: 2 };
+    selection.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: { OD: first }, candidatas: [first, second] });
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    await act(async () => hook.result.current.selectAutoCandidate(second));
+    expect(revoke).not.toHaveBeenCalled();
+    expect(hook.result.current.eyes.OD.file?.name).toBe(first.filename);
+    await act(async () => hook.result.current.confirmEye("OD"));
+    expect(revoke).toHaveBeenCalledOnce();
+    expect(register).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.eyes.OD.file?.name).toBe(second.filename);
+    hook.unmount();
+  });
+
+  it("si falla la revocación durante la sustitución no registra la nueva ni pierde la anterior", async () => {
+    const first = candidate("OD");
+    const second = { ...first, filename: "synthetic_Color_R_2.png", secuencia: 2 };
+    selection.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: { OD: first }, candidatas: [first, second] });
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    await act(async () => hook.result.current.selectAutoCandidate(second));
+    revoke.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => hook.result.current.confirmEye("OD"));
+    expect(register).toHaveBeenCalledOnce();
+    expect(hook.result.current.eyes.OD.file?.name).toBe(first.filename);
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONFIRMADA");
+    expect(hook.result.current.eyeActionError.OD).toMatch(/No se pudo quitar/);
+    hook.unmount();
+  });
+
+  it("si falla el registro tras revocar la anterior, no anuncia sustitución confirmada", async () => {
+    const first = candidate("OD");
+    const second = { ...first, filename: "synthetic_Color_R_2.png", secuencia: 2 };
+    selection.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: { OD: first }, candidatas: [first, second] });
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    await act(async () => hook.result.current.selectAutoCandidate(second));
+    register.mockRejectedValueOnce({ response: { status: 503 } });
+    await act(async () => hook.result.current.confirmEye("OD"));
+    expect(revoke).toHaveBeenCalledOnce();
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    expect(hook.result.current.canNext).toBe(false);
+    expect(hook.result.current.eyeActionError.OD).toMatch(/No se pudo confirmar/);
+    hook.unmount();
+  });
+
+  it("reemplazo manual fallido no borra la confirmación; si se revoca, continúa como carga manual", async () => {
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    revoke.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => hook.result.current.handleFile("OD", new File(["manual"], "manual.jpg", { type: "image/jpeg" })));
+    expect(hook.result.current.eyes.OD.isExistingImage).toBe(true);
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONFIRMADA");
+    await act(async () => hook.result.current.handleFile("OD", new File(["manual"], "manual.jpg", { type: "image/jpeg" })));
+    expect(hook.result.current.eyes.OD.isExistingImage).toBe(false);
+    expect(hook.result.current.eyes.OD.file?.name).toBe("manual.jpg");
+    expect(hook.result.current.canNext).toBe(true);
+    hook.unmount();
+  });
+
+  it("una confirmación expirada se retira sin revocación y una consumida se mantiene", async () => {
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    status.mockResolvedValueOnce({ paciente_id: 7, ojo_confirmado: "Derecho", estado: "CONFIRMADA",
+      vigente: false, expirada: true, fecha_expiracion: "2020-01-01T00:00:00Z" });
+    await act(async () => hook.result.current.clearEye("OD"));
+    expect(revoke).not.toHaveBeenCalled();
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[0]));
+    await act(async () => hook.result.current.confirmEye("OD"));
+    status.mockResolvedValueOnce({ paciente_id: 7, ojo_confirmado: "Derecho", estado: "CONSUMIDA",
+      vigente: false, expirada: false, fecha_expiracion: expires });
+    await act(async () => hook.result.current.clearEye("OD"));
+    expect(hook.result.current.eyes.OD.file).not.toBeNull();
+    expect(revoke).not.toHaveBeenCalled();
+    hook.unmount();
+  });
+
+  it("impide cambiar de paciente o cerrar modal durante el POST y conserva la respuesta tardía", async () => {
     const hook = await setup();
     let finish!: (value: Awaited<ReturnType<typeof registrarConfirmacionRetinografo>>) => void;
     register.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     act(() => { void hook.result.current.confirmEye("OD"); });
     await waitFor(() => expect(register).toHaveBeenCalledOnce());
     act(() => hook.result.current.selectPatient({ id: 8 } as Parameters<typeof hook.result.current.selectPatient>[0]));
+    act(() => hook.result.current.closeAutoSelection());
+    expect(hook.result.current.autoModalOpen).toBe(true);
     await act(async () => finish({ identificador: token, paciente_id: 7, ojo_confirmado: "Derecho",
       estado: "CONFIRMADA", fecha_expiracion: expires }));
     expect(JSON.stringify(hook.result.current.eyes)).not.toContain(token);
-    expect(hook.result.current.eyes.OD.confirmation).toBeUndefined();
+    expect(hook.result.current.selectedPatient?.id).toBe(7);
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONFIRMADA");
     expect(confirmedPost).not.toHaveBeenCalled();
     hook.unmount();
   });
 
-  it("si cambia el archivo durante el registro, descarta la respuesta tardía y no mezcla modalidades", async () => {
+  it("bloquea reemplazo manual durante el registro y conserva la confirmación tardía", async () => {
     const hook = await setup();
     let finish!: (value: Awaited<ReturnType<typeof registrarConfirmacionRetinografo>>) => void;
     register.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
@@ -183,12 +424,10 @@ describe("28C.5 revisión profesional separada de IA", () => {
     await act(async () => hook.result.current.handleFile("OD", new File(["new"], "manual.jpg", { type: "image/jpeg" })));
     await act(async () => finish({ identificador: token, paciente_id: 7, ojo_confirmado: "Derecho",
       estado: "CONFIRMADA", fecha_expiracion: expires }));
-    expect(hook.result.current.eyes.OD.candidate).toBeUndefined();
+    expect(hook.result.current.eyes.OD.candidate?.filename).toBe(candidate("OD").filename);
     expect(JSON.stringify(hook.result.current.eyes)).not.toContain(token);
-    act(() => hook.result.current.goNext());
-    await waitFor(() => expect(hook.result.current.isSaving).toBe(false));
-    expect(manualPost).toHaveBeenCalledOnce();
-    expect(confirmedPost).not.toHaveBeenCalled();
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONFIRMADA");
+    expect(manualPost).not.toHaveBeenCalled();
     hook.unmount();
   });
 
@@ -211,7 +450,8 @@ describe("28C.5 revisión profesional separada de IA", () => {
     download.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const hook = renderHook(() => useDiagnosis(), { wrapper });
     act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
-    act(() => { void hook.result.current.autoSelectRetinographImages(); });
+    await act(async () => hook.result.current.autoSelectRetinographImages());
+    act(() => { void hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[0]); });
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
     act(() => hook.result.current.selectPatient({ id: 8 } as Parameters<typeof hook.result.current.selectPatient>[0]));
     await act(async () => finish(new Blob(["synthetic"], { type: "image/png" })));
@@ -225,7 +465,7 @@ describe("28C.5 revisión profesional separada de IA", () => {
     register.mockResolvedValueOnce({ identificador: token, paciente_id: 8, ojo_confirmado: "Derecho",
       estado: "CONFIRMADA", fecha_expiracion: expires });
     await act(async () => hook.result.current.confirmEye("OI"));
-    expect(hook.result.current.eyes.OI.confirmation).toBe("incierta");
+    expect(hook.result.current.eyes.OI.file).toBeNull();
     expect(hook.result.current.eyes.OI.hasConfirmation).toBeUndefined();
     expect(hook.result.current.canNext).toBe(false);
     hook.unmount();
@@ -286,7 +526,7 @@ describe("28C.5 revisión profesional separada de IA", () => {
     await act(async () => hook.result.current.confirmEye("OD"));
     expect(register).toHaveBeenCalledOnce();
     expect(hook.result.current.canNext).toBe(false);
-    expect(hook.result.current.processingNotice).toBeTruthy();
+    expect(hook.result.current.eyeActionError.OD).toBeTruthy();
     expect(confirmedPost).not.toHaveBeenCalled();
     hook.unmount();
   });
@@ -348,6 +588,7 @@ describe("28C.5 revisión profesional separada de IA", () => {
       ojo_confirmado: value === token ? "Derecho" : "Izquierdo",
       estado: "CONFIRMADA", vigente: true, expirada: false, fecha_expiracion: expires }));
     await act(async () => hook.result.current.confirmEye("OD"));
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[1]));
     await act(async () => hook.result.current.confirmEye("OI"));
     // La primera llamada es OD: éxito; la segunda, OI: fallo controlado.
     confirmedPost.mockReset();
@@ -367,19 +608,53 @@ describe("28C.5 revisión profesional separada de IA", () => {
   });
 });
 
-it("interfaz muestra nombre, metadatos y declaración expresa por ojo sin validar diagnóstico IA", () => {
+it("modal muestra solo datos clínicamente útiles y exige declaración expresa fuera del formulario", () => {
   const file = new File(["synthetic"], candidate("OD").filename, { type: "image/png" });
-  const eyes: Record<EyeKey, EyeState> = { OD: { file, preview: "blob:synthetic", isExistingImage: true,
-    candidate: candidate("OD"), confirmation: "pendiente" }, OI: { file: null, preview: null } };
+  const eyes: Record<EyeKey, EyeState> = { OD: { file: null, preview: null }, OI: { file: null, preview: null } };
   const onConfirm = vi.fn();
-  const ui = render(<ImageUploader eyes={eyes} embedded handleFile={vi.fn()} clearEye={vi.fn()}
-    patientName="Paciente Sintético" onConfirm={onConfirm} />);
-  expect(screen.getByText(/Paciente Sintético/)).toBeInTheDocument();
-  expect(screen.getByText(/synthetic_fundus_R.png/)).toBeInTheDocument();
-  expect(screen.getByText(/secuencia 1/)).toBeInTheDocument();
-  expect(screen.getByText(/pendiente de revisión profesional/)).toBeInTheDocument();
+  const ui = render(<><ImageUploader eyes={eyes} embedded handleFile={vi.fn()} clearEye={vi.fn()} />
+    <AutoSelectionModal open patientName="Paciente Sintético" candidates={[candidate("OD")]}
+      chosen={{ image: candidate("OD"), file, preview: "blob:synthetic" }}
+      loading={false} confirming={false} eyes={eyes} notice={null} onSelect={vi.fn()}
+      onConfirm={onConfirm} onRevoke={vi.fn()} onClose={vi.fn()} /></>);
+  expect(screen.getAllByText(/Paciente Sintético/).length).toBeGreaterThan(0);
+  expect(screen.getByText("Confirme que la fotografía corresponde al paciente y al ojo indicado. La sugerencia no sustituye la revisión profesional.")).toBeInTheDocument();
+  expect(screen.getAllByText(/Color · OD sugerido/)).toHaveLength(1);
+  expect(screen.queryByText(/synthetic_Color_R.png/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Confirmo paciente, imagen y ojo OD/i }));
   expect(onConfirm).toHaveBeenCalledWith("OD");
   expect(screen.queryByRole("button", { name: /validar diagnóstico/i })).not.toBeInTheDocument();
+  ui.unmount();
+});
+
+it("agrupa por ojo, prioriza el pendiente y ofrece acciones secundarias sin botón técnico", () => {
+  const photo = candidate("OD");
+  const file = new File(["synthetic"], photo.filename, { type: "image/png" });
+  const eyes: Record<EyeKey, EyeState> = {
+    OD: { file, preview: "blob:synthetic", isExistingImage: true, candidate: photo,
+      confirmation: "CONFIRMADA", hasConfirmation: true, expiresAt: expires },
+    OI: { file: null, preview: null },
+  };
+  const onRevoke = vi.fn();
+  const ui = render(<AutoSelectionModal open patientName="Paciente Sintético"
+    candidates={[photo, candidate("OI"), { ...photo, filename: "synthetic_Color_R_2.png" }]}
+    chosen={{ image: photo, file, preview: "blob:synthetic" }} loading={false} confirming={false}
+    eyes={eyes} notice={null} onSelect={vi.fn()} onConfirm={vi.fn()}
+    onRevoke={onRevoke} onClose={vi.fn()} />);
+  const list = screen.getByLabelText("Fotografías candidatas");
+  expect(within(list).getAllByRole("region").map((group) => group.getAttribute("aria-label")))
+    .toEqual(["Ojo izquierdo (OI)", "Ojo derecho (OD)"]);
+  expect(within(list).getAllByRole("button")).toHaveLength(3);
+  expect(screen.queryByRole("button", { name: /Confirmo paciente, imagen y ojo OD/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Consultar estado/ })).not.toBeInTheDocument();
+  const revokeButton = screen.getByRole("button", { name: "Quitar imagen" });
+  expect(screen.getByText("Imagen confirmada")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Cambiar imagen" })).toBeInTheDocument();
+  expect(screen.queryByText(/Revocar asociación/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Cerrar" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Quitar la imagen no revoca una confirmación persistente/)).not.toBeInTheDocument();
+  fireEvent.click(revokeButton);
+  expect(onRevoke).toHaveBeenCalledOnce();
+  expect(onRevoke).toHaveBeenCalledWith("OD");
   ui.unmount();
 });

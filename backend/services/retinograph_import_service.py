@@ -53,7 +53,7 @@ def obtener_seleccion_automatica(paciente_id):
         return {"success": False, "message": "Exportaciones no disponibles."}, 503
 
     seleccion = {"OD": None, "OI": None}
-    encontradas = 0
+    candidatas = []
 
     for name in names:
         parsed = _parse_retinograph_filename(name)
@@ -67,7 +67,7 @@ def obtener_seleccion_automatica(paciente_id):
         parsed["mime_type"] = mime
         parsed.pop("documento", None)  # El nombre ya lo incluye; no duplicar identidad.
 
-        encontradas += 1
+        candidatas.append(parsed)
         ojo = parsed["ojo"]
         actual = seleccion[ojo]
         if actual is None or _selection_key(parsed) > _selection_key(actual):
@@ -77,8 +77,9 @@ def obtener_seleccion_automatica(paciente_id):
         "success": True,
         "data": {
             "paciente_id": paciente_id,
-            "encontradas": encontradas,
+            "encontradas": len(candidatas),
             "imagenes": seleccion,
+            "candidatas": sorted(candidatas, key=_selection_key, reverse=True),
         },
     }, 200
 

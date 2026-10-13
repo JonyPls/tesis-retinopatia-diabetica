@@ -3247,11 +3247,34 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
 
     def report_payload(self, *, visit_id=None, type_id=2, patient_index=1):
         payload = {'paciente_id': self.patient_ids[patient_index], 'tipo_informe_id': type_id,
-                   'datos_estructurados': {'nota': 'Resultado sintético',
-                                            'conclusion': ['Conclusión sintética']}}
+                    'datos_estructurados': {'nota': 'Resultado sintético',
+                                             'conclusion': ['Conclusión sintética']}}
         if visit_id is not None:
             payload['visita_id'] = visit_id
         return payload
+
+    def test_29b_visit_report_counts_match_active_reports_without_versions_or_other_visits(self):
+        with self.report_visit() as first_id, self.report_visit() as second_id:
+            def counts():
+                response, statements = self.call(
+                    f'/api/pacientes/{self.patient_ids[1]}/visitas', token=self.token(), measure=True)
+                self.assertEqual(response.status_code, 200, response.json)
+                self.assertFalse(any(query.lstrip().lower().startswith(('insert ', 'update ', 'delete '))
+                                     for query in statements))
+                return {row['visita_id']: row['total_informes'] for row in response.json['data']}
+
+            self.assertEqual((counts()[first_id], counts()[second_id]), (0, 0))
+            for visit_id, type_id, expected in ((first_id, 2, 1), (first_id, 3, 2), (second_id, 4, 1)):
+                response, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                        json_data=self.report_payload(visit_id=visit_id, type_id=type_id))
+                self.assertEqual(response.status_code, 201, response.json)
+                self.assertEqual(counts()[visit_id], expected)
+            self.assertEqual((counts()[first_id], counts()[second_id]), (2, 1))
+            self.assertEqual(self.call('/api/informes', method='POST', token=self.token(),
+                                       json_data=self.report_payload(visit_id=first_id, type_id=2))[0].status_code, 409)
+            self.assertEqual(counts()[first_id], 2)
+            self.assertEqual(informe_entities.InformeVersion.query.join(informe_entities.Informe)
+                             .filter(informe_entities.Informe.visita_id == first_id).count(), 2)
 
     def test_29b_real_post_authorization_provenance_and_shared_visit(self):
         path = '/api/informes'
@@ -4154,6 +4177,10 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 autor_operacion_id=self.user_ids['colleague'], motivo='Fixture sintético'))
             db.session.commit()
             db.session.remove()
+            visits, _ = self.call(f'/api/pacientes/{self.patient_ids[1]}/visitas', token=self.token())
+            self.assertEqual(visits.status_code, 200, visits.json)
+            self.assertEqual(next(row['total_informes'] for row in visits.json['data']
+                                  if row['visita_id'] == visit_id), 0)
             with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True}):
                 before = [(r.id, r.revision_actual, r.estado, len(r.versiones))
                           for r in informe_entities.Informe.query.filter_by(visita_id=visit_id).all()]

@@ -27,8 +27,9 @@ export const consultarConfirmacionRetinografo = async (identificador: string): P
   return response.data.confirmacion;
 };
 
-export const revocarConfirmacionRetinografo = async (identificador: string): Promise<void> => {
-  await api.post(`${CONFIRMATIONS}/revocar`, { identificador });
+export const revocarConfirmacionRetinografo = async (identificador: string): Promise<RetinographConfirmationStatus> => {
+  const response = await api.post(`${CONFIRMATIONS}/revocar`, { identificador });
+  return response.data.confirmacion;
 };
 
 export const sha256Blob = async (blob: Blob): Promise<string> => {
@@ -184,6 +185,7 @@ export interface RetinographAutoSelection {
   paciente_id: number;
   encontradas: number;
   imagenes: Partial<Record<EyeKey, RetinographAutoImage | null>>;
+  candidatas?: RetinographAutoImage[];
 }
 
 export const obtenerSeleccionAutomaticaRetinografo = async (

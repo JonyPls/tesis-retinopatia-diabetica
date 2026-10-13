@@ -24,26 +24,13 @@ import {
   sha256Blob,
   validarDetalleDiagnostico,
 } from "@/features/diagnosis/api/diagnosisService";
+import type { RetinographAutoImage } from "@/features/diagnosis/api/diagnosisService";
 import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
-import { EyeKey, EyeState, EyeProcessingStatus, DiagnosisHook } from "../types";
+import { EyeKey, EyeState, EyeProcessingStatus, DiagnosisHook, AutoPreview } from "../types";
 
 type BoundConfirmation = { token: string; patientId: number; eye: EyeKey; filename: string; file: File };
 const eyeName = (eye: EyeKey) => eye === "OD" ? "Derecho" : "Izquierdo";
 const statusCode = (error: unknown) => (error as { response?: { status?: number } })?.response?.status;
-
-function confirmationFailure(status?: number): string {
-  switch (status) {
-    case 400: return "Revise los datos de la confirmación.";
-    case 401: return "Su sesión ya no es válida. Inicie sesión nuevamente.";
-    case 403: return "No tiene autorización vigente para esta operación.";
-    case 404: return "La exportación o confirmación ya no está disponible. Seleccione nuevamente.";
-    case 409: return "La imagen, el ojo o el estado cambiaron. Seleccione y revise de nuevo la exportación.";
-    case 413: return "La exportación supera el tamaño permitido.";
-    case 422: return "El archivo no cumple las condiciones técnicas de imagen.";
-    case 503: return "El almacenamiento necesario no está disponible. No se confirmó la imagen.";
-    default: return "No se confirmó la respuesta del servidor. Puede ser necesaria una nueva revisión expresa; no reintente automáticamente.";
-  }
-}
 
 const EMPTY_EYE: EyeState = { file: null, preview: null, isExistingImage: false };
 const EMPTY_PROCESSING: Record<EyeKey, EyeProcessingStatus> = { OD: "sin_procesar", OI: "sin_procesar" };
@@ -137,6 +124,19 @@ export function useDiagnosis(): DiagnosisHook {
   const [isAutoSelectingImages, setIsAutoSelectingImages] = useState(false);
   const autoSelectingRef = useRef(false);
   const selectionAbort = useRef<AbortController | null>(null);
+  const [autoModalOpen, setAutoModalOpen] = useState(false);
+  const [autoCandidates, setAutoCandidates] = useState<RetinographAutoImage[]>([]);
+  const [autoPreview, setAutoPreview] = useState<AutoPreview | null>(null);
+  const [autoFocusEye, setAutoFocusEye] = useState<EyeKey | null>(null);
+  const autoPreviewRef = useRef<AutoPreview | null>(null);
+  const [autoPreviewLoading, setAutoPreviewLoading] = useState(false);
+  const previewRequest = useRef(0);
+  const [busyEyes, setBusyEyes] = useState<Record<EyeKey, boolean>>({ OD: false, OI: false });
+  const [eyeActionError, setEyeActionError] = useState<Partial<Record<EyeKey, string>>>({});
+  const setEyeError = (eye: EyeKey, message?: string) => setEyeActionError((prev) =>
+    ({ ...prev, [eye]: message }));
+  const hasPendingAssociation = () => confirmingRef.current.OD !== undefined ||
+    confirmingRef.current.OI !== undefined || !!revokingRef.current.OD || !!revokingRef.current.OI;
 
   // Paso 3
   const [results, setResults] = useState<
@@ -219,6 +219,13 @@ export function useDiagnosis(): DiagnosisHook {
     const discarded = !!confirmationsRef.current.OD || !!confirmationsRef.current.OI;
     contextVersion.current++;
     selectionAbort.current?.abort();
+    previewRequest.current++;
+    revokePreviewUrl(autoPreviewRef.current?.preview);
+    autoPreviewRef.current = null;
+    setAutoPreview(null);
+    setAutoFocusEye(null);
+    setAutoCandidates([]);
+    setAutoModalOpen(false);
     savingRef.current = false;
     setIsSaving(false);
     setModalPhase("idle");
@@ -232,6 +239,7 @@ export function useDiagnosis(): DiagnosisHook {
     setProcessingNotice(remotePending
       ? "Una solicitud anterior podría haberse registrado aunque se haya abandonado esta pantalla. Consulte el historial o revise de nuevo antes de repetirla."
       : discarded ? "Se descartó un comprobante local; la confirmación en el servidor no se revocó. Revise su estado antes de volver a confirmar." : null);
+    setEyeActionError({});
     setEyeProcessing({ ...EMPTY_PROCESSING });
     setResults({});
   };
@@ -295,6 +303,7 @@ export function useDiagnosis(): DiagnosisHook {
   useEffect(() => {
     return () => {
       selectionAbort.current?.abort();
+      revokePreviewUrl(autoPreviewRef.current?.preview);
       confirmationsRef.current = {};
       Object.values(eyesRef.current).forEach((eyeState) => {
         revokePreviewUrl(eyeState.preview);
@@ -452,6 +461,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const selectPatient = (p: PatientSearchResult) => {
+    if (hasPendingAssociation()) return;
     resetProcessing();
     setSelectedPatient(p);
     searchRequest.current++;
@@ -475,6 +485,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const clearPatient = () => {
+    if (hasPendingAssociation()) return;
     resetProcessing();
     searchRequest.current++;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -498,6 +509,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const selectVisita = (visita: DiagnosticoVisita | null) => {
+    if (hasPendingAssociation()) return;
     resetProcessing();
     if (visita) rememberVisit(visita.visita_id);
     setSelectedVisita(visita);
@@ -510,18 +522,93 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   // ── Paso 2 ────────────────────────────────────────────────────────
-  const handleFile = async (eye: EyeKey, file?: File) => {
-    if (!file || savingRef.current) return;
-    if (confirmingRef.current[eye] !== undefined || confirmationsRef.current[eye]) {
-      setProcessingNotice(`${eye}: La confirmación anterior puede persistir en el servidor; reemplazar el archivo solo descarta su comprobante local.`);
-    }
-    const version = contextVersion.current;
-    const generation = ++eyeGeneration.current[eye];
+  const discardEye = (eye: EyeKey) => {
+    const current = eyesRef.current[eye];
+    eyeGeneration.current[eye]++;
     delete confirmationsRef.current[eye];
+    if (autoPreview?.file === current.file && !autoPreviewRef.current) setAutoPreview(null);
     setEyes((prev) => {
       revokePreviewUrl(prev[eye].preview);
       return { ...prev, [eye]: { ...EMPTY_EYE } };
     });
+    setEyeError(eye);
+    setProcessingNotice(null);
+  };
+
+  const removeConfirmed = async (eye: EyeKey): Promise<boolean> => {
+    const state = eyesRef.current[eye];
+    if (!state.file) return true;
+    if (!state.isExistingImage) { discardEye(eye); return true; }
+    if (state.confirmation === "CONSUMIDA") {
+      setEyeError(eye, "La imagen ya se utilizó en un diagnóstico.");
+      return false;
+    }
+    const patientId = selectedPatient?.id;
+    const confirmation = patientId && bound(eye, patientId, state);
+    if (!confirmation || revokingRef.current[eye] || savingRef.current) {
+      setEyeError(eye, "No se pudo quitar la imagen. Inténtalo nuevamente.");
+      return false;
+    }
+    const version = contextVersion.current;
+    const generation = eyeGeneration.current[eye];
+    revokingRef.current[eye] = true;
+    setBusyEyes((prev) => ({ ...prev, [eye]: true }));
+    setEyeError(eye);
+    const current = () => version === contextVersion.current && generation === eyeGeneration.current[eye] &&
+      bound(eye, patientId, eyesRef.current[eye]) === confirmation;
+    try {
+      const currentStatus = await checkConfirmation(eye);
+      if (!current()) return false;
+      if (currentStatus === "CONSUMIDA") {
+        setEyeError(eye, "La imagen ya se utilizó en un diagnóstico.");
+        return false;
+      }
+      if (currentStatus === "EXPIRADA" || currentStatus === "REVOCADA") {
+        discardEye(eye);
+        return true;
+      }
+      if (currentStatus !== "CONFIRMADA") {
+        setEyeError(eye, "No se pudo quitar la imagen. Inténtalo nuevamente.");
+        return false;
+      }
+      try {
+        const revoked = await revocarConfirmacionRetinografo(confirmation.token);
+        if (!current()) return false;
+        if (revoked?.estado !== "REVOCADA" || revoked.paciente_id !== patientId ||
+            revoked.ojo_confirmado !== eyeName(eye)) throw new Error("Respuesta no verificable");
+        discardEye(eye);
+        return true;
+      } catch {
+        // El POST pudo completarse aunque se perdiera la respuesta: solo consultar, nunca repetir.
+        const stateAfterFailure = await checkConfirmation(eye);
+        if (!current()) return false;
+        if (stateAfterFailure === "EXPIRADA" || stateAfterFailure === "REVOCADA") {
+          discardEye(eye);
+          return true;
+        }
+        setEyeError(eye, stateAfterFailure === "CONSUMIDA"
+          ? "La imagen ya se utilizó en un diagnóstico."
+          : "No se pudo quitar la imagen. Inténtalo nuevamente.");
+        return false;
+      }
+    } finally {
+      revokingRef.current[eye] = false;
+      setBusyEyes((prev) => ({ ...prev, [eye]: false }));
+    }
+  };
+
+  const handleFile = async (eye: EyeKey, file?: File) => {
+    if (!file || savingRef.current || confirmingRef.current[eye] !== undefined || revokingRef.current[eye]) return;
+    if (eyesRef.current[eye].isExistingImage && !await removeConfirmed(eye)) return;
+    if (!eyesRef.current[eye].isExistingImage) discardEye(eye);
+    if (autoPreviewRef.current?.image.ojo === eye) {
+      previewRequest.current++;
+      revokePreviewUrl(autoPreviewRef.current.preview);
+      autoPreviewRef.current = null;
+      setAutoPreview(null);
+    }
+    const version = contextVersion.current;
+    const generation = eyeGeneration.current[eye];
     try {
       const preview = await convertToPreviewUrl(file);
       if (version !== contextVersion.current || generation !== eyeGeneration.current[eye]) { revokePreviewUrl(preview); return; }
@@ -542,22 +629,14 @@ export function useDiagnosis(): DiagnosisHook {
     }
   };
 
-  const clearEye = (eye: EyeKey) => {
-    if (savingRef.current) return;
-    if (confirmingRef.current[eye] !== undefined || confirmationsRef.current[eye]) {
-      setProcessingNotice(`${eye}: Quitar la imagen no revoca una confirmación persistente ni cancela un registro en curso.`);
-    }
-    eyeGeneration.current[eye]++;
-    delete confirmationsRef.current[eye];
-    setEyes((prev) => {
-      revokePreviewUrl(prev[eye].preview);
-      return { ...prev, [eye]: { ...EMPTY_EYE } };
-    });
+  const clearEye = async (eye: EyeKey) => {
+    if (savingRef.current || confirmingRef.current[eye] !== undefined || revokingRef.current[eye]) return;
+    await removeConfirmed(eye);
   };
 
   const autoSelectRetinographImages = async () => {
     if (autoSelectingRef.current || savingRef.current ||
-        confirmingRef.current.OD !== undefined || confirmingRef.current.OI !== undefined) return;
+        hasPendingAssociation()) return;
     if (!selectedPatient) {
       toast({
         title: "Seleccione un paciente",
@@ -567,10 +646,10 @@ export function useDiagnosis(): DiagnosisHook {
       return;
     }
 
+    closeAutoSelection();
     autoSelectingRef.current = true;
     setIsAutoSelectingImages(true);
     const version = contextVersion.current;
-    const generations = { ...eyeGeneration.current };
     const controller = new AbortController();
     selectionAbort.current = controller;
     try {
@@ -580,107 +659,24 @@ export function useDiagnosis(): DiagnosisHook {
       );
       if (version !== contextVersion.current) return;
       if (selection.paciente_id !== selectedPatient.id) throw new Error("La selección no corresponde al paciente.");
-      const availableEyes = (["OD", "OI"] as EyeKey[]).filter((eye) => !!selection.imagenes[eye]);
-      const clearStaleCandidates = () => {
-        (["OD", "OI"] as EyeKey[]).forEach((eye) => {
-          if (selection.imagenes[eye] || !eyesRef.current[eye].candidate) return;
-          eyeGeneration.current[eye]++;
-          delete confirmationsRef.current[eye];
-          setEyes((prev) => {
-            revokePreviewUrl(prev[eye].preview);
-            return { ...prev, [eye]: { ...EMPTY_EYE } };
-          });
-        });
-      };
-      if (availableEyes.some((eye) => selection.imagenes[eye]?.ojo !== eye ||
-          selection.imagenes[eye]?.ojo_original !== (eye === "OD" ? "R" : "L"))) {
-        throw new Error("La selección no corresponde al ojo.");
-      }
-
-      if (availableEyes.length === 0) {
-        clearStaleCandidates();
+      const candidates = (selection.candidatas ?? Object.values(selection.imagenes).filter(
+        (image): image is RetinographAutoImage => !!image)).filter((image) =>
+        image.tipo_imagen.toLowerCase() === "color" &&
+        (image.ojo === "OD" || image.ojo === "OI") &&
+        image.ojo_original === (image.ojo === "OD" ? "R" : "L"));
+      if (candidates.length === 0) {
         toast({
           title: "Sin imágenes disponibles",
-          description:
-            "No se encontraron imágenes exportadas para el documento del paciente.",
+          description: "No se encontraron fotografías Color verificables para este paciente.",
         });
         return;
       }
-
-      const downloads = await Promise.allSettled(
-        availableEyes.map(async (eye) => {
-          const image = selection.imagenes[eye]!;
-          const blob = await descargarImagenRetinografo(
-            selectedPatient.id,
-            image.filename,
-            controller.signal,
-          );
-          const file = new File([blob], image.filename, {
-            type: image.mime_type || inferMimeType(image.filename),
-            // File is constructed at download; export filename has no verified timezone.
-            lastModified: Date.now(),
-          });
-
-          let preview: string | null = null;
-          try {
-            preview = await convertToPreviewUrl(file);
-          } catch {
-            preview = null;
-          }
-
-          // Candidata no asociada clínicamente: no habilitar inferencia en 28A.
-          return [eye, { file, preview, isExistingImage: true, candidate: image,
-                         confirmation: "pendiente" as const }] as const;
-        }),
-      );
-      // Si falla un ojo, liberar también las vistas ya creadas para el otro.
-      const loadedEntries = downloads.flatMap((entry) =>
-        entry.status === "fulfilled" ? [entry.value] : [],
-      );
-      const failed = downloads.find((entry) => entry.status === "rejected");
-      if (failed?.status === "rejected") {
-        loadedEntries.forEach(([, state]) => revokePreviewUrl(state.preview));
-        throw failed.reason;
-      }
-
-      if (version !== contextVersion.current ||
-          availableEyes.some((eye) => generations[eye] !== eyeGeneration.current[eye])) {
-        loadedEntries.forEach(([, state]) => revokePreviewUrl(state.preview));
-        return;
-      }
-
-      clearStaleCandidates();
-      if (loadedEntries.some(([eye]) => !!confirmationsRef.current[eye])) {
-        setProcessingNotice("La nueva selección descarta comprobantes locales anteriores; las confirmaciones persistidas no se revocan automáticamente.");
-      }
-      loadedEntries.forEach(([eye]) => {
-        eyeGeneration.current[eye]++;
-        delete confirmationsRef.current[eye];
-      });
-      setEyes((prev) => {
-        const next = { ...prev };
-        loadedEntries.forEach(([eye, state]) => {
-          revokePreviewUrl(prev[eye].preview);
-          next[eye] = state;
-        });
-        return next;
-      });
-      // Cambiar archivos nunca borra resultados confirmados de la visita.
-      setValidationConflict(false);
-      setFinalSelectionState({ OD: 0, OI: 0 });
-      setComments({ OD: "", OI: "" });
-      setCorrectionReasons({ OD: "", OI: "" });
-
-      toast({
-        title: "Selección automática lista",
-        description: `Se cargó ${availableEyes.length} imagen${
-          availableEyes.length === 1 ? "" : "es"
-        } desde el retinógrafo.`,
-      });
+      setAutoCandidates(candidates);
+      setAutoModalOpen(true);
     } catch (err: any) {
       if (version !== contextVersion.current) return;
       const status = err.response?.status;
-      if (status === 401 || status === 403 || status === 404) resetUploadedEyes();
+      if (status === 401 || status === 403 || status === 404) closeAutoSelection();
       toast({
         title: "No se pudo hacer la selección automática",
         description: status === 401 ? "Su sesión ya no es válida. Inicie sesión nuevamente."
@@ -697,6 +693,62 @@ export function useDiagnosis(): DiagnosisHook {
     }
   };
 
+  const closeAutoSelection = () => {
+    if (hasPendingAssociation()) return;
+    selectionAbort.current?.abort();
+    previewRequest.current++;
+    revokePreviewUrl(autoPreviewRef.current?.preview);
+    autoPreviewRef.current = null;
+    setAutoPreview(null);
+    setAutoCandidates([]);
+    setAutoFocusEye(null);
+    setAutoModalOpen(false);
+    setAutoPreviewLoading(false);
+  };
+
+  const selectAutoCandidate = async (image: RetinographAutoImage) => {
+    if (!selectedPatient || !autoCandidates.includes(image) ||
+        hasPendingAssociation()) return;
+    selectionAbort.current?.abort();
+    const controller = new AbortController();
+    selectionAbort.current = controller;
+    const request = ++previewRequest.current;
+    const version = contextVersion.current;
+    setAutoFocusEye(image.ojo);
+    revokePreviewUrl(autoPreviewRef.current?.preview);
+    autoPreviewRef.current = null;
+    setAutoPreview(null);
+    setEyeError(image.ojo);
+    setProcessingNotice(null);
+    const confirmed = eyesRef.current[image.ojo];
+    if (confirmed.candidate?.filename === image.filename &&
+        confirmed.confirmation === "CONFIRMADA" && confirmed.file && confirmed.preview) {
+      setAutoPreview({ image, file: confirmed.file, preview: confirmed.preview });
+      return;
+    }
+    setAutoPreviewLoading(true);
+    try {
+      const blob = await descargarImagenRetinografo(selectedPatient.id, image.filename, controller.signal);
+      const file = new File([blob], image.filename, {
+        type: image.mime_type || inferMimeType(image.filename), lastModified: Date.now(),
+      });
+      const preview = await convertToPreviewUrl(file);
+      if (version !== contextVersion.current || request !== previewRequest.current || !autoModalOpen) {
+        revokePreviewUrl(preview);
+        return;
+      }
+      const chosen = { image, file, preview };
+      autoPreviewRef.current = chosen;
+      setAutoPreview(chosen);
+    } catch (error) {
+      if (version === contextVersion.current && request === previewRequest.current && !controller.signal.aborted) {
+        toast({ title: "No se pudo previsualizar la fotografía", description: "Seleccione otra candidata.", variant: "destructive" });
+      }
+    } finally {
+      if (request === previewRequest.current) setAutoPreviewLoading(false);
+    }
+  };
+
   const bound = (eye: EyeKey, patientId: number, state: EyeState) => {
     const confirmation = confirmationsRef.current[eye];
     return confirmation && confirmation.patientId === patientId && confirmation.eye === eye &&
@@ -706,25 +758,34 @@ export function useDiagnosis(): DiagnosisHook {
 
   const confirmEye = async (eye: EyeKey) => {
     const patientId = selectedPatient?.id;
-    const state = eyesRef.current[eye];
-    if (!patientId || !state.candidate || !state.file || !state.preview ||
-        state.confirmation !== "pendiente" || confirmingRef.current[eye] || isAutoSelectingImages ||
-        state.candidate.ojo !== eye || state.candidate.ojo_original !== (eye === "OD" ? "R" : "L") ||
-        state.file.name !== state.candidate.filename) return;
+    const chosen = autoPreviewRef.current;
+    if (!patientId || !chosen || !chosen.preview || !autoModalOpen ||
+        confirmingRef.current[eye] !== undefined || revokingRef.current[eye] || isAutoSelectingImages ||
+        chosen.image.ojo !== eye || chosen.image.ojo_original !== (eye === "OD" ? "R" : "L") ||
+        chosen.file.name !== chosen.image.filename || !autoCandidates.includes(chosen.image)) return;
     const version = contextVersion.current;
-    const generation = eyeGeneration.current[eye];
+    let generation = eyeGeneration.current[eye];
     confirmingRef.current[eye] = generation;
     const stillCurrent = () => version === contextVersion.current &&
-      generation === eyeGeneration.current[eye] && eyesRef.current[eye].file === state.file;
-    setEyes((prev) => ({ ...prev, [eye]: { ...prev[eye], confirmation: "registrando" } }));
+      generation === eyeGeneration.current[eye] && autoPreviewRef.current === chosen;
+    setIsAutoSelectingImages(true);
+    setBusyEyes((prev) => ({ ...prev, [eye]: true }));
+    setEyeError(eye);
     try {
-      const hash = await sha256Blob(state.file);
+      const hash = await sha256Blob(chosen.file);
       if (!stillCurrent()) return;
+      if (eyesRef.current[eye].isExistingImage) {
+        if (!await removeConfirmed(eye)) return;
+        generation = eyeGeneration.current[eye];
+        confirmingRef.current[eye] = generation;
+        setBusyEyes((prev) => ({ ...prev, [eye]: true }));
+        if (!stillCurrent()) return;
+      }
       const registered = await registrarConfirmacionRetinografo({
-        paciente_id: patientId, nombre_exportacion: state.candidate.filename,
+        paciente_id: patientId, nombre_exportacion: chosen.image.filename,
         ojo_confirmado: eyeName(eye), sha256_previsualizacion: hash,
       });
-      // Una cancelación local no implica que el registro del servidor se haya deshecho.
+      // No se permite cerrar, reemplazar ni cambiar de paciente mientras espera este POST.
       if (!stillCurrent()) return;
       if (registered.paciente_id !== patientId || registered.ojo_confirmado !== eyeName(eye) ||
           registered.estado !== "CONFIRMADA" || !/^[0-9a-f]{64}$/.test(registered.identificador) ||
@@ -732,19 +793,33 @@ export function useDiagnosis(): DiagnosisHook {
         throw new Error("Respuesta de confirmación no verificable.");
       }
       confirmationsRef.current[eye] = { token: registered.identificador, patientId, eye,
-        filename: state.candidate.filename, file: state.file };
-      setEyes((prev) => ({ ...prev, [eye]: { ...prev[eye], confirmation: "CONFIRMADA",
-        hasConfirmation: true, expiresAt: registered.fecha_expiracion } }));
+        filename: chosen.image.filename, file: chosen.file };
+      eyeGeneration.current[eye]++;
+      autoPreviewRef.current = null; // La vista previa pasa a pertenecer al formulario.
+      setAutoPreview(chosen);
+      setEyes((prev) => {
+        revokePreviewUrl(prev[eye].preview);
+        return { ...prev, [eye]: { file: chosen.file, preview: chosen.preview,
+          isExistingImage: true, candidate: chosen.image, confirmation: "CONFIRMADA",
+          hasConfirmation: true, expiresAt: registered.fecha_expiracion } };
+      });
+      setEyeError(eye);
     } catch (error) {
       if (!stillCurrent()) return;
       const code = statusCode(error);
-      setEyes((prev) => ({ ...prev, [eye]: { ...prev[eye], confirmation: code === 409 ||
-        code === 500 || code === undefined && !(error instanceof Error && error.message.startsWith("SHA-256"))
-        ? "incierta" : "pendiente" } }));
-      setProcessingNotice(`${eye}: ${error instanceof Error && error.message.startsWith("SHA-256")
-        ? error.message : confirmationFailure(code)}`);
+      setEyeError(eye, code === 409 ? "La confirmación venció. Selecciona la fotografía nuevamente."
+        : "No se pudo confirmar la fotografía.");
+      // Tras una respuesta incierta no repetir la declaración sobre la misma vista previa.
+      if (code === 409 || code === 500 || code === undefined &&
+          !(error instanceof Error && error.message.startsWith("SHA-256"))) {
+        revokePreviewUrl(chosen.preview);
+        autoPreviewRef.current = null;
+        setAutoPreview(null);
+      }
     } finally {
       if (confirmingRef.current[eye] === generation) delete confirmingRef.current[eye];
+      setBusyEyes((prev) => ({ ...prev, [eye]: false }));
+      if (version === contextVersion.current) setIsAutoSelectingImages(false);
     }
   };
 
@@ -769,8 +844,10 @@ export function useDiagnosis(): DiagnosisHook {
         ? "EXPIRADA" : status.estado;
       setEyes((prev) => ({ ...prev, [eye]: { ...prev[eye], confirmation: next,
         expiresAt: status.fecha_expiracion } }));
+      if (next === "CONFIRMADA") setEyeError(eye);
+      if (next === "EXPIRADA") setEyeError(eye, "La confirmación venció. Selecciona la fotografía nuevamente.");
       if (next === "CONSUMIDA" && !resultsRef.current[eye]) {
-        setProcessingNotice(`${eye}: Confirmación consumida. Consulte el historial de la visita; el estado no devuelve el ID de detalle ni confirma una decisión médica.`);
+        setEyeError(eye, "La imagen ya se utilizó en un diagnóstico.");
       }
       return next;
     } catch (error) {
@@ -778,34 +855,13 @@ export function useDiagnosis(): DiagnosisHook {
           request !== statusRequest.current[eye] ||
           bound(eye, patientId, eyesRef.current[eye]) !== confirmation) return null;
       setEyes((prev) => ({ ...prev, [eye]: { ...prev[eye], confirmation: "incierta" } }));
-      setProcessingNotice(`${eye}: ${confirmationFailure(statusCode(error))}`);
+      setEyeError(eye, "No se pudo comprobar la confirmación. Inténtalo nuevamente.");
       return null;
     }
   };
 
   const revokeConfirmation = async (eye: EyeKey) => {
-    const state = eyesRef.current[eye];
-    const patientId = selectedPatient?.id;
-    if (!patientId || state.confirmation !== "CONFIRMADA" || revokingRef.current[eye] || savingRef.current) return;
-    const confirmation = bound(eye, patientId, state);
-    if (!confirmation) return;
-    const version = contextVersion.current;
-    const generation = eyeGeneration.current[eye];
-    revokingRef.current[eye] = true;
-    try {
-      if (await checkConfirmation(eye) !== "CONFIRMADA") return;
-      await revocarConfirmacionRetinografo(confirmation.token);
-      if (version !== contextVersion.current || generation !== eyeGeneration.current[eye] ||
-          bound(eye, patientId, eyesRef.current[eye]) !== confirmation) return;
-      delete confirmationsRef.current[eye];
-      setEyes((prev) => ({ ...prev, [eye]: { ...prev[eye], confirmation: "REVOCADA", hasConfirmation: false } }));
-    } catch (error) {
-      if (version !== contextVersion.current || generation !== eyeGeneration.current[eye]) return;
-      setProcessingNotice(`${eye}: ${confirmationFailure(statusCode(error))} Consulte el estado antes de continuar.`);
-      await checkConfirmation(eye);
-    } finally {
-      revokingRef.current[eye] = false;
-    }
+    await clearEye(eye);
   };
 
   // ── Guardar y procesar ────────────────────────────────────────────
@@ -1122,7 +1178,7 @@ export function useDiagnosis(): DiagnosisHook {
   const canNext =
     (step === 1 && selectedPatient !== null && selectedVisita !== undefined) ||
     (step === 2 && (eyes.OD.file !== null || eyes.OI.file !== null) &&
-      !isAutoSelectingImages && !isSaving && (["OD", "OI"] as EyeKey[]).some((eye) =>
+      !isAutoSelectingImages && !isSaving && !busyEyes.OD && !busyEyes.OI && (["OD", "OI"] as EyeKey[]).some((eye) =>
         !!eyes[eye].file && !resultsRef.current[eye] && eyeProcessing[eye] !== "incierto" &&
         (!eyes[eye].isExistingImage || (eyes[eye].confirmation === "CONFIRMADA" &&
           !!selectedPatient && !!bound(eye, selectedPatient.id, eyes[eye]) &&
@@ -1136,9 +1192,10 @@ export function useDiagnosis(): DiagnosisHook {
     setStep((s) => Math.min(3, s + 1));
   };
 
-  const goBack = () => setStep((s) => Math.max(1, s - 1));
+  const goBack = () => { if (!hasPendingAssociation()) setStep((s) => Math.max(1, s - 1)); };
 
   const resetAll = () => {
+    if (hasPendingAssociation()) return;
     resetProcessing();
     searchRequest.current++;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1201,6 +1258,13 @@ export function useDiagnosis(): DiagnosisHook {
     selectedVisita,
     isLoadingVisitas,
     isAutoSelectingImages,
+    busyEyes,
+    eyeActionError,
+    autoModalOpen,
+    autoCandidates,
+    autoPreview,
+    autoFocusEye,
+    autoPreviewLoading,
     handleQueryChange,
     loadMorePatients,
     selectPatient,
@@ -1209,6 +1273,8 @@ export function useDiagnosis(): DiagnosisHook {
     eyes,
     handleFile,
     autoSelectRetinographImages,
+    selectAutoCandidate,
+    closeAutoSelection,
     clearEye,
     confirmEye,
     checkConfirmation,

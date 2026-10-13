@@ -137,6 +137,14 @@ describe("Historial B1 (HTTP simulado, interfaz de solo lectura)", () => {
     expect(screen.getByText(/Este informe no está vigente/)).toBeInTheDocument();
   });
 
+  it("muestra un estado vacío cuando el paciente no tiene informes", async () => {
+    history.mockResolvedValue({ data: [], pagination: page(0) });
+    render(<ReportHistoryPanel patient={patientA} />);
+    expect(await screen.findByText("No se encontraron informes históricos para este paciente.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(versions).not.toHaveBeenCalled();
+  });
+
   it("descarta respuestas tardías al cambiar de paciente y de informe", async () => {
     const oldCatalog = pending<Awaited<ReturnType<typeof getPatientReportHistory>>>();
     history.mockImplementation((id) => id === patientA.id ? oldCatalog.promise : Promise.resolve({
@@ -188,14 +196,15 @@ describe("Historial B1 (HTTP simulado, interfaz de solo lectura)", () => {
     expect(screen.queryByText(/Contenido reservado/)).not.toBeInTheDocument();
   });
 
-  it("un 403 de historial desactivado no aparenta sesión caducada ni conserva datos del paciente anterior", async () => {
+  it("un 403 no confunde historial desactivado con denegación real ni conserva datos anteriores", async () => {
     const { rerender } = render(<ReportHistoryPanel key={patientA.id} patient={patientA} />);
     fireEvent.click(await screen.findByRole("button", { name: /Campo visual 1/ }));
     expect(await screen.findByRole("region", { name: "Contenido de la revisión 1" }))
       .toHaveTextContent("Contenido reservado 1");
     history.mockRejectedValue({ response: { status: 403 } });
     rerender(<ReportHistoryPanel key={patientB.id} patient={patientB} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Acceso denegado");
+    expect(await screen.findByRole("alert")).toHaveTextContent("El historial no está disponible o el acceso está restringido.");
+    expect(screen.queryByText(/Acceso denegado/)).not.toBeInTheDocument();
     expect(screen.queryByText(/sesión no está disponible/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Contenido reservado 1/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Campo visual 1/ })).not.toBeInTheDocument();

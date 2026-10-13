@@ -23,7 +23,6 @@ import { PatientSelectorStep } from "../components/PatientSelectorStep";
 import { VisitaSelector } from "../components/VisitaSelector";
 import { ReportForm } from "../components/ReportForm";
 import { AddTipoModal } from "../components/AddTipoModal";
-import { ReportHistoryPanel } from "../components/ReportHistoryPanel";
 import { ConfirmDelete } from "@/components/ui/ConfirmDelete";
 import {
   AlertDialog,
@@ -133,12 +132,6 @@ export default function ClinicalReports() {
             pacienteSeleccionado={!!hook.selectedPatient}
             cargandoVisitas={hook.isLoadingVisitas}
           />
-
-          {hook.selectedPatient && (
-            <div className="lg:col-span-2">
-              <ReportHistoryPanel key={hook.selectedPatient.id} patient={hook.selectedPatient} />
-            </div>
-          )}
 
           <div className="flex justify-between lg:col-span-2 mt-2">
             <Button variant="outline" size="sm" onClick={hook.goBack}>

@@ -32,6 +32,7 @@ import { DiagnosisPatientStep } from "../components/DiagnosisPatientStep";
 import { DiagnosisResults } from "../components/DiagnosisResults";
 import { DiagnosisStepper } from "../components/DiagnosisStepper";
 import { ImageUploader } from "../components/ImageUploader";
+import { AutoSelectionModal } from "../components/AutoSelectionModal";
 import { useDiagnosis } from "../hooks/useDiagnosis";
 
 const STEP_COPY = {
@@ -208,18 +209,30 @@ export default function Diagnosis() {
 
             {step === 2 && (
               <><ImageUploader
-                embedded
-                eyes={diagnosisHook.eyes}
+               embedded
+               eyes={diagnosisHook.eyes}
+                busyEyes={diagnosisHook.busyEyes}
+                eyeActionError={diagnosisHook.eyeActionError}
                 handleFile={diagnosisHook.handleFile}
                 clearEye={diagnosisHook.clearEye}
                 onAutoSelect={diagnosisHook.autoSelectRetinographImages}
                 isAutoSelecting={diagnosisHook.isAutoSelectingImages}
                 isSaving={isSaving}
-                patientName={selectedPatient ? `${selectedPatient.nombres} ${selectedPatient.apellidos}` : undefined}
-                onConfirm={diagnosisHook.confirmEye}
-                onCheckConfirmation={diagnosisHook.checkConfirmation}
-                onRevokeConfirmation={diagnosisHook.revokeConfirmation}
-              />
+               />
+               <AutoSelectionModal
+                 open={diagnosisHook.autoModalOpen}
+                 patientName={selectedPatient ? `${selectedPatient.nombres} ${selectedPatient.apellidos}` : ""}
+                 candidates={diagnosisHook.autoCandidates}
+                 chosen={diagnosisHook.autoPreview}
+                 loading={diagnosisHook.autoPreviewLoading}
+                  confirming={diagnosisHook.isAutoSelectingImages || diagnosisHook.busyEyes.OD || diagnosisHook.busyEyes.OI}
+                  eyes={diagnosisHook.eyes}
+                  notice={diagnosisHook.autoFocusEye ? diagnosisHook.eyeActionError[diagnosisHook.autoFocusEye] ?? null : null}
+                 onSelect={diagnosisHook.selectAutoCandidate}
+                 onConfirm={diagnosisHook.confirmEye}
+                 onRevoke={diagnosisHook.revokeConfirmation}
+                 onClose={diagnosisHook.closeAutoSelection}
+               />
               {diagnosisHook.processingNotice && (
                 <p role="alert" className="mt-4 text-sm text-muted-foreground">{diagnosisHook.processingNotice}</p>
               )}</>

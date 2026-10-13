@@ -23,6 +23,9 @@ frontend_origins = [
 CORS(app, resources={r"/*": {"origins": frontend_origins}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes', 'on')
+private_dir = os.getenv('RETINOGRAPH_PRIVATE_DIR')
+if private_dir:
+    app.config['RETINOGRAPH_PRIVATE_DIR'] = private_dir
 
 # Configurar SQLAlchemy ORM
 from database import init_db

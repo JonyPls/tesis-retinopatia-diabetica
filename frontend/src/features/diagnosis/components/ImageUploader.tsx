@@ -1,35 +1,30 @@
 import { Info, Sparkles, UploadCloud } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatClinicalInstant } from "@/lib/clinicalDates";
 import { EyeKey, EyeState } from "../types";
 import { DropZone } from "./DropZone";
 
 interface ImageUploaderProps {
   eyes: Record<EyeKey, EyeState>;
+  busyEyes?: Record<EyeKey, boolean>;
+  eyeActionError?: Partial<Record<EyeKey, string>>;
   handleFile: (eye: EyeKey, file?: File) => void;
   clearEye: (eye: EyeKey) => void;
   onAutoSelect?: () => void;
   isAutoSelecting?: boolean;
-  patientName?: string;
   isSaving?: boolean;
-  onConfirm?: (eye: EyeKey) => void;
-  onCheckConfirmation?: (eye: EyeKey) => void;
-  onRevokeConfirmation?: (eye: EyeKey) => void;
   embedded?: boolean;
 }
 
 export function ImageUploader({
   eyes,
+  busyEyes = { OD: false, OI: false },
+  eyeActionError = {},
   handleFile,
   clearEye,
   onAutoSelect,
   isAutoSelecting = false,
-  patientName,
   isSaving = false,
-  onConfirm,
-  onCheckConfirmation,
-  onRevokeConfirmation,
   embedded = false,
 }: ImageUploaderProps) {
   const loadedCount = (["OD", "OI"] as EyeKey[]).filter(
@@ -62,7 +57,7 @@ export function ImageUploader({
             <Button
               type="button"
               onClick={onAutoSelect}
-              disabled={isAutoSelecting || isSaving || !onAutoSelect}
+              disabled={isAutoSelecting || isSaving || busyEyes.OD || busyEyes.OI || !onAutoSelect}
               className="shrink-0 bg-gradient-primary hover:opacity-90"
             >
               <Sparkles className="h-4 w-4" />
@@ -73,56 +68,37 @@ export function ImageUploader({
 
         {/* Dropzones: OD | OI en cuadrícula */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <DropZone
+          <div className="space-y-2">
+            <DropZone
             eye="OD"
+            disabled={busyEyes.OD}
             preview={eyes.OD.preview}
             fileName={eyes.OD.file?.name}
             hasFile={eyes.OD.file !== null}
             onFile={handleFile}
             onClear={clearEye}
-          />
-          <DropZone
+            />
+            {eyeActionError.OD && <p role="alert" className="text-xs text-destructive">{eyeActionError.OD}</p>}
+          </div>
+          <div className="space-y-2">
+            <DropZone
             eye="OI"
+            disabled={busyEyes.OI}
             preview={eyes.OI.preview}
             fileName={eyes.OI.file?.name}
             hasFile={eyes.OI.file !== null}
             onFile={handleFile}
             onClear={clearEye}
-          />
+            />
+            {eyeActionError.OI && <p role="alert" className="text-xs text-destructive">{eyeActionError.OI}</p>}
+          </div>
         </div>
-        {(["OD", "OI"] as EyeKey[]).map((eye) => {
-          const state = eyes[eye];
-          if (!state.candidate) return null;
-          const confirmation = state.confirmation;
-          const status = confirmation === "CONFIRMADA" ? "Asociación registrada (sin diagnóstico IA)"
-            : confirmation === "CONSUMIDA" ? "Confirmación consumida; decisión médica independiente"
-            : confirmation === "EXPIRADA" ? "Confirmación expirada"
-            : confirmation === "REVOCADA" ? "Confirmación revocada"
-            : confirmation === "incierta" ? "Registro incierto; seleccione y revise nuevamente"
-            : confirmation === "registrando" ? "Registrando confirmación..."
-            : "Candidata por nombre; pendiente de revisión profesional";
-          return <section key={eye} className="space-y-2 rounded-md border border-border p-3 text-sm" aria-label={`Confirmación de ${eye}`}>
-            <p className="font-medium">{eye === "OD" ? "Ojo derecho (OD)" : "Ojo izquierdo (OI)"} · {status}</p>
-            <p className="text-xs text-muted-foreground">Paciente: {patientName || "Paciente seleccionado"}. Ojo R/L inferido del nombre, no verificado clínicamente.</p>
-            <p className="break-all text-xs">Archivo: {state.candidate.filename}</p>
-            <p className="text-xs text-muted-foreground">{state.candidate.tipo_imagen} · {state.candidate.fecha_exportacion} · {state.candidate.extension.toUpperCase()} · secuencia {state.candidate.secuencia}</p>
-            {confirmation === "CONFIRMADA" && state.expiresAt && <p className="text-xs">Vigente hasta {formatClinicalInstant(state.expiresAt)}</p>}
-            {confirmation === "pendiente" && <>
-              <p className="text-xs text-muted-foreground">Revise la imagen ampliada arriba antes de confirmar. Declara expresamente que corresponde al paciente y al ojo indicado. Esto no valida el resultado IA.</p>
-              <Button type="button" variant="outline" disabled={!state.preview || isSaving || isAutoSelecting}
-                onClick={() => onConfirm?.(eye)}>Confirmo paciente, imagen y ojo {eye}</Button>
-              {!state.preview && <p role="alert" className="text-xs text-destructive">No hay previsualización verificable; no puede confirmar esta candidata.</p>}
-            </>}
-            {state.hasConfirmation && (confirmation === "CONFIRMADA" || confirmation === "EXPIRADA" ||
-              confirmation === "CONSUMIDA" || confirmation === "incierta") &&
-              <Button type="button" variant="outline" disabled={isSaving} onClick={() => onCheckConfirmation?.(eye)}>Consultar estado</Button>}
-            {confirmation === "CONFIRMADA" && <Button type="button" variant="outline" disabled={isSaving}
-              onClick={() => onRevokeConfirmation?.(eye)}>Revocar asociación pendiente</Button>}
-          </section>;
-        })}
         {(eyes.OD.isExistingImage || eyes.OI.isExistingImage) && (
-          <p role="alert" className="text-sm text-muted-foreground">
-            La selección automática no inicia inferencia. Solo una asociación expresa, vigente y comprobada puede enviarse mediante su comprobante; la validación médica del resultado es posterior.
+          <p className="text-xs text-muted-foreground">
+            {(["OD", "OI"] as EyeKey[]).filter((eye) => eyes[eye].isExistingImage).map((eye) =>
+              `${eye}: ${eyes[eye].confirmation === "CONFIRMADA" ? "asociación confirmada" :
+                eyes[eye].confirmation === "CONSUMIDA" ? "confirmación consumida" :
+                "confirmación no vigente"}`).join(" · ")}
           </p>
         )}
 
@@ -148,8 +124,10 @@ export function ImageUploader({
               </span>
             </div>
             <span className="text-xs text-muted-foreground">
-              {(["OD", "OI"] as EyeKey[]).some((eye) => eyes[eye].candidate && eyes[eye].confirmation !== "CONFIRMADA")
-                ? "Revise y confirme cada candidata"
+              {(["OD", "OI"] as EyeKey[]).some((eye) => eyes[eye].candidate &&
+                (eyes[eye].confirmation !== "CONFIRMADA" || !eyes[eye].expiresAt ||
+                 Date.parse(eyes[eye].expiresAt) <= Date.now()))
+                ? "Revise la vigencia de la asociación"
                 : loadedCount === 2 ? "Listo para analizar" : "Puede continuar con 1"}
             </span>
           </div>

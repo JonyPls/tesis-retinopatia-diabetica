@@ -86,10 +86,10 @@ describe("creación secuencial y conciliación por ojo", () => {
 
   it("la selección automática queda como candidata y no habilita inferencia sin confirmación 28C", async () => {
     selectExport.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: {
-      OD: { filename: "12345678_01012026_101010_fundus_R_1.jpg", ojo: "OD", ojo_original: "R",
-        tipo_imagen: "fundus", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
-      OI: { filename: "12345678_01012026_101010_fundus_L_1.png", ojo: "OI", ojo_original: "L",
-        tipo_imagen: "fundus", secuencia: 1, extension: "png", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/png" },
+      OD: { filename: "12345678_01012026_101010_Color_R_1.jpg", ojo: "OD", ojo_original: "R",
+        tipo_imagen: "Color", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
+      OI: { filename: "12345678_01012026_101010_Color_L_1.png", ojo: "OI", ojo_original: "L",
+        tipo_imagen: "Color", secuencia: 1, extension: "png", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/png" },
     } });
     downloadExport.mockResolvedValue(new Blob(["synthetic"]));
     const hook = renderHook(() => useDiagnosis(), { wrapper });
@@ -98,9 +98,10 @@ describe("creación secuencial y conciliación por ojo", () => {
       hook.result.current.selectVisita(null);
     });
     await act(async () => hook.result.current.autoSelectRetinographImages());
-    expect(downloadExport).toHaveBeenCalledTimes(2);
-    expect(hook.result.current.eyes.OD.isExistingImage).toBe(true);
-    expect(hook.result.current.eyes.OI.isExistingImage).toBe(true);
+    expect(downloadExport).not.toHaveBeenCalled();
+    expect(hook.result.current.autoCandidates).toHaveLength(2);
+    expect(hook.result.current.eyes.OD.file).toBeNull();
+    expect(hook.result.current.eyes.OI.file).toBeNull();
     act(() => hook.result.current.goNext());
     expect(hook.result.current.canNext).toBe(false);
     act(() => hook.result.current.goNext());
@@ -110,21 +111,22 @@ describe("creación secuencial y conciliación por ojo", () => {
   });
   it.each([401, 403, 404, undefined])("distingue denegación/sesión/recurso/red %s sin conservar vistas denegadas", async (status) => {
     selectExport.mockResolvedValueOnce({ paciente_id: 7, encontradas: 1, imagenes: {
-      OD: { filename: "12345678_01012026_101010_fundus_R_1.jpg", ojo: "OD", ojo_original: "R",
-        tipo_imagen: "fundus", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
+      OD: { filename: "12345678_01012026_101010_Color_R_1.jpg", ojo: "OD", ojo_original: "R",
+        tipo_imagen: "Color", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
     } });
     downloadExport.mockResolvedValueOnce(new Blob(["synthetic"]));
     const hook = renderHook(() => useDiagnosis(), { wrapper });
     act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
     await act(async () => hook.result.current.autoSelectRetinographImages());
-    expect(hook.result.current.eyes.OD.preview).toBe("blob:synthetic");
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[0]));
+    expect(hook.result.current.autoPreview?.preview).toBe("blob:synthetic");
     selectExport.mockRejectedValueOnce(status ? { response: { status } } : new Error("Network Error"));
     await act(async () => hook.result.current.autoSelectRetinographImages());
     const message = vi.mocked(toast).mock.lastCall?.[0]?.description;
     expect(message).toMatch(status === 401 ? /sesión/i : status === 403 ? /autorización/i
       : status === 404 ? /no se encontró/i : /conexión/i);
     if (status) {
-      expect(hook.result.current.eyes.OD.preview).toBeNull();
+      expect(hook.result.current.autoPreview).toBeNull();
       expect(revokePreviewUrl).toHaveBeenCalledWith("blob:synthetic");
     }
     hook.unmount();
@@ -132,15 +134,17 @@ describe("creación secuencial y conciliación por ojo", () => {
 
   it("libera la vista del ojo descargado si el otro falla", async () => {
     selectExport.mockResolvedValueOnce({ paciente_id: 7, encontradas: 2, imagenes: {
-      OD: { filename: "12345678_01012026_101010_fundus_R_1.jpg", ojo: "OD", ojo_original: "R",
-        tipo_imagen: "fundus", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
-      OI: { filename: "12345678_01012026_101010_fundus_L_1.jpg", ojo: "OI", ojo_original: "L",
-        tipo_imagen: "fundus", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
+      OD: { filename: "12345678_01012026_101010_Color_R_1.jpg", ojo: "OD", ojo_original: "R",
+        tipo_imagen: "Color", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
+      OI: { filename: "12345678_01012026_101010_Color_L_1.jpg", ojo: "OI", ojo_original: "L",
+        tipo_imagen: "Color", secuencia: 1, extension: "jpg", fecha_exportacion: "2026-01-01T10:10:10", mime_type: "image/jpeg" },
     } });
     downloadExport.mockResolvedValueOnce(new Blob(["synthetic"])).mockRejectedValueOnce({ response: { status: 403 } });
     const hook = renderHook(() => useDiagnosis(), { wrapper });
     act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
     await act(async () => hook.result.current.autoSelectRetinographImages());
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[0]));
+    await act(async () => hook.result.current.selectAutoCandidate(hook.result.current.autoCandidates[1]));
     expect(revokePreviewUrl).toHaveBeenCalledWith("blob:synthetic");
     expect(hook.result.current.eyes.OD.file).toBeNull();
     expect(hook.result.current.eyes.OI.file).toBeNull();

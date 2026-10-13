@@ -28,7 +28,7 @@ const statusLabel: Record<ReportStatus, string> = {
 function historyError(error: unknown): string {
   const status = (error as { response?: { status?: number } })?.response?.status;
   if (status === 401) return "La sesión no está disponible. Inicia sesión nuevamente.";
-  if (status === 403) return "Acceso denegado al historial de informes.";
+  if (status === 403) return "El historial no está disponible o el acceso está restringido.";
   if (status === 404) return "Historial no encontrado.";
   if (status === 409) return "El historial requiere conciliación antes de consultarse.";
   return "No se pudo consultar el historial. Inténtalo más tarde.";

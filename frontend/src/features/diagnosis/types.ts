@@ -19,6 +19,12 @@ export interface EyeState {
   hasConfirmation?: boolean;
 }
 
+export interface AutoPreview {
+  image: RetinographAutoImage;
+  file: File;
+  preview: string | null;
+}
+
 export interface DiagnosisHook {
   // Navegación
   step: number;
@@ -49,6 +55,13 @@ export interface DiagnosisHook {
   selectedVisita: DiagnosticoVisita | null | undefined;
   isLoadingVisitas: boolean;
   isAutoSelectingImages: boolean;
+  busyEyes: Record<EyeKey, boolean>;
+  eyeActionError: Partial<Record<EyeKey, string>>;
+  autoModalOpen: boolean;
+  autoCandidates: RetinographAutoImage[];
+  autoPreview: AutoPreview | null;
+  autoFocusEye: EyeKey | null;
+  autoPreviewLoading: boolean;
   handleQueryChange: (value: string) => void;
   loadMorePatients: () => Promise<void>;
   selectPatient: (p: PatientSearchResult) => void;
@@ -57,9 +70,11 @@ export interface DiagnosisHook {
 
   // Paso 2 — Imágenes
   eyes: Record<EyeKey, EyeState>;
-  handleFile: (eye: EyeKey, file?: File) => void;
+  handleFile: (eye: EyeKey, file?: File) => Promise<void>;
   autoSelectRetinographImages: () => Promise<void>;
-  clearEye: (eye: EyeKey) => void;
+  selectAutoCandidate: (image: RetinographAutoImage) => Promise<void>;
+  closeAutoSelection: () => void;
+  clearEye: (eye: EyeKey) => Promise<void>;
   confirmEye: (eye: EyeKey) => Promise<void>;
   checkConfirmation: (eye: EyeKey) => Promise<EyeState["confirmation"] | null>;
   revokeConfirmation: (eye: EyeKey) => Promise<void>;

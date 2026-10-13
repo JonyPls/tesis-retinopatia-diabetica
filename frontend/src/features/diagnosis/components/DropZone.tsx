@@ -11,6 +11,7 @@ interface DropZoneProps {
   hasFile: boolean;
   onFile: (eye: EyeKey, file?: File) => void;
   onClear: (eye: EyeKey) => void;
+  disabled?: boolean;
 }
 
 const EYE_LABEL: Record<EyeKey, { short: string; full: string }> = {
@@ -43,6 +44,7 @@ export function DropZone({
   hasFile,
   onFile,
   onClear,
+  disabled = false,
 }: DropZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -54,6 +56,7 @@ export function DropZone({
   const processFile = useCallback(
     (file: File) => {
       const err = validateFile(file);
+      if (disabled) return;
       if (err) {
         setError(err);
         return;
@@ -61,12 +64,13 @@ export function DropZone({
       setError(null);
       onFile(eye, file);
     },
-    [eye, onFile],
+    [eye, onFile, disabled],
   );
 
   // ── Drag handlers ──────────────────────────────────────────────
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    if (disabled) return;
     setIsDragging(true);
   };
 
@@ -80,6 +84,7 @@ export function DropZone({
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (disabled) return;
     const file = e.dataTransfer.files?.[0];
     if (file) processFile(file);
   };
@@ -93,6 +98,7 @@ export function DropZone({
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (disabled) return;
     setError(null);
     setPreviewOpen(false);
     onClear(eye);
@@ -100,6 +106,7 @@ export function DropZone({
 
   const handleReplace = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (disabled) return;
     inputRef.current?.click();
   };
 
@@ -116,6 +123,7 @@ export function DropZone({
             <button
               type="button"
               onClick={handleReplace}
+              disabled={disabled}
               className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
             >
               <UploadCloud className="h-3 w-3" />
@@ -124,6 +132,7 @@ export function DropZone({
             <button
               type="button"
               onClick={handleClear}
+              disabled={disabled}
               className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
             >
               <X className="h-3 w-3" />
@@ -159,6 +168,7 @@ export function DropZone({
         <input
           ref={inputRef}
           type="file"
+          disabled={disabled}
           accept=".jpg,.jpeg,.png,.tif,.tiff"
           className="hidden"
           onChange={onInputChange}
@@ -186,7 +196,9 @@ export function DropZone({
             {label.full}
           </span>
           <button
+            type="button"
             onClick={handleClear}
+            disabled={disabled}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
           >
             <X className="h-3 w-3" />
@@ -217,6 +229,7 @@ export function DropZone({
 
       <button
         type="button"
+        disabled={disabled}
         onClick={() => inputRef.current?.click()}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -270,6 +283,7 @@ export function DropZone({
       <input
         ref={inputRef}
         type="file"
+        disabled={disabled}
         accept=".jpg,.jpeg,.png,.tif,.tiff"
         className="hidden"
         onChange={onInputChange}

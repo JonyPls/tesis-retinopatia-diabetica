@@ -81,6 +81,7 @@ export interface VisitaClinica {
   estado?: string;
   tiene_diagnostico_ia?: number;
   tiene_informes?: number;
+  total_informes?: number;
   diagnostico_ia?: {
     id: number;
     estado: "PENDIENTE" | "PROCESADO" | "VALIDADO" | "ANULADO";

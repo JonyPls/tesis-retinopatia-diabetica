@@ -80,6 +80,7 @@ class RetinographStorageTests(unittest.TestCase):
         self.assertEqual(response["data"]["encontradas"], 3)
         self.assertEqual(response["data"]["imagenes"]["OD"]["extension"], "tiff")
         self.assertEqual(response["data"]["imagenes"]["OI"]["ojo"], "OI")
+        self.assertEqual(len(response["data"]["candidatas"]), 3)
         self.assertNotIn(str(self.root), str(response))
 
     def test_invalid_names_never_open_files(self):
@@ -160,6 +161,8 @@ class RetinographStorageTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(response["data"]["imagenes"]["OD"]["filename"], max(names[1:]))
         self.assertEqual(response["data"]["encontradas"], 3)
+        self.assertEqual([item["filename"] for item in response["data"]["candidatas"]],
+                         sorted(names, reverse=True))
 
     def test_bounded_work_for_synthetic_selection_and_download(self):
         names = [self.name(eye="R", seq=i) for i in (1, 2)] + [self.name(eye="L")]

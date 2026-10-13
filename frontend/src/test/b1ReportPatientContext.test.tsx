@@ -29,6 +29,45 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Contexto de paciente en informes", () => {
+  const visit = (total: number) => ({ visita_id: 3, fecha_visita: "2026-10-13T17:51:00Z",
+    fecha_visita_origen: "UTC_VERIFICADO" as const, medico_tratante: "Profesional", total_informes: total });
+
+  it("vuelve a consultar el conteo al regresar del Paso 3, sin incrementar tras un guardado fallido", async () => {
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([visit(2)]).mockResolvedValueOnce([visit(2)]);
+    const { result } = renderHook(() => useReports(), { wrapper });
+    act(() => result.current.toggleTipo({ id: 4, nombre: "Paquimetría", descripcion: "" }));
+    act(() => result.current.goNext());
+    act(() => result.current.selectPatient(patient(7)));
+    await waitFor(() => expect(result.current.visitas[0]?.total_informes).toBe(2));
+    act(() => result.current.selectVisita(result.current.visitas[0]));
+    act(() => result.current.goNext());
+    expect(result.current.step).toBe(3);
+    result.current.formRefs.current[4] = { isValid: () => true, getData: () => ({ nota: "Sintética" }) };
+    vi.mocked(api.post).mockRejectedValueOnce(new Error("no se guardó"));
+    await act(async () => result.current.saveAll());
+    expect(result.current.step).toBe(3);
+    act(() => result.current.goBack());
+    await waitFor(() => expect(vi.mocked(obtenerVisitasPaciente)).toHaveBeenCalledTimes(2));
+    expect(result.current.visitas[0].total_informes).toBe(2);
+  });
+
+  it("consulta el nuevo conteo del servidor después de guardar correctamente y volver a seleccionar paciente", async () => {
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([visit(2)]).mockResolvedValueOnce([visit(3)]);
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { data: { visita_id: 3 } } });
+    const { result } = renderHook(() => useReports(), { wrapper });
+    act(() => result.current.toggleTipo({ id: 4, nombre: "Paquimetría", descripcion: "" }));
+    act(() => result.current.goNext());
+    act(() => result.current.selectPatient(patient(7)));
+    await waitFor(() => expect(result.current.visitas[0]?.total_informes).toBe(2));
+    act(() => result.current.selectVisita(result.current.visitas[0]));
+    act(() => result.current.goNext());
+    result.current.formRefs.current[4] = { isValid: () => true, getData: () => ({ nota: "Sintética" }) };
+    await act(async () => result.current.saveAll());
+    expect(result.current.step).toBe(1);
+    act(() => result.current.selectPatient(patient(7)));
+    await waitFor(() => expect(result.current.visitas[0]?.total_informes).toBe(3));
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
   it("prioriza fechas acreditadas antes del recorte sin ocultar históricos al expandir", async () => {
     vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([
       { visita_id: 99, fecha_visita: "2099-01-01T00:00:00", fecha_visita_origen: "NO_VERIFICADO", medico_tratante: "Sintético" },
