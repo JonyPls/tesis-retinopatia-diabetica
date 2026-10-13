@@ -4107,6 +4107,181 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                 self.assertEqual(report.versiones[1].estado, report.estado)
                 self.assertEqual(report.versiones[1].datos_estructurados, report.datos_estructurados)
 
+    def test_29c5_history_catalog_and_snapshots_read_only(self):
+        with self.report_visit() as visit_id:
+            created, _ = self.call('/api/informes', method='POST', token=self.token(),
+                                   json_data=self.report_payload(visit_id=visit_id))
+            self.assertEqual(created.status_code, 201)
+            report_id = created.json['data']['id']
+            other, _ = self.call('/api/informes', method='POST', token=self.token('colleague'),
+                                 json_data=self.report_payload(visit_id=visit_id, type_id=3))
+            self.assertEqual(other.status_code, 201)
+            other_id = other.json['data']['id']
+            path = f'/api/informes/{report_id}'
+            catalog = f'/api/informes/historial/paciente/{self.patient_ids[1]}'
+            with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True,
+                                              'REPORTS_EDIT_ENABLED': True,
+                                              'REPORTS_ANNUL_ENABLED': True}):
+                corrected, _ = self.call(path, method='PUT', token=self.token(), json_data={
+                    'datos_estructurados': {'nota': 'Corrección reservada'},
+                    'motivo': 'Corrección registrada', 'revision_esperada': 1})
+                self.assertEqual(corrected.status_code, 200, corrected.json)
+                annulled, _ = self.call(path + '/anulacion', method='POST', token=self.token(),
+                                         json_data={'motivo': 'Anulación registrada', 'revision_esperada': 2})
+                self.assertEqual(annulled.status_code, 200, annulled.json)
+            db.session.remove()
+            other_report = db.session.get(informe_entities.Informe, other_id)
+            other_report.estado = 'INACTIVO'
+            other_report.revision_actual = 2
+            db.session.flush()
+            db.session.add(informe_entities.InformeVersion(
+                informe_id=other_id, numero_version=2, operacion='INACTIVACION',
+                schema_version=other_report.schema_version,
+                datos_estructurados=other_report.datos_estructurados,
+                conclusion=other_report.conclusion, estado='INACTIVO',
+                autor_operacion_id=self.user_ids['colleague'], motivo='Fixture sintético'))
+            db.session.commit()
+            db.session.remove()
+            with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True}):
+                before = [(r.id, r.revision_actual, r.estado, len(r.versiones))
+                          for r in informe_entities.Informe.query.filter_by(visita_id=visit_id).all()]
+                db.session.remove()
+                response, sql = self.call(catalog + '?per_page=1&page=1',
+                                          token=self.token('colleague'), measure=True)
+                self.assertEqual(response.status_code, 200, response.json)
+                self.assertEqual(response.headers['Cache-Control'], 'private, no-store')
+                self.assertEqual(response.json['pagination']['total'], 2)
+                self.assertTrue(response.json['pagination']['has_more'])
+                self.assertEqual(len(response.json['data']), 1)
+                self.assertNotIn('datos_estructurados', str(response.json))
+                self.assertNotIn('conclusion', str(response.json))
+                self.assertEqual(sum('from informes ' in q.lower().replace('`', '')
+                                     for q in sql), 2)  # COUNT + JOIN paginado.
+                second, _ = self.call(catalog + '?per_page=1&page=2', token=self.token())
+                self.assertEqual(second.status_code, 200)
+                self.assertFalse(second.json['pagination']['has_more'])
+                rows = response.json['data'] + second.json['data']
+                self.assertEqual({r['id']: r['estado'] for r in rows},
+                                 {report_id: 'ANULADO', other_id: 'INACTIVO'})
+                self.assertEqual({r['id']: r['revision_actual'] for r in rows},
+                                 {report_id: 3, other_id: 2})
+                self.assertTrue(all(r['visita_id'] == visit_id for r in rows))
+                regular, _ = self.call(f'/api/informes/paciente/{self.patient_ids[1]}',
+                                       token=self.token())
+                self.assertEqual(regular.status_code, 200)
+                self.assertFalse(any(r['id'] in (report_id, other_id) for r in regular.json['data']))
+                report, statements = self.call(path + '/versiones?per_page=2&page=1',
+                                               token=self.token('colleague'), measure=True)
+                self.assertEqual(report.status_code, 200, report.json)
+                self.assertEqual(report.headers['Cache-Control'], 'private, no-store')
+                self.assertEqual(report.json['data']['informe']['estado'], 'ANULADO')
+                self.assertEqual(report.json['data']['informe']['revision_actual'], 3)
+                self.assertEqual(report.json['pagination']['total'], 3)
+                self.assertEqual([(v['numero_version'], v['operacion'], v['es_actual'])
+                                  for v in report.json['data']['versiones']],
+                                 [(1, 'CREACION', False), (2, 'CORRECCION', False)])
+                self.assertEqual(report.json['data']['versiones'][0]['datos_estructurados'],
+                                 self.report_payload(visit_id=visit_id)['datos_estructurados'])
+                self.assertEqual(report.json['data']['versiones'][1]['datos_estructurados'],
+                                 {'nota': 'Corrección reservada'})
+                self.assertEqual(report.json['data']['versiones'][1]['motivo'],
+                                 'Corrección registrada')
+                final, _ = self.call(path + '/versiones?per_page=2&page=2', token=self.token())
+                self.assertEqual(final.status_code, 200, final.json)
+                final_version = final.json['data']['versiones'][0]
+                self.assertEqual((final_version['numero_version'], final_version['operacion'],
+                                  final_version['estado'], final_version['es_actual']),
+                                 (3, 'ANULACION', 'ANULADO', True))
+                self.assertEqual(final_version['datos_estructurados'],
+                                 report.json['data']['versiones'][1]['datos_estructurados'])
+                self.assertEqual(final_version['motivo'], 'Anulación registrada')
+                self.assertIsNotNone(final_version['fecha_operacion'])
+                self.assertEqual(final_version['autor_operacion_id'],
+                                 self.user_ids['ophthalmologist'])
+                self.assertEqual(report.json['data']['versiones'][0]['schema_version'], 1)
+                self.assertFalse(any(q.lstrip().lower().startswith(('insert ', 'update ', 'delete '))
+                                     for q in statements))
+                inactive, _ = self.call(f'/api/informes/{other_id}/versiones',
+                                        token=self.token())
+                self.assertEqual(inactive.status_code, 200, inactive.json)
+                self.assertEqual(inactive.json['data']['informe']['estado'], 'INACTIVO')
+                db.session.remove()
+                after = [(r.id, r.revision_actual, r.estado, len(r.versiones))
+                         for r in informe_entities.Informe.query.filter_by(visita_id=visit_id).all()]
+                self.assertEqual(after, before)
+
+    def test_29c5_history_denials_inactive_patient_and_inconsistency(self):
+        with self.report_visit(state='ANULADA') as visit_id:
+            # Solo fixtures SQL sintéticos; el POST ordinario prohíbe visita anulada.
+            db.session.add(informe_entities.Informe(
+                visita_id=visit_id, tipo_informe_id=2,
+                usuario_id=self.user_ids['ophthalmologist'], revision_actual=1,
+                schema_version=1, datos_estructurados={'nota': 'Estado conocido'},
+                conclusion=None, estado='INACTIVO'))
+            db.session.flush()
+            report_id = informe_entities.Informe.query.filter_by(visita_id=visit_id).one().id
+            db.session.add(informe_entities.InformeVersion(
+                informe_id=report_id, numero_version=1, operacion='MIGRACION_INICIAL',
+                schema_version=1, datos_estructurados={'nota': 'Estado conocido'},
+                conclusion=None, estado='INACTIVO', autor_operacion_id=None))
+            db.session.commit()
+            db.session.remove()
+            path = f'/api/informes/{report_id}/versiones'
+            catalog = f'/api/informes/historial/paciente/{self.patient_ids[1]}'
+            for target in (path, catalog):
+                denied, sql = self.call(target, token=self.token(), measure=True)
+                self.assertEqual(denied.status_code, 403)
+                self.assertFalse(any('from informes' in q.lower().replace('`', '') for q in sql))
+            with patch.dict(self.app.config, {'REPORTS_HISTORY_ENABLED': True}):
+                for target in (path, catalog):
+                    for bearer in (None, 'invalid', self.token(expired=True)):
+                        denied, sql = self.call(target, token=bearer, measure=True)
+                        self.assertEqual(denied.status_code, 401)
+                        self.assertEqual(sql, [])
+                    self.assertEqual(self.call(target + '?token=' + self.token(),
+                                               token=self.token())[0].status_code, 401)
+                    for profile in ('administrator', 'nurse', 'assistant'):
+                        denied, sql = self.call(target, token=self.token(profile), measure=True)
+                        self.assertEqual(denied.status_code, 403)
+                        self.assertFalse(any('from informes' in q.lower().replace('`', '')
+                                             for q in sql))
+                    with self.temporary_grant('OFTALMOLOGO', 'informes.ver', present=False):
+                        for profile in ('ophthalmologist', 'dual'):
+                            self.assertEqual(self.call(target, token=self.token(profile))[0].status_code, 403)
+                        with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'informes.ver', present=True):
+                            self.assertEqual(self.call(target, token=self.token('dual'))[0].status_code, 403)
+                    with self.temporary_state(Usuario, self.user_ids['ophthalmologist'], 'INACTIVO'):
+                        self.assertEqual(self.call(target, token=self.token())[0].status_code, 401)
+                result, _ = self.call(path, token=self.token('colleague'))
+                self.assertEqual(result.status_code, 200, result.json)
+                initial = result.json['data']['versiones'][0]
+                self.assertEqual((initial['operacion'], initial['autor_operacion_id'],
+                                  initial['autor_operacion'], initial['es_actual']),
+                                 ('MIGRACION_INICIAL', None, None, True))
+                history, _ = self.call(catalog, token=self.token('colleague'))
+                self.assertEqual(history.status_code, 200)
+                self.assertTrue(any(r['id'] == report_id and r['estado_visita'] == 'ANULADA'
+                                    for r in history.json['data']))
+                with self.temporary_state(Paciente, self.patient_ids[1], 'INACTIVO'):
+                    inactive_patient, _ = self.call(catalog, token=self.token('colleague'))
+                    self.assertEqual(inactive_patient.status_code, 200)
+                    self.assertTrue(any(r['id'] == report_id for r in inactive_patient.json['data']))
+                    self.assertEqual(self.call(path, token=self.token('colleague'))[0].status_code, 200)
+                self.assertEqual(self.call('/api/informes/99999999/versiones',
+                                           token=self.token())[0].status_code, 404)
+                self.assertEqual(self.call('/api/informes/historial/paciente/99999999',
+                                           token=self.token())[0].status_code, 404)
+                db.session.remove()
+                report = db.session.get(informe_entities.Informe, report_id)
+                report.datos_estructurados = {'nota': 'Principal inconsistente'}
+                db.session.commit()
+                mismatch, _ = self.call(path, token=self.token())
+                self.assertEqual(mismatch.status_code, 409)
+                self.assertNotIn('Principal inconsistente', mismatch.get_data(as_text=True))
+                db.session.remove()
+                self.assertEqual(informe_entities.InformeVersion.query.filter_by(
+                    informe_id=report_id).one().datos_estructurados['nota'], 'Estado conocido')
+
 
 def run_orm_integration(port, password, datadir, server_uuid, *, confirmations_available=True):
     from b1_mysql_disposable_trial import connect, ensure_own_server

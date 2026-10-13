@@ -1,3 +1,4 @@
+import re
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 from utils.strict_authorization import (AuthorizationInputError, disabled_authenticated_operation,
@@ -13,8 +14,35 @@ from services.informe_service import (
     anular_informe_existente,
     bloquear_informe_para_edicion,
     cancelar_edicion,
+    obtener_versiones_informe,
+    obtener_historial_paciente,
 )
 informe_bp = Blueprint("informe_bp", __name__)
+
+
+@informe_bp.after_request
+def _no_store_historial(response):
+    if request.endpoint in ('informe_bp.versiones', 'informe_bp.historial_paciente'):
+        response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
+def _history_page():
+    if set(request.args) - {'page', 'per_page'}:
+        return None
+    values = []
+    for key, default, maximum in (('page', 1, 1000000), ('per_page', 10, 50)):
+        raw = request.args.getlist(key)
+        if len(raw) > 1:
+            return None
+        text = raw[0] if raw else str(default)
+        if not re.fullmatch(r'[1-9][0-9]*', text) or len(text) > 7:
+            return None
+        number = int(text)
+        if number > maximum:
+            return None
+        values.append(number)
+    return values
 
 
 def _report_requires_new_visit():
@@ -71,6 +99,26 @@ def crear():
 @strict_authorization_required("reports.full_read")
 def obtener(informe_id):
     resp, status = obtener_informe(informe_id)
+    return jsonify(resp), status
+
+
+@informe_bp.route('/api/informes/<int:informe_id>/versiones', methods=['GET'])
+@strict_authorization_required('reports.full_read', enabled_config='REPORTS_HISTORY_ENABLED')
+def versiones(informe_id):
+    page = _history_page()
+    if page is None:
+        return jsonify({'success': False, 'message': 'Paginación inválida.'}), 400
+    resp, status = obtener_versiones_informe(informe_id, *page)
+    return jsonify(resp), status
+
+
+@informe_bp.route('/api/informes/historial/paciente/<int:paciente_id>', methods=['GET'])
+@strict_authorization_required('reports.full_read', enabled_config='REPORTS_HISTORY_ENABLED')
+def historial_paciente(paciente_id):
+    page = _history_page()
+    if page is None:
+        return jsonify({'success': False, 'message': 'Paginación inválida.'}), 400
+    resp, status = obtener_historial_paciente(paciente_id, *page)
     return jsonify(resp), status
 
 @informe_bp.route("/api/informes/<int:informe_id>", methods=["PUT"])

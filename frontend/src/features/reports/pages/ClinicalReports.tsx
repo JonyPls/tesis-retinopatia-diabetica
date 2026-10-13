@@ -22,6 +22,7 @@ import { PatientSelectorStep } from "../components/PatientSelectorStep";
 import { VisitaSelector } from "../components/VisitaSelector";
 import { ReportForm } from "../components/ReportForm";
 import { AddTipoModal } from "../components/AddTipoModal";
+import { ReportHistoryPanel } from "../components/ReportHistoryPanel";
 import { ConfirmDelete } from "@/components/ui/ConfirmDelete";
 import {
   AlertDialog,
@@ -132,6 +133,12 @@ export default function ClinicalReports() {
             cargandoVisitas={hook.isLoadingVisitas}
           />
 
+          {hook.selectedPatient && (
+            <div className="lg:col-span-2">
+              <ReportHistoryPanel key={hook.selectedPatient.id} patient={hook.selectedPatient} />
+            </div>
+          )}
+
           <div className="flex justify-between lg:col-span-2 mt-2">
             <Button variant="outline" size="sm" onClick={hook.goBack}>
               <ArrowLeft className="h-4 w-4 mr-2" /> Anterior
@@ -171,11 +178,7 @@ export default function ClinicalReports() {
             {viewingExistingId !== null && (
               (() => {
                 const inf = hook.informesExistentes.find(i => i.id === viewingExistingId);
-                if (!inf) {
-                  console.warn('[ClinicalReports] informe no encontrado para viewingExistingId=', viewingExistingId);
-                  return null;
-                }
-                console.log('[ClinicalReports] mostrando informe registrado:', inf.datos_estructurados);
+                 if (!inf) return null;
                 return (
                   <ReportForm
                     key={inf.id}

@@ -18,6 +18,61 @@ export interface Informe {
   fecha_actualizado: string;
 }
 
+export type ReportStatus = "ACTIVO" | "ANULADO" | "INACTIVO";
+export type ReportOperation = "CREACION" | "MIGRACION_INICIAL" | "CORRECCION" | "ANULACION" | "INACTIVACION";
+
+export interface ReportHistoryPagination {
+  page: number;
+  per_page: number;
+  total: number;
+  has_more: boolean;
+}
+
+export interface HistoricalReportSummary {
+  id: number;
+  visita_id: number;
+  fecha_visita: string;
+  estado_visita: string;
+  tipo_informe_id: number;
+  tipo_informe_nombre: string;
+  usuario_id: number;
+  autor_original: { id: number; nombres: string; apellidos: string };
+  estado: ReportStatus;
+  revision_actual: number;
+  fecha_creado: string;
+  fecha_actualizado: string;
+}
+
+export interface HistoricalReportVersion {
+  numero_version: number;
+  operacion: ReportOperation;
+  schema_version: number;
+  datos_estructurados: Record<string, unknown> | null;
+  conclusion: string | null;
+  estado: ReportStatus;
+  autor_operacion_id: number | null;
+  autor_operacion: { id: number; nombres: string; apellidos: string } | null;
+  fecha_operacion: string;
+  motivo: string | null;
+  es_actual: boolean;
+}
+
+export interface HistoricalReportDetail {
+  informe: {
+    id: number;
+    paciente_id: number;
+    visita_id: number;
+    fecha_visita: string;
+    estado_visita: string;
+    tipo_informe_id: number;
+    tipo_informe_nombre: string;
+    usuario_id: number;
+    estado: ReportStatus;
+    revision_actual: number;
+  };
+  versiones: HistoricalReportVersion[];
+}
+
 export interface SearchableOption {
   label: string;
   value: string;

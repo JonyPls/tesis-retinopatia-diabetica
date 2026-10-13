@@ -64,7 +64,8 @@ fake_informe_service = types.ModuleType("services.informe_service")
 for name in ("obtener_tipos", "crear_nuevo_informe", "obtener_informe",
              "actualizar_informe_existente", "anular_informe_existente", "bloquear_informe_para_edicion",
              "cancelar_edicion", "eliminar_informe_existente",
-             "obtener_informes_por_paciente", "consultar_informes_por_diagnostico",
+             "obtener_informes_por_paciente", "obtener_versiones_informe", "obtener_historial_paciente",
+             "consultar_informes_por_diagnostico",
              "consultar_informes_por_visita"):
     setattr(fake_informe_service, name, Mock())
 
@@ -2216,6 +2217,70 @@ class AuthSecurityTests(unittest.TestCase):
             self.assertEqual(self.client.put('/api/informes/123', headers=headers,
                                             json={'motivo': 'x'}).status_code, 403)
             self.assertEqual(self.client.delete('/api/informes/123', headers=headers).status_code, 403)
+
+    def test_29c5_history_is_opt_in_read_only_and_role_scoped(self):
+        paths = ('/api/informes/123/versiones', '/api/informes/historial/paciente/456')
+        services = ("obtener_versiones_informe", "obtener_historial_paciente")
+        self.set_role_grants({'OFTALMOLOGO': ['informes.ver']})
+        token = self.token()
+        with (patch.object(informe_routes, services[0],
+                           return_value=({'success': True, 'data': {'versiones': []}}, 200)) as versions,
+              patch.object(informe_routes, services[1],
+                           return_value=({'success': True, 'data': []}, 200)) as history):
+            for path in paths:
+                for headers, expected in (({}, 401), (self.headers('invalid'), 401),
+                                          (self.headers(token), 403)):
+                    response = self.client.get(path, headers=headers)
+                    self.assertEqual(response.status_code, expected)
+                    self.assertEqual(response.headers.get('Cache-Control'), 'private, no-store')
+                self.assertEqual(self.client.get(path + '?token=' + token,
+                                                 headers=self.headers(token)).status_code, 401)
+            versions.assert_not_called()
+            history.assert_not_called()
+            self.client.application.config['REPORTS_EDIT_ENABLED'] = True
+            self.client.application.config['REPORTS_ANNUL_ENABLED'] = True
+            self.assertEqual(self.client.get(paths[0], headers=self.headers(token)).status_code, 403)
+            self.client.application.config['REPORTS_EDIT_ENABLED'] = False
+            self.client.application.config['REPORTS_ANNUL_ENABLED'] = False
+            self.client.application.config['REPORTS_HISTORY_ENABLED'] = 1
+            self.assertEqual(self.client.get(paths[0], headers=self.headers(token)).status_code, 403)
+            self.client.application.config['REPORTS_HISTORY_ENABLED'] = True
+            self.assertEqual(self.client.put('/api/informes/123', headers=self.headers(token)).status_code, 403)
+            self.assertEqual(self.client.post('/api/informes/123/anulacion',
+                                             headers=self.headers(token)).status_code, 403)
+            self.assertEqual(self.client.delete('/api/informes/123', headers=self.headers(token)).status_code, 403)
+            for role in ('ADMINISTRADOR_SISTEMA', 'ENFERMERO', 'ASISTENTE_ADMINISTRATIVO'):
+                self.set_role_grants({role: ['informes.ver']})
+                for path in paths:
+                    self.assertEqual(self.client.get(path, headers=self.headers(token)).status_code, 403)
+            self.set_role_grants({'OFTALMOLOGO': ['informes.gestionar'],
+                                  'ADMINISTRADOR_SISTEMA': ['informes.ver']})
+            for path in paths:
+                self.assertEqual(self.client.get(path, headers=self.headers(token)).status_code, 403)
+            versions.assert_not_called()
+            history.assert_not_called()
+            self.set_role_grants({'OFTALMOLOGO': ['informes.ver']})
+            for path in paths:
+                response = self.client.get(path + '?page=2&per_page=5', headers=self.headers(token))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers['Cache-Control'], 'private, no-store')
+            versions.assert_called_once_with(123, 2, 5)
+            history.assert_called_once_with(456, 2, 5)
+            versions.reset_mock()
+            history.reset_mock()
+            for path in paths:
+                for params in ('?page=0', '?per_page=51', '?page=01', '?page=x',
+                               '?page=1&page=2', '?per_page=-1', '?token=not-a-jwt'):
+                    status = 401 if params.startswith('?token=') else 400
+                    self.assertEqual(self.client.get(path + params,
+                                     headers=self.headers(token)).status_code, status)
+            versions.assert_not_called()
+            history.assert_not_called()
+            grants = self.set_role_grants({'OFTALMOLOGO': ['informes.ver']})
+            grants['OFTALMOLOGO'].permisos_rel[0].permiso.estado = 'INACTIVO'
+            self.assertEqual(self.client.get(paths[0], headers=self.headers(token)).status_code, 403)
+            self.active = False
+            self.assertEqual(self.client.get(paths[0], headers=self.headers(token)).status_code, 401)
 
 
 if __name__ == "__main__":

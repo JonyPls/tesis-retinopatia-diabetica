@@ -42,6 +42,8 @@ export function useReports() {
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoadingRecent, setIsLoadingRecent] = useState(true);
   const searchRequest = useRef(0);
+  const patientContext = useRef(0);
+  const existingContext = useRef(0);
   const recentDenied = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -96,7 +98,18 @@ export function useReports() {
     setSearchError(null);
     setHasSearched(false);
     setIsSearching(false);
-    if (selectedPatient) setSelectedPatient(null);
+    if (selectedPatient) {
+      patientContext.current++;
+      existingContext.current++;
+      setSelectedPatient(null);
+      setSelectedVisita(undefined);
+      setVisitas([]);
+      setIsLoadingVisitas(false);
+      setIsLoadingInformes(false);
+      setIsLoadingInformesExistentes(false);
+      setInformes([]);
+      setInformesExistentes([]);
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (value.trim().length < 2) {
@@ -129,6 +142,8 @@ export function useReports() {
 
   const selectPatient = (p: PatientSearchResult) => {
     searchRequest.current++;
+    patientContext.current++;
+    existingContext.current++;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setIsSearching(false);
     setSearchError(null);
@@ -137,28 +152,34 @@ export function useReports() {
     setSearchResults([]);
     setSelectedVisita(undefined);
     setVisitas([]);
+    setInformes([]);
+    setInformesExistentes([]);
     loadInformes(p.id);
     loadVisitas(p.id);
   };
 
   const loadVisitas = useCallback(async (pacienteId: number) => {
+    const context = patientContext.current;
     setIsLoadingVisitas(true);
     setVisitasExpandidas(false);
     try {
       const data = await withMinDuration(obtenerVisitasPaciente(pacienteId));
+      if (context !== patientContext.current) return;
       const sorted = (data || []).sort(
         (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
       );
       setHasMoreVisitas(sorted.length > maxVisitas);
       setVisitas(sorted.slice(0, maxVisitas));
     } catch {
-      setVisitas([]);
+      if (context === patientContext.current) setVisitas([]);
     } finally {
-      setIsLoadingVisitas(false);
+      if (context === patientContext.current) setIsLoadingVisitas(false);
     }
   }, []);
 
   const selectVisita = (v: DiagnosticoVisita | null) => {
+    existingContext.current++;
+    setIsLoadingInformesExistentes(false);
     setSelectedVisita(v);
     setInformesExistentes([]);
     setActiveTipoIndex(0);
@@ -170,9 +191,11 @@ export function useReports() {
 
   const verMenosVisitas = useCallback(async () => {
     if (!selectedPatient) return;
+    const context = patientContext.current;
     setVisitasExpandidas(false);
     try {
       const data = await obtenerVisitasPaciente(selectedPatient.id);
+      if (context !== patientContext.current) return;
       const sorted = (data || []).sort(
         (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
       );
@@ -185,28 +208,32 @@ export function useReports() {
 
   const verMasVisitas = useCallback(async () => {
     if (!selectedPatient) return;
+    const context = patientContext.current;
     setVisitasExpandidas(true);
     try {
       const data = await obtenerVisitasPaciente(selectedPatient.id);
+      if (context !== patientContext.current) return;
       const sorted = (data || []).sort(
         (a, b) => new Date(b.fecha_visita).getTime() - new Date(a.fecha_visita).getTime(),
       );
       setVisitas(sorted);
       setHasMoreVisitas(false);
     } catch {
-      setVisitasExpandidas(false);
+      if (context === patientContext.current) setVisitasExpandidas(false);
     }
   }, [selectedPatient]);
 
   const loadInformes = useCallback(async (pacienteId: number) => {
+    const context = patientContext.current;
     setIsLoadingInformes(true);
     try {
       const res = await api.get(`/informes/paciente/${pacienteId}`);
+      if (context !== patientContext.current) return;
       setInformes(res.data.data || []);
     } catch {
-      setInformes([]);
+      if (context === patientContext.current) setInformes([]);
     } finally {
-      setIsLoadingInformes(false);
+      if (context === patientContext.current) setIsLoadingInformes(false);
     }
   }, []);
 
@@ -218,9 +245,11 @@ export function useReports() {
   }, [step, selectedVisita?.visita_id]);
 
   const loadInformesExistentes = async (visitaId: number) => {
+    const context = ++existingContext.current;
     setIsLoadingInformesExistentes(true);
     try {
       const res = await api.get(`/informes/visita/${visitaId}`);
+      if (context !== existingContext.current) return;
       const existentes: Informe[] = (res.data.data || []).map((inf: any) => {
         if (typeof inf.datos_estructurados === "string") {
           try { inf.datos_estructurados = JSON.parse(inf.datos_estructurados); } catch {}
@@ -234,9 +263,9 @@ export function useReports() {
         return prev.filter((t) => !existingIds.has(t.id));
       });
     } catch {
-      setInformesExistentes([]);
+      if (context === existingContext.current) setInformesExistentes([]);
     } finally {
-      setIsLoadingInformesExistentes(false);
+      if (context === existingContext.current) setIsLoadingInformesExistentes(false);
     }
   };
 
@@ -277,6 +306,8 @@ export function useReports() {
     if (step === 2) {
       setStep(1);
     } else if (step === 3) {
+      existingContext.current++;
+      setIsLoadingInformesExistentes(false);
       setStep(2);
       setInformesExistentes([]);
       setActiveTipoIndex(0);
@@ -377,6 +408,8 @@ export function useReports() {
 
   const clearPatient = () => {
     searchRequest.current++;
+    patientContext.current++;
+    existingContext.current++;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setIsSearching(false);
     setSearchError(null);
@@ -386,6 +419,10 @@ export function useReports() {
     setSearchResults([]);
     setSelectedVisita(undefined);
     setVisitas([]);
+    setInformes([]);
+    setIsLoadingVisitas(false);
+    setIsLoadingInformes(false);
+    setIsLoadingInformesExistentes(false);
     setHasMoreVisitas(false);
     setInformesExistentes([]);
     setActiveTipoIndex(0);
@@ -394,6 +431,8 @@ export function useReports() {
 
   const resetAll = () => {
     searchRequest.current++;
+    patientContext.current++;
+    existingContext.current++;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setIsSearching(false);
     setSearchError(null);
@@ -404,6 +443,9 @@ export function useReports() {
     setQuery("");
     setSearchResults([]);
     setInformes([]);
+    setIsLoadingVisitas(false);
+    setIsLoadingInformes(false);
+    setIsLoadingInformesExistentes(false);
     setVisitas([]);
     setSelectedVisita(undefined);
     setHasMoreVisitas(false);

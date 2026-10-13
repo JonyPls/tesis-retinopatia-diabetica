@@ -192,6 +192,43 @@ class InformeRepository:
         return None
 
     @staticmethod
+    def obtener_contexto_historico(informe_id: int):
+        # Sin filtro de actividad: incluye visitas anuladas y pacientes inactivos.
+        return (db.session.query(Informe, TipoInforme, VisitaClinica, Paciente, Usuario)
+                .join(TipoInforme, Informe.tipo_informe_id == TipoInforme.id)
+                .join(VisitaClinica, Informe.visita_id == VisitaClinica.id)
+                .join(Paciente, VisitaClinica.paciente_id == Paciente.id)
+                .join(Usuario, Informe.usuario_id == Usuario.id)
+                .filter(Informe.id == informe_id).first())
+
+    @staticmethod
+    def versiones_historicas(informe_id: int, page: int, per_page: int):
+        base = InformeVersion.query.filter_by(informe_id=informe_id)
+        total = base.count()
+        inicial = base.filter_by(numero_version=1).first()
+        ultima = base.order_by(InformeVersion.numero_version.desc()).first()
+        rows = (db.session.query(InformeVersion, Usuario)
+                .outerjoin(Usuario, InformeVersion.autor_operacion_id == Usuario.id)
+                .filter(InformeVersion.informe_id == informe_id)
+                .order_by(InformeVersion.numero_version.asc(), InformeVersion.id.asc())
+                .limit(per_page).offset((page - 1) * per_page).all())
+        return total, inicial, ultima, rows
+
+    @staticmethod
+    def listar_historial_paciente(paciente_id: int, page: int, per_page: int):
+        if db.session.get(Paciente, paciente_id) is None:
+            raise InformeRepository.NotFound()
+        base = (db.session.query(Informe, TipoInforme, VisitaClinica, Usuario)
+                .join(VisitaClinica, Informe.visita_id == VisitaClinica.id)
+                .join(TipoInforme, Informe.tipo_informe_id == TipoInforme.id)
+                .join(Usuario, Informe.usuario_id == Usuario.id)
+                .filter(VisitaClinica.paciente_id == paciente_id))
+        total = base.count()
+        rows = (base.order_by(Informe.fecha_creado.desc(), Informe.id.desc())
+                .limit(per_page).offset((page - 1) * per_page).all())
+        return total, rows
+
+    @staticmethod
     def eliminar_informe(informe_id: int):
         informe = Informe.query.get(informe_id)
         if informe:

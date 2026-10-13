@@ -204,6 +204,71 @@ def obtener_informe(informe_id):
     return {"success": True, "data": _parsear_datos(informe)}, 200
 
 
+def _paginacion(total, page, per_page):
+    return {"page": page, "per_page": per_page, "total": total,
+            "has_more": page * per_page < total}
+
+
+def obtener_versiones_informe(informe_id, page, per_page):
+    try:
+        row = InformeRepository.obtener_contexto_historico(informe_id)
+        if row is None:
+            return {"success": False, "message": "Informe no encontrado."}, 404
+        informe, tipo, visita, paciente, creador = row
+        total, inicial, ultima, versiones = InformeRepository.versiones_historicas(
+            informe_id, page, per_page)
+        if (inicial is None or inicial.operacion not in ('CREACION', 'MIGRACION_INICIAL') or
+                ultima is None or total != informe.revision_actual or
+                ultima.numero_version != informe.revision_actual or
+                ultima.datos_estructurados != informe.datos_estructurados or
+                ultima.conclusion != informe.conclusion or ultima.estado != informe.estado or
+                ultima.schema_version != informe.schema_version):
+            current_app.logger.error("Historial inconsistente en consulta de informe")
+            return {"success": False, "message": "Historial no disponible por inconsistencia."}, 409
+        return {"success": True, "data": {
+            "informe": {"id": informe.id, "paciente_id": paciente.id,
+                        "visita_id": visita.id, "fecha_visita": visita.fecha_visita,
+                        "estado_visita": visita.estado, "tipo_informe_id": tipo.id,
+                        "tipo_informe_nombre": tipo.nombre, "usuario_id": creador.id,
+                        "estado": informe.estado, "revision_actual": informe.revision_actual},
+            "versiones": [
+                {"numero_version": version.numero_version, "operacion": version.operacion,
+                 "schema_version": version.schema_version,
+                 "datos_estructurados": version.datos_estructurados,
+                 "conclusion": version.conclusion, "estado": version.estado,
+                 "autor_operacion_id": version.autor_operacion_id,
+                 "autor_operacion": ({"id": autor.id, "nombres": autor.nombres,
+                                       "apellidos": autor.apellidos} if autor else None),
+                 "fecha_operacion": version.fecha_operacion, "motivo": version.motivo,
+                 "es_actual": version.numero_version == informe.revision_actual}
+                for version, autor in versiones],
+        }, "pagination": _paginacion(total, page, per_page)}, 200
+    except Exception:
+        current_app.logger.error("Error al consultar versiones de informe")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+
+
+def obtener_historial_paciente(paciente_id, page, per_page):
+    try:
+        total, rows = InformeRepository.listar_historial_paciente(paciente_id, page, per_page)
+        return {"success": True, "data": [
+            {"id": informe.id, "tipo_informe_id": tipo.id,
+             "tipo_informe_nombre": tipo.nombre, "visita_id": visita.id,
+             "fecha_visita": visita.fecha_visita, "estado_visita": visita.estado,
+             "usuario_id": creador.id,
+             "autor_original": {"id": creador.id, "nombres": creador.nombres,
+                                "apellidos": creador.apellidos},
+             "estado": informe.estado, "revision_actual": informe.revision_actual,
+             "fecha_creado": informe.fecha_creado, "fecha_actualizado": informe.fecha_actualizado}
+            for informe, tipo, visita, creador in rows],
+            "pagination": _paginacion(total, page, per_page)}, 200
+    except InformeRepository.NotFound:
+        return {"success": False, "message": "Paciente no encontrado."}, 404
+    except Exception:
+        current_app.logger.error("Error al consultar catálogo histórico de informes")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+
+
 def bloquear_informe_para_edicion(informe_id):
     return InformeRepository.bloquear_informe(informe_id)
 
