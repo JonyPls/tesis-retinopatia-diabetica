@@ -1,6 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -12,30 +11,29 @@ import { Search, Table2, LayoutGrid } from "lucide-react";
 import { usePatients } from "../hooks/usePatients";
 import { civilAge } from "@/lib/clinicalDates";
 import { PatientTable } from "../components/PatientTable";
+import { PatientPagination } from "../components/PatientPagination";
 import { PatientCardGrid } from "../components/PatientCardGrid";
 import { CreatePatientDialog } from "../components/CreatePatientDialog";
 import { PatientLookupError } from "../components/PatientLookupError";
+import type { PatientFormData } from "../types";
 
 const calculateAge = (birthDate: string) => {
-  return civilAge(birthDate) ?? "-";
+  const age = civilAge(birthDate);
+  return age === null ? "No disponible" : age === 0 ? "Menor de 1 año" : age;
 };
 
 export default function Patients() {
   const hook = usePatients();
 
   const handleTipoDocChange = (val: string) => {
-    hook.setFormData((prev) => ({
-      ...prev,
-      tipo_doc: val,
-      nro_documento: "",
-    }));
+    hook.handleDocumentTypeChange(val);
   };
 
   const handleDocumentChange = (value: string) => {
     hook.handleDocumentChange(value, hook.formData.tipo_doc);
   };
 
-  const handleFieldChange = (field: string, value: string) => {
+  const handleFieldChange = (field: keyof PatientFormData, value: string) => {
     hook.handleChange(field, value);
   };
 
@@ -51,7 +49,10 @@ export default function Patients() {
           registrationScope={hook.registrationScope}
           isSubmitting={hook.isSubmitting}
           consent={hook.consent}
-          onConsentChange={hook.setConsent}
+          onConsentChange={hook.handleConsentChange}
+          validationErrors={hook.validationErrors}
+          validationFocus={hook.validationFocus}
+          onNameBlur={hook.handleNameBlur}
           onDocumentChange={handleDocumentChange}
           onPhoneChange={hook.handlePhoneChange}
           onFieldChange={handleFieldChange}
@@ -131,6 +132,8 @@ export default function Patients() {
               isLoading={hook.isLoading}
               scope={hook.scope}
               calculateAge={calculateAge}
+              sort={hook.sort}
+              onSort={hook.toggleSort}
             />
           ) : (
             <PatientCardGrid
@@ -159,24 +162,8 @@ export default function Patients() {
                 </span>{" "}
                 pacientes
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => hook.setCurrentPage(Math.max(1, hook.currentPage - 1))}
-                  disabled={hook.currentPage === 1}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => hook.setCurrentPage(Math.min(hook.totalPages, hook.currentPage + 1))}
-                  disabled={hook.currentPage === hook.totalPages}
-                >
-                  Siguiente
-                </Button>
-              </div>
+              <PatientPagination currentPage={hook.currentPage} totalPages={hook.totalPages}
+                onPageChange={hook.setCurrentPage} />
             </div>
           )}
       </div>

@@ -39,6 +39,7 @@ from utils.utc_clock import utc_now_naive
 with patch("dotenv.load_dotenv", return_value=False):
     from database import db, configure_utc_sessions, _set_utc_on_checkout
     from routes.auth_routes import auth_bp
+    from routes.configuration_routes import configuration_bp
     from routes.patient_routes import patient_bp
     from routes import patient_routes, files_routes, informe_routes
     from src.models.auth_entities import (Cargo, Permiso, Rol, RolPermiso,
@@ -110,6 +111,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
         cls.addClassCleanup(cls.context.pop)
         cls.addClassCleanup(db.session.remove)
         cls.app.register_blueprint(auth_bp)
+        cls.app.register_blueprint(configuration_bp)
         cls.app.register_blueprint(patient_bp)
         cls.app.register_blueprint(files_routes.files_bp)
         cls.app.register_blueprint(diagnosis_routes.diagnosis_bp)
@@ -381,9 +383,208 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             "tipo_doc": "DNI", "nro_documento": document,
             "nombres": "Persona", "apellidos": "Ficticia", "sexo": "Femenino",
             "fecha_nacimiento": "2000-01-01", "telefono": "900000000",
-            "correo": "registro@example.invalid", "direccion": "Direccion ficticia",
+            "correo": f"registro-{secrets.token_hex(5)}@example.invalid", "direccion": "Direccion ficticia",
             "consentimiento_informado": True, **extra,
         }
+
+    def test_30_administration_users_and_roles_revalidate_live_grants(self):
+        admin_token = self.token('administrator')
+        admin_role = Rol.query.filter_by(codigo='ADMINISTRADOR_SISTEMA').one()
+        clinical_role = Rol.query.filter_by(codigo='OFTALMOLOGO').one()
+        document = TipoDocumento.query.filter_by(codigo='DNI').one()
+        position = Cargo.query.filter_by(estado='ACTIVO').first()
+        stamp = secrets.token_hex(5)
+        payload = dict(nombres='Persona', apellidos='Prueba', username=f'config_{stamp}',
+                       correo=f'config_{stamp}@example.invalid', tipo_doc_id=document.id,
+                       nro_documento=str(97000000 + secrets.randbelow(899999)),
+                       cargo_id=position.id, password='synthetic-password-only',
+                       role_ids=[clinical_role.id])
+        created_id = None
+        try:
+            self.assertEqual(self.call('/api/configuracion/usuarios')[0].status_code, 401)
+            self.assertEqual(self.call('/api/configuracion/usuarios', token=self.token('nurse'))[0].status_code, 403)
+            catalog, _ = self.call('/api/configuracion/catalogo', token=admin_token)
+            self.assertEqual(catalog.status_code, 200)
+            self.assertTrue(catalog.json['permissions_editable'])
+            self.assertTrue(catalog.json['capabilities']['assign_roles'])
+            self.assertEqual(self.call(f'/api/configuracion/roles/{admin_role.id}/permisos',
+                                       token=admin_token)[0].status_code, 200)
+            listed, statements = self.call('/api/configuracion/usuarios', token=admin_token, measure=True)
+            self.assertEqual(listed.status_code, 200)
+            self.assertFalse(any(s.lstrip().lower().startswith(('insert ', 'update ', 'delete ')) for s in statements))
+            self.assertNotIn('password', str(listed.json))
+            created, _ = self.call('/api/configuracion/usuarios', method='POST', token=admin_token, json_data=payload)
+            self.assertEqual(created.status_code, 201, created.json)
+            created_id = created.json['data']['id']
+            self.assertNotIn('password', str(created.json))
+            db.session.remove()
+            from werkzeug.security import check_password_hash
+            self.assertTrue(check_password_hash(db.session.get(Usuario, created_id).password_hash, payload['password']))
+            self.assertNotEqual(db.session.get(Usuario, created_id).password_hash, payload['password'])
+            self.assertEqual(self.call('/api/configuracion/usuarios', method='POST', token=admin_token,
+                                       json_data=payload)[0].status_code, 409)
+            self.assertEqual(self.call(f'/api/configuracion/usuarios/{created_id}', method='PATCH', token=admin_token,
+                                       json_data={'password_hash': 'not-allowed'})[0].status_code, 400)
+            self.assertEqual(self.call(f'/api/configuracion/usuarios/{created_id}/roles', method='PUT', token=admin_token,
+                                       json_data={'role_ids': [clinical_role.id, clinical_role.id]})[0].status_code, 400)
+            self.assertEqual(self.call(f'/api/configuracion/usuarios/{self.user_ids["administrator"]}/roles',
+                                       method='PUT', token=admin_token,
+                                       json_data={'role_ids': [admin_role.id, clinical_role.id]})[0].status_code, 409)
+            new_token = jwt.encode({'user_id': created_id, 'roles': ['Administrador del sistema'],
+                                    'exp': datetime.now(timezone.utc) + timedelta(hours=1)}, TEST_KEY,
+                                   algorithm='HS256')
+            self.assertEqual(self.call('/api/configuracion/catalogo', token=new_token)[0].status_code, 403)
+            for ids in ([clinical_role.id, admin_role.id], [clinical_role.id, admin_role.id], [clinical_role.id]):
+                result, _ = self.call(f'/api/configuracion/usuarios/{created_id}/roles', method='PUT',
+                                      token=admin_token, json_data={'role_ids': ids})
+                self.assertEqual(result.status_code, 200, result.json)
+                self.assertEqual(len(result.json['data']['role_ids']), len(ids))
+                if admin_role.id in ids:
+                    self.assertEqual(self.call('/api/configuracion/catalogo', token=new_token)[0].status_code, 200)
+                else:
+                    self.assertEqual(self.call('/api/configuracion/catalogo', token=new_token)[0].status_code, 403)
+            self.assertEqual(self.call(f'/api/configuracion/usuarios/{created_id}/estado', method='PUT',
+                                       token=admin_token, json_data={'estado': 'INACTIVO'})[0].status_code, 200)
+            self.assertEqual(self.call('/api/configuracion/catalogo', token=new_token)[0].status_code, 401)
+            self.assertEqual(self.call('/api/login', method='POST', json_data={'username': payload['username'],
+                                                                              'password': payload['password']})[0].status_code, 401)
+            with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'configuracion.ver', present=False):
+                self.assertEqual(self.call('/api/configuracion/catalogo', token=admin_token)[0].status_code, 403)
+                self.assertEqual(self.call('/api/_orm_configuration', token=admin_token)[0].status_code, 403)
+            self.assertEqual(self.call('/api/_orm_patient/1', token=admin_token)[0].status_code, 403)
+        finally:
+            db.session.remove()
+            if created_id:
+                db.session.delete(db.session.get(Usuario, created_id))
+                db.session.commit()
+                db.session.remove()
+
+    def test_30b_last_administrator_guard_and_atomic_rollback(self):
+        admin_token = self.token('administrator')
+        dual_id = self.user_ids['dual']
+        clinical_role = Rol.query.filter_by(codigo='OFTALMOLOGO').one()
+        from services import configuration_service
+        # Se simula el caso de una sola cuenta administrativa sin alterar las demás cuentas.
+        def only_dual():
+            return [db.session.get(Usuario, dual_id)]
+        with patch.object(configuration_service.repo, 'active_administrators_for_update', side_effect=only_dual):
+            self.assertEqual(self.call(f'/api/configuracion/usuarios/{dual_id}/roles', method='PUT',
+                                       token=admin_token, json_data={'role_ids': [clinical_role.id]})[0].status_code, 409)
+            self.assertEqual(self.call(f'/api/configuracion/usuarios/{dual_id}/estado', method='PUT',
+                                       token=admin_token, json_data={'estado': 'INACTIVO'})[0].status_code, 409)
+        db.session.remove()
+        self.assertEqual(db.session.get(Usuario, dual_id).estado, 'ACTIVO')
+        self.assertEqual(len(db.session.get(Usuario, dual_id).roles_rel), 2)
+        self.assertEqual(self.call(f'/api/configuracion/usuarios/{dual_id}', method='PATCH',
+                                   token=admin_token, json_data={'nombres': 'Otro',
+                                                                 'correo': 'invalido'})[0].status_code, 400)
+        db.session.remove()
+        self.assertEqual(db.session.get(Usuario, dual_id).nombres, 'Persona')
+        with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'usuarios.ver', present=False):
+            self.assertEqual(self.call('/api/configuracion/usuarios', token=admin_token)[0].status_code, 403)
+        self.assertEqual(self.call('/api/configuracion/usuarios', token=admin_token)[0].status_code, 200)
+        with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'usuarios.asignar_roles', present=False):
+            self.assertEqual(self.call('/api/configuracion/usuarios', method='POST', token=admin_token,
+                                       json_data={})[0].status_code, 403)
+
+        document = TipoDocumento.query.filter_by(codigo='DNI').one()
+        position = Cargo.query.filter_by(estado='ACTIVO').first()
+        clinical_role = Rol.query.filter_by(codigo='OFTALMOLOGO').one()
+        stamp = secrets.token_hex(5)
+        payload = dict(nombres='Transacción', apellidos='Sintética', username=f'failed_{stamp}',
+                       correo=f'failed_{stamp}@example.invalid', tipo_doc_id=document.id,
+                       cargo_id=position.id, nro_documento=str(98000000 + secrets.randbelow(899999)),
+                       password='synthetic-password-only', role_ids=[clinical_role.id])
+        from database import db as real_db
+        with patch.object(real_db.session, 'flush', side_effect=IntegrityError('synthetic', {}, Exception())):
+            response, _ = self.call('/api/configuracion/usuarios', method='POST', token=admin_token, json_data=payload)
+            self.assertEqual(response.status_code, 409, response.json)
+        db.session.remove()
+        self.assertIsNone(Usuario.query.filter_by(username=payload['username']).first())
+
+    def test_30c_role_permissions_guard_persistence_revocation_and_rollback(self):
+        admin_token = self.token('administrator')
+        admin_role = Rol.query.filter_by(codigo='ADMINISTRADOR_SISTEMA').one()
+        specialist = Rol.query.filter_by(codigo='OFTALMOLOGO').one()
+        permissions = {p.codigo: p.id for p in Permiso.query.all()}
+        endpoint = f'/api/configuracion/roles/{specialist.id}/permisos'
+        admin_endpoint = f'/api/configuracion/roles/{admin_role.id}/permisos'
+        original, sql = self.call(endpoint, token=admin_token, measure=True)
+        self.assertEqual(original.status_code, 200)
+        self.assertFalse(any(s.lstrip().lower().startswith(('insert ', 'update ', 'delete ')) for s in sql))
+        initial = original.json['data']['permission_ids']
+        self.assertNotIn(permissions['informes.inactivar'], initial)
+        for token in (None, self.token('ophthalmologist'), self.token('nurse'), self.token('assistant')):
+            expected = 401 if token is None else 403
+            self.assertEqual(self.call(endpoint, method='PUT', token=token,
+                                       json_data={'permission_ids': initial})[0].status_code, expected)
+        self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                   json_data={'permission_ids': initial + [999999]})[0].status_code, 404)
+        self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                   json_data={'permission_ids': initial + [initial[0]]})[0].status_code, 400)
+        self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                   json_data={'role_id': admin_role.id, 'permission_ids': initial})[0].status_code, 400)
+        self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                   json_data={'permission_ids': initial + [permissions['roles.asignar_permisos']]})[0].status_code, 409)
+        self.assertEqual(self.call('/api/configuracion/roles/999999/permisos', token=admin_token)[0].status_code, 404)
+
+        admin_initial = self.call(admin_endpoint, token=admin_token)[0].json['data']['permission_ids']
+        for essential in ('roles.asignar_permisos', 'configuracion.ver'):
+            missing = [identifier for identifier in admin_initial if identifier != permissions[essential]]
+            response, _ = self.call(admin_endpoint, method='PUT', token=admin_token,
+                                    json_data={'permission_ids': missing})
+            self.assertEqual(response.status_code, 409, response.json)
+        self.assertEqual(self.call(admin_endpoint, token=admin_token)[0].json['data']['permission_ids'], admin_initial)
+
+        added = sorted([*initial, permissions['informes.inactivar']])
+        try:
+            for _ in range(2):
+                response, _ = self.call(endpoint, method='PUT', token=admin_token,
+                                        json_data={'permission_ids': added})
+                self.assertEqual(response.status_code, 200, response.json)
+                self.assertEqual(response.json['data']['permission_ids'], added)
+            self.assertEqual(self.call(endpoint, token=admin_token)[0].json['data']['permission_ids'], added)
+            self.assertEqual(db.session.query(RolPermiso).filter_by(
+                rol_id=specialist.id, permiso_id=permissions['informes.inactivar']).count(), 1)
+
+            # La baja de un grant clínico debe denegar su uso en la siguiente solicitud;
+            # añadir un permiso clínico al administrador nunca le concede OFTALMOLOGO.
+            reduced = [identifier for identifier in added if identifier != permissions['informes.ver']]
+            self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                       json_data={'permission_ids': reduced})[0].status_code, 200)
+            self.assertEqual(self.call(f'/api/informes/paciente/{self.patient_ids[0]}',
+                                       token=self.token('ophthalmologist'))[0].status_code, 403)
+            self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                       json_data={'permission_ids': added})[0].status_code, 200)
+            self.assertEqual(self.call(f'/api/informes/paciente/{self.patient_ids[0]}',
+                                       token=self.token('ophthalmologist'))[0].status_code, 200)
+            admin_with_clinical = sorted([*admin_initial, permissions['pacientes.ver']])
+            self.assertEqual(self.call(admin_endpoint, method='PUT', token=admin_token,
+                                       json_data={'permission_ids': admin_with_clinical})[0].status_code, 200)
+            self.assertEqual(self.call(f'/api/_orm_history/{self.patient_ids[0]}', token=admin_token)[0].status_code, 403)
+            self.assertEqual(self.call(admin_endpoint, method='PUT', token=admin_token,
+                                       json_data={'permission_ids': admin_initial})[0].status_code, 200)
+
+            from database import db as real_db
+            with patch.object(real_db.session, 'flush', side_effect=IntegrityError('synthetic', {}, Exception())):
+                failed, _ = self.call(endpoint, method='PUT', token=admin_token,
+                                      json_data={'permission_ids': initial})
+                self.assertEqual(failed.status_code, 409, failed.json)
+            self.assertEqual(self.call(endpoint, token=admin_token)[0].json['data']['permission_ids'], added)
+        finally:
+            db.session.remove()
+            # El servidor temporal pertenece exclusivamente a este ensayo; restaurar en API.
+            self.call(admin_endpoint, method='PUT', token=admin_token,
+                      json_data={'permission_ids': admin_initial})
+            self.call(endpoint, method='PUT', token=admin_token,
+                      json_data={'permission_ids': initial})
+            db.session.remove()
+
+        with self.temporary_grant('ADMINISTRADOR_SISTEMA', 'roles.asignar_permisos', present=False):
+            self.assertEqual(self.call(endpoint, token=admin_token)[0].status_code, 200)
+            self.assertFalse(self.call('/api/configuracion/catalogo', token=admin_token)[0].json['permissions_editable'])
+            self.assertEqual(self.call(endpoint, method='PUT', token=admin_token,
+                                       json_data={'permission_ids': initial})[0].status_code, 403)
 
     def test_28c_confirmation_orm_matches_master_and_relates_to_detail(self):
         model = diagnosis_entities.ConfirmacionExportacionRetinografo
@@ -2993,8 +3194,8 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
             self.assertEqual(created.status_code, 201)
             self.assertEqual(set(created.json["data"]), {"id"})
             self.assertEqual(sum("from pacientes" in item.lower().replace("`", "")
-                                 for item in sql), 1)  # Solo comprobación de duplicado.
-            self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in sql), 5)
+                                 for item in sql), 2)  # Documento y correo, sin datos clínicos.
+            self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in sql), 6)
             with self.temporary_grant("ASISTENTE_ADMINISTRATIVO", "pacientes.ver", present=False):
                 assistant_payload = self.registration()
                 assistant_created, assistant_sql = self.call(
@@ -3002,7 +3203,7 @@ class RealORMStrictIntegrationTests(unittest.TestCase):
                     json_data=assistant_payload, measure=True)
                 self.assertEqual(assistant_created.status_code, 201)
                 self.assertEqual(set(assistant_created.json["data"]), {"id"})
-                self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in assistant_sql), 5)
+                self.assertEqual(sum(item.lstrip().lower().startswith("select") for item in assistant_sql), 6)
                 self.assertFalse(any("antecedentes_clinicos" in item.lower() or "alergias" in item.lower()
                                      for item in assistant_sql if item.lstrip().lower().startswith("select")))
         duplicate, sql = self.call("/api/pacientes", method="POST", token=self.token(),

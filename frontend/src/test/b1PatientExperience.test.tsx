@@ -234,16 +234,22 @@ describe("B1 inicio por perfil", () => {
   });
 
   it("Administrador + Oftalmólogo conserva navegación clínica y consulta de pacientes", async () => {
-    login(["Administrador del sistema", "Oftalmologo"]);
+    login(["Administrador del sistema", "Oftalmologo"], [
+      "pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver", "diagnostico_retinopatia.crear", "imagenes.ver",
+    ]);
+    get.mockResolvedValueOnce({ data: { success: true, data: {
+      kpis: { patients: 0, evaluations: 0, validated: 0, pending: 0 }, severity: [], recent_patients: [],
+      actions: { patients: true, diagnosis: true, reports: false },
+    } } });
     render(<Dashboard />, { wrapper });
-    expect(await screen.findByText("Últimos Pacientes Atendidos")).toBeInTheDocument();
+    expect(await screen.findByText("Actividad reciente")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Nueva Evaluación IA/ })).toHaveAttribute("href", "/diagnostico");
     expect(screen.getByRole("link", { name: "Diagnóstico IA" })).toBeInTheDocument();
-    expect(get).toHaveBeenCalledWith("/pacientes");
+    expect(get).toHaveBeenCalledWith("/dashboard/clinico");
   });
 
   it("Oftalmólogo muestra pacientes reales y 403 no se transforma en lista vacía", async () => {
-    login(["Oftalmologo"]);
+    login(["Oftalmologo"], ["pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver"]);
     get.mockRejectedValueOnce(denied);
     render(<Dashboard />, { wrapper });
     expect(await screen.findByRole("alert")).toHaveTextContent("No tiene autorización");
@@ -252,20 +258,23 @@ describe("B1 inicio por perfil", () => {
   });
 
   it("Oftalmólogo muestra únicamente pacientes que devuelve la consulta", async () => {
-    login(["Oftalmologo"]);
-    get.mockResolvedValueOnce({ data: { data: [{
-      ...patient, fecha_nacimiento: "1980-01-01", ultima_visita: "2026-01-01",
-    }] } });
+    login(["Oftalmologo"], ["pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver"]);
+    get.mockResolvedValueOnce({ data: { success: true, data: {
+      kpis: { patients: 1, evaluations: 0, validated: 0, pending: 0 }, severity: [],
+      recent_patients: [{ ...patient, ultima_visita: "2026-01-01T00:00:00Z", ultima_visita_origen: "UTC_VERIFICADO" }],
+      actions: { patients: true, diagnosis: false, reports: false },
+    } } });
     render(<Dashboard />, { wrapper });
     expect(await screen.findByText("Paciente Sintético")).toBeInTheDocument();
-    expect(screen.queryByText("Pacientes Registrados")).not.toBeInTheDocument();
+    expect(screen.getByText("Pacientes registrados")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(1);
   });
 
   it("sin permiso de paciente evita la consulta incluso con rol oftalmológico local", () => {
     login(["Oftalmologo"], []);
     render(<Dashboard />, { wrapper });
-    expect(screen.getByText("Bienvenido al sistema")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("No tiene autorización");
     expect(get).not.toHaveBeenCalled();
   });
 });

@@ -103,11 +103,7 @@ export default function Diagnosis() {
   };
 
   const handleTipoDocChange = (val: string) => {
-    patientRegistration.setFormData((prev) => ({
-      ...prev,
-      tipo_doc: val,
-      nro_documento: "",
-    }));
+    patientRegistration.handleDocumentTypeChange(val);
   };
 
   const registrationDialog = (
@@ -118,7 +114,10 @@ export default function Diagnosis() {
       registrationScope={patientRegistration.registrationScope}
       isSubmitting={patientRegistration.isSubmitting}
       consent={patientRegistration.consent}
-      onConsentChange={patientRegistration.setConsent}
+      onConsentChange={patientRegistration.handleConsentChange}
+      validationErrors={patientRegistration.validationErrors}
+      validationFocus={patientRegistration.validationFocus}
+      onNameBlur={patientRegistration.handleNameBlur}
       onDocumentChange={(value) =>
         patientRegistration.handleDocumentChange(
           value,

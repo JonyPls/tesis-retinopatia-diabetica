@@ -1,5 +1,5 @@
 from database import db
-from sqlalchemy import text
+from sqlalchemy import func, text
 from src.models.patient_entities import Paciente
 import json
 
@@ -95,6 +95,13 @@ class PatientRepository:
             tipo_doc_id=tipo_doc_id,
             nro_documento=nro_documento
         ).scalar()
+
+    @staticmethod
+    def obtener_paciente_por_correo(correo: str) -> int | None:
+        # Se consulta solo la identidad interna, sin cargar datos de otros pacientes.
+        return db.session.query(Paciente.id).filter(
+            func.lower(func.trim(Paciente.correo)) == correo
+        ).limit(1).scalar()
 
     @staticmethod
     def insertar_paciente(paciente: Paciente):

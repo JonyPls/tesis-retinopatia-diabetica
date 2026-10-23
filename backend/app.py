@@ -8,6 +8,8 @@ from routes.document_routes import document_bp
 from routes.diagnosis_routes import diagnosis_bp
 from routes.files_routes import files_bp
 from routes.informe_routes import informe_bp
+from routes.configuration_routes import configuration_bp
+from routes.dashboard_routes import dashboard_bp
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -38,6 +40,8 @@ app.register_blueprint(document_bp)
 app.register_blueprint(diagnosis_bp)
 app.register_blueprint(files_bp)
 app.register_blueprint(informe_bp)
+app.register_blueprint(configuration_bp)
+app.register_blueprint(dashboard_bp)
 
 # --- RUTAS BASE ---
 

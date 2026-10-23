@@ -46,7 +46,8 @@ EXPECTED_FINAL_COUNTS = {
     "ADMINISTRADOR_SISTEMA": 7, "OFTALMOLOGO": 13,
     "ENFERMERO": 6, "ASISTENTE_ADMINISTRATIVO": 6,
 }
-EXPECTED_MASTER_COUNTS = {**EXPECTED_FINAL_COUNTS, "OFTALMOLOGO": 14}
+EXPECTED_MASTER_COUNTS = {**EXPECTED_FINAL_COUNTS, "ADMINISTRADOR_SISTEMA": 8, "OFTALMOLOGO": 14}
+MASTER_PERMISSION = 'roles.asignar_permisos'
 ORIGINAL_PERMISSIONS = {
     "dashboard.ver", "pacientes.ver", "pacientes.crear", "pacientes.editar",
     "visitas.ver", "visitas.crear", "diagnostico_retinopatia.crear",
@@ -76,9 +77,9 @@ FINAL_GRANTS = {
     },
 }
 SEED_COUNTS = {
-    "tipos_documento": 3, "roles": 4, "cargos": 4, "permisos": 21,
+    "tipos_documento": 3, "roles": 4, "cargos": 4, "permisos": 22,
     "grados_retinopatia": 5, "tipos_informe": 6, "usuarios": 2,
-    "usuario_rol": 3, "rol_permiso": 33, "pacientes": 20,
+    "usuario_rol": 3, "rol_permiso": 34, "pacientes": 20,
     "visitas_clinicas": 0, "diagnosticos_retinopatia": 0,
     "diagnosticos_retinopatia_detalle": 0, "informes": 0,
 }
@@ -237,18 +238,19 @@ def verify_seed(connection, *, historical=False):
                 "El maestro no debe sembrar confirmaciones clínicas.")
         require(rows(connection, f"SELECT COUNT(*) FROM `{REPORT_VERSIONS}`")[0][0] == 0,
                 "El maestro no debe sembrar versiones clínicas ficticias.")
-        require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS | NEW_PERMISSIONS},
-                "El maestro B1 no contiene exactamente los 21 códigos aprobados.")
+        require(catalog(connection) == {(code,) for code in ORIGINAL_PERMISSIONS | NEW_PERMISSIONS | {MASTER_PERMISSION}},
+                "El maestro B1 no contiene exactamente los 22 códigos aprobados.")
         require(counts(grants(connection)) == EXPECTED_MASTER_COUNTS,
                 "La semilla B1 no tiene los totales de grants aprobados.")
         require(grants(connection) == {
             (role, code) for role, codes in FINAL_GRANTS.items() for code in codes
-        }, "Los grants del maestro B1 difieren de la matriz de códigos aprobada.")
-        require(rows(connection, "SELECT COUNT(*) FROM permisos")[0][0] == 21,
+        } | {('ADMINISTRADOR_SISTEMA', MASTER_PERMISSION)},
+            "Los grants del maestro B1 difieren de la matriz de códigos aprobada.")
+        require(rows(connection, "SELECT COUNT(*) FROM permisos")[0][0] == 22,
                 "Existen permisos duplicados en la semilla B1.")
-        require(rows(connection, "SELECT COUNT(*) FROM rol_permiso")[0][0] == 33,
+        require(rows(connection, "SELECT COUNT(*) FROM rol_permiso")[0][0] == 34,
                 "Existen grants duplicados en la semilla B1.")
-        require(set(rows(connection, "SELECT id FROM permisos")) == {(i,) for i in range(1, 22)},
+        require(set(rows(connection, "SELECT id FROM permisos")) == {(i,) for i in range(1, 23)},
                 "Los ID de permisos B1 no son los esperados.")
         expected_new = {
             (19, "diagnostico_retinopatia.ver", "Ver diagnostico IA",
@@ -263,7 +265,12 @@ def verify_seed(connection, *, historical=False):
         require(set(rows(connection, """SELECT id, codigo, nombre, descripcion, modulo, estado
                                         FROM permisos WHERE id IN (19,20,21)""")) == expected_new,
                 "Los metadatos B1 no coinciden con las propuestas aprobadas.")
-        require(rows(connection, "SELECT COUNT(*) FROM permisos WHERE estado='ACTIVO'")[0][0] == 21,
+        require(rows(connection, """SELECT id, codigo, nombre, descripcion, modulo, estado
+                                    FROM permisos WHERE codigo=%s""", (MASTER_PERMISSION,)) ==
+                ((22, MASTER_PERMISSION, 'Asignar permisos a roles',
+                  'Permite otorgar y retirar permisos de roles desde configuracion.', 'configuracion', 'ACTIVO'),),
+                "El permiso administrativo no coincide con la semilla aprobada.")
+        require(rows(connection, "SELECT COUNT(*) FROM permisos WHERE estado='ACTIVO'")[0][0] == 22,
                 "La semilla B1 contiene un permiso inactivo.")
         for table, expected in SEED_COUNTS.items():
             require(rows(connection, f"SELECT COUNT(*) FROM `{table}`")[0][0] == expected,
@@ -426,6 +433,37 @@ def check_preexisting_permission_preserved(connection, port, password,
     require(grant_history(connection) == original_links, "El ensayo no volvió a los grants seed.")
 
 
+def check_master_permission_punctual(connection, port, password, datadir, instance_uuid):
+    script = BACKEND / 'migrations' / 'roles_asignar_permisos_puntual.sql'
+    require(script.is_file(), 'Falta el script puntual aprobado.')
+    require(ensure_own_server(connection, datadir, port) == instance_uuid,
+            'El servidor temporal cambió; se aborta antes de retirar el grant sintético.')
+    original_catalog, original_grants = catalog(connection), grants(connection)
+    client_script(port, password, script, SCHEMA)
+    require(catalog(connection) == original_catalog and grants(connection) == original_grants,
+            'El script no es idempotente sobre el maestro actualizado.')
+
+    # Solo en esta instancia desechable: simular el catálogo anterior y aplicar el SQL puntual.
+    with connection.cursor() as cursor:
+        cursor.execute("""DELETE rp FROM rol_permiso rp JOIN roles r ON r.id=rp.rol_id
+                          JOIN permisos p ON p.id=rp.permiso_id
+                          WHERE r.codigo='ADMINISTRADOR_SISTEMA' AND p.codigo=%s""", (MASTER_PERMISSION,))
+        require(cursor.rowcount == 1, 'El grant inicial del maestro no es único.')
+        cursor.execute('DELETE FROM permisos WHERE codigo=%s', (MASTER_PERMISSION,))
+        require(cursor.rowcount == 1, 'El permiso inicial del maestro no es único.')
+    require(ensure_own_server(connection, datadir, port) == instance_uuid,
+            'El servidor temporal cambió antes de ejecutar el SQL puntual.')
+    client_script(port, password, script, SCHEMA)
+    require(catalog(connection) == original_catalog and grants(connection) == original_grants,
+            'El SQL puntual no restauró exactamente el catálogo y grants esperados.')
+    client_script(port, password, script, SCHEMA)
+    require(catalog(connection) == original_catalog and grants(connection) == original_grants,
+            'Repetir el SQL puntual alteró el catálogo o los grants.')
+    require(rows(connection, 'SELECT COUNT(*) FROM permisos')[0][0] == 22 and
+            rows(connection, 'SELECT COUNT(*) FROM rol_permiso')[0][0] == 34,
+            'El script puntual creó filas duplicadas.')
+
+
 def run_trial(temp_root, port, password, orm_integration=False, historical_seed=None,
               check_historical_idempotence=False):
     with connect(port) as initial:
@@ -469,7 +507,7 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
             require(seed_signature(connection) == original_signature,
                     "La segunda reconstrucción B1 difiere en tablas o datos semilla.")
             print("MAESTRO B1: 16 tablas y semilla conservada en dos reconstrucciones; "
-                  "21 permisos, grants 7/14/6/6 por código; sin duplicados.")
+                  "22 permisos, grants 8/14/6/6 por código; sin duplicados.")
             from b1_retinograph_schema_trial import check_confirmation_integrity
 
             check_confirmation_integrity(connection)
@@ -502,6 +540,8 @@ def run_trial(temp_root, port, password, orm_integration=False, historical_seed=
                         grant_history(connection) == before_history,
                         "Las migraciones históricas alteraron una instalación B1 nueva.")
                 print("MIGRACIONES HISTÓRICAS: repetición sobre B1 sin cambios de catálogo, grants o semilla.")
+            check_master_permission_punctual(connection, port, password, temp_root / 'data', instance_uuid)
+            print('PERMISO PUNTUAL: una asignación exclusiva al administrador, repetición sin duplicados.')
             return
         before_catalog = catalog(connection)
         before_links = grant_history(connection)

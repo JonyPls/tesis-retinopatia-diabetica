@@ -289,16 +289,15 @@ describe("B1 listado y detalle", () => {
       antecedentes_clinicos: "", alergias: "" };
     const props = { open: true, onOpenChange: vi.fn(), formData, isSubmitting: false,
       consent: false, onConsentChange: vi.fn(), onDocumentChange: vi.fn(),
-      onPhoneChange: vi.fn(), onFieldChange: vi.fn(), onSubmit: vi.fn(),
+       onPhoneChange: vi.fn(), onFieldChange: vi.fn(), onNameBlur: vi.fn(), onSubmit: vi.fn(),
       onTipoDocChange: vi.fn(), hasUnsavedChanges: false, onDiscard: vi.fn() };
     const { rerender } = render(<CreatePatientDialog {...props} registrationScope="administrative" />);
     expect(screen.queryByText("Información clínica básica")).not.toBeInTheDocument();
     expect(screen.getByText("Consentimiento Informado Físico Archivado")).toBeInTheDocument();
     rerender(<CreatePatientDialog {...props} registrationScope="assistance" />);
-    fireEvent.click(screen.getByRole("button", { name: /Información clínica básica/ }));
     expect(screen.queryByText("Antecedentes clínicos")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Alergias")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Alergias/)).toBeInTheDocument();
     rerender(<CreatePatientDialog {...props} registrationScope="clinical" />);
-    expect(screen.getByLabelText("Antecedentes clínicos")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Antecedentes clínicos/)).toBeInTheDocument();
   });
 });

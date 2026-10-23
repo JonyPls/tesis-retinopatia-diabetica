@@ -8,23 +8,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Eye } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye } from "lucide-react";
 import { StatusBadge, Status } from "@/components/medical/StatusBadge";
 import { Patient, PatientReadScope } from "../types";
 import { formatClinicalDay } from "@/lib/clinicalDates";
+import { formatPatientListPhone, type PatientSort } from "../patientListing";
 
 interface PatientTableProps {
   patients: Patient[];
   isLoading: boolean;
   scope: PatientReadScope;
   calculateAge: (date: string) => string | number;
+  sort?: PatientSort;
+  onSort?: (field: "patient" | "age") => void;
 }
-
-const formatPhone = (phone?: string) => {
-  if (!phone) return "";
-  const formatted = phone.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
-  return `+51 ${formatted}`;
-};
 
 const getPatientStatus = (maxLevel?: number | null): Status => {
   if (maxLevel === undefined || maxLevel === null) return "Sin Evaluar";
@@ -33,14 +30,25 @@ const getPatientStatus = (maxLevel?: number | null): Status => {
   return "Normal";
 };
 
-function TableHeaderRow({ scope }: { scope: PatientReadScope }) {
+function TableHeaderRow({ scope, sort, onSort }: { scope: PatientReadScope; sort?: PatientSort; onSort?: PatientTableProps["onSort"] }) {
   const headClass =
     "text-xs font-medium uppercase tracking-wider text-muted-foreground";
+  const sortable = (field: "patient" | "age", label: string) => {
+    const direction = sort?.field === field ? sort.direction : null;
+    const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
+    return <TableHead className={headClass} aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}>
+      <button type="button" onClick={() => onSort?.(field)} disabled={!onSort}
+        className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+        aria-label={`Ordenar por ${label}${direction ? `, ${direction === "asc" ? "ascendente" : "descendente"}` : ""}`}>
+        {label.toLocaleUpperCase("es-PE")}<Icon aria-hidden="true" className={`h-3.5 w-3.5 ${direction ? "text-primary" : "opacity-50"}`} />
+      </button>
+    </TableHead>;
+  };
   return (
     <TableRow className="bg-muted/40 hover:bg-muted/40">
       <TableHead className={headClass}>Documento</TableHead>
-      <TableHead className={headClass}>Paciente</TableHead>
-      <TableHead className={headClass}>Edad</TableHead>
+      {sortable("patient", "Paciente")}
+      {sortable("age", "Edad")}
       <TableHead className={headClass}>Teléfono</TableHead>
       {scope !== "administrative" && <TableHead className={headClass}>Última Visita</TableHead>}
       {scope === "clinical" && <TableHead className={headClass}>Estado</TableHead>}
@@ -49,11 +57,11 @@ function TableHeaderRow({ scope }: { scope: PatientReadScope }) {
   );
 }
 
-function EmptyState({ message, scope }: { message: string; scope: PatientReadScope }) {
+function EmptyState({ message, scope, sort, onSort }: { message: string; scope: PatientReadScope; sort?: PatientSort; onSort?: PatientTableProps["onSort"] }) {
   return (
     <Table>
       <TableHeader>
-        <TableHeaderRow scope={scope} />
+        <TableHeaderRow scope={scope} sort={sort} onSort={onSort} />
       </TableHeader>
       <TableBody>
         <TableRow className="hover:bg-transparent">
@@ -74,19 +82,21 @@ export function PatientTable({
   isLoading,
   scope,
   calculateAge,
+  sort,
+  onSort,
 }: PatientTableProps) {
   if (isLoading) {
-    return <EmptyState message="Cargando pacientes..." scope={scope} />;
+    return <EmptyState message="Cargando pacientes..." scope={scope} sort={sort} onSort={onSort} />;
   }
 
   if (patients.length === 0) {
-    return <EmptyState message="No se encontraron pacientes con ese criterio." scope={scope} />;
+    return <EmptyState message="No se encontraron pacientes con ese criterio." scope={scope} sort={sort} onSort={onSort} />;
   }
 
   return (
     <Table>
       <TableHeader>
-          <TableHeaderRow scope={scope} />
+          <TableHeaderRow scope={scope} sort={sort} onSort={onSort} />
       </TableHeader>
       <TableBody>
         {patients.map((p) => (
@@ -115,7 +125,7 @@ export function PatientTable({
               {calculateAge(p.fecha_nacimiento)}
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
-              {formatPhone(p.telefono) || "Sin teléfono"}
+              {formatPatientListPhone(p.telefono)}
             </TableCell>
             {scope !== "administrative" && <TableCell className="text-sm">
               {p.ultima_visita ? (

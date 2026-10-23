@@ -25,20 +25,18 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuthStore } from "@/features/auth/store/authStore";
-import { canReadPatients } from "@/features/patients/patientAccess";
+import { canAccessModule, type ModuleName } from "@/features/auth/moduleAccess";
 
-const mainItems = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, end: true },
-  { title: "Pacientes", url: "/pacientes", icon: Users },
-  { title: "Diagnóstico IA", url: "/diagnostico", icon: Brain },
-  { title: "Informes", url: "/informes", icon: FileText },
+const mainItems: { title: string; url: string; icon: typeof Users; module: ModuleName; end?: boolean }[] = [
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, end: true, module: "dashboard" },
+  { title: "Pacientes", url: "/pacientes", icon: Users, module: "patients" },
+  { title: "Diagnóstico IA", url: "/diagnostico", icon: Brain, module: "diagnosis" },
+  { title: "Informes", url: "/informes", icon: FileText, module: "reports" },
 ];
 
 const adminItems = [
   { title: "Configuración", url: "/configuracion", icon: Settings },
 ];
-
-const ADMIN_ROLES = ["Admin", "Gerente General", "Administrador del sistema"];
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -47,9 +45,8 @@ export function AppSidebar() {
   const navigate = useNavigate();
 
   // Leer del store en lugar de localStorage directamente
-  const { user, logout, hasRole, hasPermission } = useAuthStore();
-  const showAdminItems =
-    hasPermission("configuracion.ver") || hasRole(ADMIN_ROLES);
+  const { user, logout, deniedModules } = useAuthStore();
+  const showAdminItems = canAccessModule(user, "configuration", deniedModules);
 
   // Nombre e iniciales
   const firstName = user?.nombres?.split(" ")[0] ?? "";
@@ -121,7 +118,7 @@ export function AppSidebar() {
           )}
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.filter((item) => item.url === "/dashboard" || canReadPatients(user)).map((item) => (
+              {mainItems.filter((item) => canAccessModule(user, item.module, deniedModules)).map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild className="hover:bg-transparent">
                     <NavLink
@@ -139,7 +136,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Items de administración — solo Admin y Gerente General */}
+        {/* Administración — solo rol y permiso habilitantes */}
         {showAdminItems && (
           <SidebarGroup>
             {!collapsed && (

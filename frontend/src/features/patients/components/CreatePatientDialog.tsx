@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PersonNameInput } from "@/components/ui/person-name-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,21 +31,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ChevronDown,
-  ClipboardPlus,
   AlertTriangle,
-  Phone,
-  ShieldCheck,
   UserPlus,
 } from "lucide-react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { PatientFormData } from "../types";
-import type { PatientRegistrationScope } from "../hooks/usePatients";
+import type { PatientFormErrors, PatientFormField, PatientRegistrationScope } from "../hooks/usePatients";
+import { localCivilDate, MIN_BIRTH_DATE } from "../birthDate";
 
 interface CreatePatientDialogProps {
   open: boolean;
@@ -55,13 +48,16 @@ interface CreatePatientDialogProps {
   onConsentChange: (checked: boolean) => void;
   onDocumentChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
-  onFieldChange: (field: string, value: string) => void;
+  onFieldChange: (field: keyof PatientFormData, value: string) => void;
+  onNameBlur: (field: "nombres" | "apellidos") => void;
   onSubmit: (e: React.FormEvent) => void;
   onTipoDocChange: (value: string) => void;
   hasUnsavedChanges: boolean;
   onDiscard: () => void;
   triggerLabel?: string;
   registrationScope: PatientRegistrationScope;
+  validationErrors?: PatientFormErrors;
+  validationFocus?: { field: PatientFormField; attempt: number } | null;
 }
 
 export function CreatePatientDialog({
@@ -74,19 +70,48 @@ export function CreatePatientDialog({
   onDocumentChange,
   onPhoneChange,
   onFieldChange,
+  onNameBlur,
   onSubmit,
   onTipoDocChange,
   hasUnsavedChanges,
   onDiscard,
   triggerLabel = "Nuevo Paciente",
   registrationScope,
+  validationErrors = {},
+  validationFocus,
 }: CreatePatientDialogProps) {
-  const [identificationOpen, setIdentificationOpen] = useState(true);
-  const [contactOpen, setContactOpen] = useState(false);
-  const [clinicalOpen, setClinicalOpen] = useState(false);
-  const [consentOpen, setConsentOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localCivilDate();
+
+  useEffect(() => {
+    if (!open || !validationFocus) return;
+    const body = document.getElementById("patient-form")?.parentElement;
+    const field = document.getElementById(validationFocus.field);
+    if (!body || !field || !body.contains(field)) return;
+
+    // scrollIntoView desplaza también al DialogContent (overflow-hidden),
+    // dejando un hueco bajo el footer. Solo el cuerpo debe desplazarse.
+    field.focus({ preventScroll: true });
+    const target = validationFocus.field === "consent"
+      ? body.querySelector<HTMLElement>("[data-consent-card]") ?? field
+      : field.parentElement ?? field;
+    const viewport = body.getBoundingClientRect();
+    const area = target.getBoundingClientRect();
+    const margin = 12;
+    if (body.scrollHeight <= body.clientHeight ||
+        (area.top >= viewport.top + margin && area.bottom <= viewport.bottom - margin)) return;
+
+    const delta = area.height <= viewport.height - 2 * margin
+      ? area.top + area.height / 2 - (viewport.top + viewport.height / 2)
+      : area.top - (viewport.top + margin);
+    const next = Math.max(0, Math.min(body.scrollHeight - body.clientHeight, body.scrollTop + delta));
+    if (Math.abs(next - body.scrollTop) > 1) {
+      body.scrollTo({ top: next, behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+        ? "auto" : "smooth" });
+    }
+  }, [open, validationFocus]);
+
+  const errorFor = (field: PatientFormField) => validationErrors[field];
 
   const requestClose = () => {
     if (isSubmitting) return;
@@ -135,243 +160,165 @@ export function CreatePatientDialog({
             : "Complete los datos de identificación y la información clínica inicial."}
         />
 
-        <AppModalBody>
+        <AppModalBody className="bg-muted/65 py-4 dark:bg-muted/40">
           <form id="patient-form" onSubmit={onSubmit} noValidate className="space-y-3">
-            <FormSection
-              title="Identificación"
-              open={identificationOpen}
-              onOpenChange={setIdentificationOpen}
-              summary={
-                formData.nro_documento
-                  ? `${formData.tipo_doc} ${formData.nro_documento}`
-                  : "Documento y datos personales"
-              }
-              required
-            >
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="tipo_doc">Doc</Label>
-                  <Select value={formData.tipo_doc} onValueChange={onTipoDocChange}>
-                    <SelectTrigger id="tipo_doc">
-                      <SelectValue placeholder="DNI" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="DNI">DNI</SelectItem>
-                      <SelectItem value="CE">CE</SelectItem>
-                      <SelectItem value="PAS">PAS</SelectItem>
-                    </SelectContent>
-                  </Select>
+            <section className="rounded-xl border border-border bg-card p-4" aria-labelledby="patient-identification-title">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <div className="flex items-center gap-2.5">
+                  <span aria-hidden="true" className="h-5 w-1 rounded-full bg-primary" />
+                  <h3 id="patient-identification-title" className="text-xs font-semibold uppercase tracking-[0.08em] text-secondary dark:text-foreground">Identificación</h3>
                 </div>
-
-              <div className="space-y-2 sm:col-span-6">
-                <Label htmlFor="nro_documento">Número de Documento</Label>
-                <Input
-                  id="nro_documento"
-                  value={formData.nro_documento}
-                  onChange={(e) => onDocumentChange(e.target.value)}
-                  required
+                <span className="text-xs text-muted-foreground"><span className="text-destructive">*</span> Obligatorio</span>
+              </div>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-12">
+              <div className="space-y-1 sm:col-span-4">
+                <FieldLabel htmlFor="tipo_doc" required>Tipo de documento</FieldLabel>
+                <Select value={formData.tipo_doc} onValueChange={onTipoDocChange}>
+                  <SelectTrigger id="tipo_doc" aria-required="true" aria-invalid={!!errorFor("tipo_doc")} aria-describedby={errorFor("tipo_doc") ? "tipo_doc-error" : undefined} className="h-10 sm:h-[38px]">
+                    <SelectValue placeholder="Seleccione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DNI">DNI</SelectItem>
+                    <SelectItem value="CE">CE</SelectItem>
+                    <SelectItem value="PAS">PAS</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError field="tipo_doc" message={errorFor("tipo_doc")} />
+              </div>
+              <div className="space-y-1 sm:col-span-8">
+                <FieldLabel htmlFor="nro_documento" required>Número de documento</FieldLabel>
+                <Input id="nro_documento" value={formData.nro_documento}
+                  onChange={(e) => onDocumentChange(e.target.value)} required
+                  aria-invalid={!!errorFor("nro_documento")}
+                  aria-describedby={errorFor("nro_documento") ? "nro_documento-error" : undefined}
                   inputMode={formData.tipo_doc === "DNI" ? "numeric" : "text"}
                   autoComplete="off"
-                  placeholder={
-                    formData.tipo_doc === "DNI"
-                      ? "8 dígitos"
-                      : formData.tipo_doc === "CE"
-                        ? "8-12 caracteres"
-                        : "3-9 caracteres"
-                  }
-                  maxLength={
-                    formData.tipo_doc === "DNI"
-                      ? 8
-                      : formData.tipo_doc === "CE"
-                        ? 12
-                        : 9
-                  }
-                  className="border-input"
-                />
+                  placeholder={formData.tipo_doc === "DNI" ? "8 dígitos" : formData.tipo_doc === "CE" ? "8 a 12 caracteres" : "3 a 9 caracteres"}
+                  maxLength={formData.tipo_doc === "DNI" ? 8 : formData.tipo_doc === "CE" ? 12 : 9}
+                  className="h-10 sm:h-[38px]" />
+                <FieldError field="nro_documento" message={errorFor("nro_documento")} />
               </div>
-
-              <div className="space-y-2 sm:col-span-4">
-                <Label htmlFor="sexo">Sexo</Label>
-                <Select
-                  value={formData.sexo}
-                  onValueChange={(val) => onFieldChange("sexo", val)}
-                >
-                  <SelectTrigger id="sexo">
-                    <SelectValue placeholder="Seleccione..." />
+              <div className="space-y-1 sm:col-span-6">
+                <FieldLabel htmlFor="nombres" required>Nombres</FieldLabel>
+                 <PersonNameInput id="nombres" value={formData.nombres} onValueChange={(value) => onFieldChange("nombres", value)} onBlur={() => onNameBlur("nombres")}
+                  maxLength={80} autoComplete="given-name" className="h-10 sm:h-[38px]"
+                  aria-invalid={!!errorFor("nombres")} aria-describedby={errorFor("nombres") ? "nombres-error" : undefined} />
+                <FieldError field="nombres" message={errorFor("nombres")} />
+              </div>
+              <div className="space-y-1 sm:col-span-6">
+                <FieldLabel htmlFor="apellidos" required>Apellidos</FieldLabel>
+                 <PersonNameInput id="apellidos" value={formData.apellidos} onValueChange={(value) => onFieldChange("apellidos", value)} onBlur={() => onNameBlur("apellidos")}
+                  maxLength={100} autoComplete="family-name" className="h-10 sm:h-[38px]"
+                  aria-invalid={!!errorFor("apellidos")} aria-describedby={errorFor("apellidos") ? "apellidos-error" : undefined} />
+                <FieldError field="apellidos" message={errorFor("apellidos")} />
+              </div>
+              <div className="space-y-1 sm:col-span-6">
+                <FieldLabel htmlFor="sexo" required>Sexo</FieldLabel>
+                <Select value={formData.sexo} onValueChange={(val) => onFieldChange("sexo", val)}>
+                  <SelectTrigger id="sexo" className="h-10 sm:h-[38px]" aria-required="true" aria-invalid={!!errorFor("sexo")}
+                    aria-describedby={errorFor("sexo") ? "sexo-error" : undefined}>
+                    <SelectValue placeholder="Seleccione" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Masculino">Masculino</SelectItem>
                     <SelectItem value="Femenino">Femenino</SelectItem>
                   </SelectContent>
                 </Select>
+                <FieldError field="sexo" message={errorFor("sexo")} />
               </div>
-            </div>
+              <div className="space-y-1 sm:col-span-6">
+                <FieldLabel htmlFor="fecha_nacimiento" required>Fecha de nacimiento</FieldLabel>
+                <Input id="fecha_nacimiento" type="date" value={formData.fecha_nacimiento}
+                  onChange={(e) => onFieldChange("fecha_nacimiento", e.target.value)} required min={MIN_BIRTH_DATE} max={today} className="h-10 sm:h-[38px]"
+                  aria-invalid={!!errorFor("fecha_nacimiento")}
+                  aria-describedby={errorFor("fecha_nacimiento") ? "fecha_nacimiento-error" : undefined} />
+                <FieldError field="fecha_nacimiento" message={errorFor("fecha_nacimiento")} />
+              </div>
+              </div>
+            </section>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="nombres">Nombres</Label>
-                <Input
-                  id="nombres"
-                  value={formData.nombres}
-                  onChange={(e) => onFieldChange("nombres", e.target.value)}
-                  required
-                  maxLength={80}
-                  autoComplete="given-name"
-                  className="border-input"
-                />
+            <section className="rounded-xl border border-border bg-card p-4" aria-labelledby="patient-contact-title">
+              <div className="mb-3 flex items-center gap-2.5">
+                <span aria-hidden="true" className="h-5 w-1 rounded-full bg-primary" />
+                <h3 id="patient-contact-title" className="text-xs font-semibold uppercase tracking-[0.08em] text-secondary dark:text-foreground">Contacto</h3>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="apellidos">Apellidos</Label>
-                <Input
-                  id="apellidos"
-                  value={formData.apellidos}
-                  onChange={(e) => onFieldChange("apellidos", e.target.value)}
-                  required
-                  maxLength={100}
-                  autoComplete="family-name"
-                  className="border-input"
-                />
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection
-            title="Contacto"
-            open={contactOpen}
-            onOpenChange={setContactOpen}
-            summary={
-              formData.telefono || formData.correo
-                ? [formData.telefono, formData.correo].filter(Boolean).join(" · ")
-                : "Nacimiento, teléfono y correo"
-            }
-            icon={<Phone className="h-4 w-4" />}
-          >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="fecha_nacimiento">Fecha de Nacimiento</Label>
-                <Input
-                  id="fecha_nacimiento"
-                  type="date"
-                  value={formData.fecha_nacimiento}
-                  onChange={(e) => onFieldChange("fecha_nacimiento", e.target.value)}
-                  required
-                  max={today}
-                  className="border-input"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="telefono">Teléfono</Label>
-                <Input
-                  id="telefono"
-                  type="tel"
-                  value={formData.telefono}
-                  onChange={(e) => onPhoneChange(e.target.value)}
-                  inputMode="numeric"
-                  maxLength={11}
-                  autoComplete="tel-national"
-                  placeholder="999 999 999"
-                  className="border-input"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="correo">Correo</Label>
-                <Input
-                  id="correo"
-                  type="email"
-                  value={formData.correo}
-                  onChange={(e) => onFieldChange("correo", e.target.value)}
-                  maxLength={150}
-                  autoComplete="email"
-                  placeholder="correo@ejemplo.com"
-                  className="border-input"
-                />
-              </div>
-            </div>
-          </FormSection>
-
-          {registrationScope !== "administrative" && <FormSection
-            title="Información clínica básica"
-            open={clinicalOpen}
-            onOpenChange={setClinicalOpen}
-            summary={registrationScope === "clinical" ? "Antecedentes y alergias" : "Alergias"}
-            icon={<ClipboardPlus className="h-4 w-4" />}
-          >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {registrationScope === "clinical" && <div className="space-y-2">
-                <Label htmlFor="antecedentes_clinicos">Antecedentes clínicos</Label>
-                <Textarea
-                  id="antecedentes_clinicos"
-                  value={formData.antecedentes_clinicos}
-                  onChange={(e) =>
-                    onFieldChange("antecedentes_clinicos", e.target.value)
-                  }
-                  maxLength={2000}
-                  placeholder="Diabetes, hipertensión, cirugías previas..."
-                  className="min-h-[92px] resize-none border-input"
-                />
-              </div>}
-              <div className="space-y-2">
-                <Label htmlFor="alergias">Alergias</Label>
-                <Textarea
-                  id="alergias"
-                  value={formData.alergias}
-                  onChange={(e) => onFieldChange("alergias", e.target.value)}
-                  maxLength={1000}
-                  placeholder="Medicamentos, anestésicos u otras alergias..."
-                  className="min-h-[92px] resize-none border-input"
-                />
-              </div>
-            </div>
-          </FormSection>}
-
-          <Collapsible open={consentOpen} onOpenChange={setConsentOpen}>
-            <div
-              className={cn(
-                "rounded-md border bg-accent/40 transition-colors",
-                consent
-                  ? "border-emerald-500 ring-1 ring-emerald-500/30"
-                  : "border-border",
-              )}
-            >
-              <div className="flex items-center gap-3 p-3">
-                <Checkbox
-                  id="consent"
-                  checked={consent}
-                  onCheckedChange={(v) => onConsentChange(!!v)}
-                />
-                <Label
-                  htmlFor="consent"
-                  className="flex flex-1 items-center gap-1.5 text-sm font-medium cursor-pointer"
-                >
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  Consentimiento Informado Físico Archivado
-                </Label>
-                <CollapsibleTrigger asChild>
-                  <button
-                    type="button"
-                    className="h-8 w-8 rounded-md hover:bg-muted flex items-center justify-center transition-colors"
-                    title={consentOpen ? "Ocultar descripción" : "Ver descripción"}
-                  >
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 text-muted-foreground transition-transform",
-                        consentOpen && "rotate-180",
-                      )}
-                    />
-                  </button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent>
-                <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground leading-relaxed">
-                  Confirmo que el paciente ha firmado el formulario de
-                  consentimiento y se encuentra archivado en su historia clínica.
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <FieldLabel htmlFor="telefono">Teléfono</FieldLabel>
+                  <Input id="telefono" type="tel" value={formData.telefono} onChange={(e) => onPhoneChange(e.target.value)}
+                    inputMode="numeric" maxLength={11} autoComplete="tel-national" placeholder="999 999 999" className="h-10 sm:h-[38px]"
+                    aria-invalid={!!errorFor("telefono")} aria-describedby={errorFor("telefono") ? "telefono-error" : undefined} />
+                  <FieldError field="telefono" message={errorFor("telefono")} />
                 </div>
-              </CollapsibleContent>
-            </div>
-            </Collapsible>
+                <div className="space-y-1">
+                  <FieldLabel htmlFor="correo">Correo</FieldLabel>
+                  <Input id="correo" type="email" value={formData.correo}
+                    onChange={(e) => onFieldChange("correo", e.target.value)} maxLength={150} autoComplete="email"
+                    placeholder="correo@ejemplo.com" className="h-10 sm:h-[38px]"
+                    aria-invalid={!!errorFor("correo")} aria-describedby={errorFor("correo") ? "correo-error" : undefined} />
+                  <FieldError field="correo" message={errorFor("correo")} />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <FieldLabel htmlFor="direccion">Dirección</FieldLabel>
+                  <Input id="direccion" value={formData.direccion}
+                    onChange={(e) => onFieldChange("direccion", e.target.value)} maxLength={255}
+                    autoComplete="street-address" className="h-10 sm:h-[38px]"
+                    aria-invalid={!!errorFor("direccion")} aria-describedby={errorFor("direccion") ? "direccion-error" : undefined} />
+                  <FieldError field="direccion" message={errorFor("direccion")} />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-card p-4" aria-labelledby="patient-clinical-title">
+              <div className="mb-3 flex items-center gap-2.5">
+                <span aria-hidden="true" className="h-5 w-1 rounded-full bg-primary" />
+                <h3 id="patient-clinical-title" className="text-xs font-semibold uppercase tracking-[0.08em] text-secondary dark:text-foreground">
+                  {registrationScope === "administrative" ? "Consentimiento informado" : "Información clínica y consentimiento"}
+                </h3>
+              </div>
+              {registrationScope !== "administrative" && (
+                <div className={cn("grid grid-cols-1 gap-x-4 gap-y-3", registrationScope === "clinical" && "sm:grid-cols-2")}>
+                  {registrationScope === "clinical" && <div className="space-y-1">
+                    <FieldLabel htmlFor="antecedentes_clinicos">Antecedentes clínicos</FieldLabel>
+                    <Textarea id="antecedentes_clinicos" value={formData.antecedentes_clinicos}
+                      onChange={(e) => onFieldChange("antecedentes_clinicos", e.target.value)} maxLength={2000}
+                      placeholder="Diabetes, hipertensión, cirugías previas…" className="min-h-[88px] resize-y"
+                      aria-invalid={!!errorFor("antecedentes_clinicos")}
+                      aria-describedby={errorFor("antecedentes_clinicos") ? "antecedentes_clinicos-error" : undefined} />
+                    <FieldError field="antecedentes_clinicos" message={errorFor("antecedentes_clinicos")} />
+                  </div>}
+                  <div className="space-y-1">
+                    <FieldLabel htmlFor="alergias">Alergias</FieldLabel>
+                    <Textarea id="alergias" value={formData.alergias}
+                      onChange={(e) => onFieldChange("alergias", e.target.value)} maxLength={1000}
+                      placeholder="Medicamentos, anestésicos u otras alergias…" className="min-h-[88px] resize-y"
+                      aria-invalid={!!errorFor("alergias")}
+                      aria-describedby={errorFor("alergias") ? "alergias-error" : undefined} />
+                    <FieldError field="alergias" message={errorFor("alergias")} />
+                  </div>
+                </div>
+              )}
+               <div data-consent-card className={cn("cursor-pointer rounded-lg border px-3 py-2.5 transition-colors focus-within:border-primary/50",
+                registrationScope !== "administrative" && "mt-3",
+                errorFor("consent") ? "border-destructive bg-primary/[0.04]" : consent
+                  ? "border-primary/40 bg-primary/[0.09]" : "border-primary/10 bg-primary/[0.04]")}
+                onClick={(event) => {
+                  if (event.target instanceof Element &&
+                    event.target.closest("label, button, a, input, select, textarea, [role='checkbox']")) return;
+                  onConsentChange(!consent);
+                }}>
+                <div className="flex items-start gap-3">
+                  <Checkbox id="consent" checked={consent} onCheckedChange={(v) => onConsentChange(!!v)} aria-required="true"
+                    aria-invalid={!!errorFor("consent")}
+                    aria-describedby={errorFor("consent") ? "consent-error" : "consent-hint"} className="mt-0.5" />
+                  <div className="space-y-0.5">
+                    <FieldLabel htmlFor="consent" required className="cursor-pointer">Consentimiento Informado Físico Archivado</FieldLabel>
+                    <p id="consent-hint" className="text-sm leading-snug text-muted-foreground">Confirme que el documento firmado está archivado.</p>
+                  </div>
+                </div>
+                <FieldError field="consent" message={errorFor("consent")} className="ml-7 mt-2" />
+              </div>
+            </section>
           </form>
         </AppModalBody>
 
@@ -423,57 +370,23 @@ export function CreatePatientDialog({
   );
 }
 
-function FormSection({
-  title,
-  summary,
-  open,
-  onOpenChange,
-  children,
-  required,
-  icon,
-}: {
-  title: string;
-  summary: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
+function FieldLabel({ htmlFor, required = false, className, children }: {
+  htmlFor: string;
   required?: boolean;
-  icon?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
-      <div className="rounded-md border border-border bg-card overflow-hidden">
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors"
-          >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/5 text-primary/70">
-              {icon || <UserPlus className="h-3.5 w-3.5" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">{title}</span>
-                {required && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                    Requerido
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground truncate">{summary}</p>
-            </div>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                open && "rotate-180",
-              )}
-            />
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="space-y-4 border-t border-border p-4">{children}</div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
+    <Label htmlFor={htmlFor} className={cn("text-[13px] font-medium leading-snug text-foreground", className)}>
+      {children}{required && <span className="ml-1 text-destructive" aria-label="obligatorio">*</span>}
+    </Label>
   );
+}
+
+function FieldError({ field, message, className }: {
+  field: PatientFormField;
+  message?: string;
+  className?: string;
+}) {
+  return message ? <p id={`${field}-error`} role="alert" className={cn("text-sm text-destructive", className)}>{message}</p> : null;
 }

@@ -1,8 +1,10 @@
 import axios from "axios";
 import { useAuthStore } from "@/features/auth/store/authStore";
 
+export const ACCESS_DENIED_EVENT = "app:access-denied";
+
 const api = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api",
   headers: {
     "Content-Type": "application/json",
   },
@@ -27,6 +29,11 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && error.config?.url !== "/login") {
       useAuthStore.getState().logout();
       window.location.href = "/";
+    }
+    if (error.response?.status === 403) {
+      window.dispatchEvent(new CustomEvent(ACCESS_DENIED_EVENT, {
+        detail: { url: error.config?.url, method: error.config?.method?.toUpperCase() },
+      }));
     }
     return Promise.reject(error);
   },

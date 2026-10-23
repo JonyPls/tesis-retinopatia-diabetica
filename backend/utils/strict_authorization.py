@@ -42,6 +42,11 @@ def _rule(domain, roles, *permissions, any_of=(), needs_resource_check=False):
 # ni permisos genéricos.
 OPERATION_RULES = MappingProxyType({
     "configuration.read": _rule("administration", (ADMINISTRADOR,), "configuracion.ver"),
+    "users.read": _rule("administration", (ADMINISTRADOR,), "usuarios.ver"),
+    "users.create": _rule("administration", (ADMINISTRADOR,), "usuarios.crear"),
+    "users.edit": _rule("administration", (ADMINISTRADOR,), "usuarios.editar"),
+    "users.assign_roles": _rule("administration", (ADMINISTRADOR,), "usuarios.asignar_roles"),
+    "roles.assign_permissions": _rule("administration", (ADMINISTRADOR,), "roles.asignar_permisos"),
     "patients.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "pacientes.ver"),
     "patients.create": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "pacientes.crear"),
     "visits.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "visitas.ver"),
@@ -49,6 +54,10 @@ OPERATION_RULES = MappingProxyType({
     "history.full_read": _rule(
         "specialist", (OFTALMOLOGO,), "pacientes.ver", "visitas.ver",
         "diagnostico_retinopatia.ver", "informes.ver", "imagenes.ver",
+    ),
+    "dashboard.clinical_read": _rule(
+        "specialist", (OFTALMOLOGO,), "pacientes.ver", "visitas.ver",
+        "diagnostico_retinopatia.ver",
     ),
     "diagnosis.read": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.ver"),
     "diagnosis.details_read": _rule(

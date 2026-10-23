@@ -7,8 +7,12 @@ import { PatientInfoCard } from "../components/PatientInfoCard";
 import { PatientSummaryBand } from "../components/PatientSummaryBand";
 import { PatientTimeline } from "../components/PatientTimeline";
 import { PatientLookupError } from "../components/PatientLookupError";
+import { canAccessModule } from "@/features/auth/moduleAccess";
+import { useAuthStore } from "@/features/auth/store/authStore";
 
 export default function PatientProfile() {
+  const { user, deniedModules } = useAuthStore();
+  const canEvaluate = canAccessModule(user, "diagnosis", deniedModules);
   const { id } = useParams();
   const hook = usePatientProfile(id);
 
@@ -97,13 +101,13 @@ export default function PatientProfile() {
 
           {hook.historyError && <PatientLookupError error={hook.historyError} />}
           {showHistory && <section className="min-w-0 space-y-3">
-            <div className="flex justify-end">
+            {canEvaluate && <div className="flex justify-end">
               <Button asChild className="bg-primary hover:bg-primary/90">
                 <Link to="/diagnostico">
                   <Brain className="mr-2 h-4 w-4" /> Nueva Evaluación
                 </Link>
               </Button>
-            </div>
+            </div>}
 
             <PatientTimeline
               diagnoses={hook.diagnoses}

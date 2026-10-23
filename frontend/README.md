@@ -1,5 +1,29 @@
 # React + TypeScript + Vite
 
+## Desarrollo local de CODN (Windows)
+
+- Puertos habituales: Vite `http://localhost:8080` y Flask `http://127.0.0.1:5000`.
+- Antes de iniciar otra sesión, comprobar los oyentes con
+  `Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 5000,5001,8080,5173 }`.
+  Inspeccionar sus PID y comandos con `Get-CimInstance Win32_Process`; no detener procesos ajenos.
+- Desde `backend/`, conservar en la sesión `RETINOGRAPH_PRIVATE_DIR` con la ruta privada
+  local **ya autorizada** (sin copiarla a Git) y ejecutar `./venv/Scripts/python.exe run_local.py`.
+  Este arranque conserva las banderas locales de informes, usa solo `127.0.0.1:5000`,
+  no activa debug y se niega a arrancar sin carpeta privada configurada.
+- Desde `frontend/`, ejecutar `npm run dev -- --host localhost --port 8080 --strictPort`.
+  No establecer `VITE_API_BASE_URL` para este par: el valor por defecto es
+  `http://localhost:5000/api` (misma máquina que `127.0.0.1:5000`). Si existía
+  una variable temporal apuntando a `5001`, retirarla **solo de esta terminal**
+  antes de iniciar Vite (`Remove-Item Env:VITE_API_BASE_URL`).
+- Tras cambios en Flask o en la configuración del servidor, detener el proceso
+  de desarrollo CODN identificado y reiniciar el comando anterior; Vite actualiza
+  frontend normalmente sin reinicio, salvo cambios en sus variables de entorno.
+  Reutilizar el par existente en vez de abrir servidores adicionales. No cambiar
+  las banderas de informes ni la ubicación privada del retinógrafo al reiniciar.
+- Comprobar `GET http://127.0.0.1:5000/` (200) y
+  `GET http://127.0.0.1:5000/api/dashboard/clinico` sin Bearer (401),
+  después abrir `http://localhost:8080/dashboard` con la sesión autorizada.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

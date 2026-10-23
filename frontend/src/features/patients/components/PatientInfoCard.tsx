@@ -7,7 +7,7 @@ import { Patient, PatientReadScope } from "../types";
 interface PatientInfoCardProps {
   patient: Patient;
   scope: PatientReadScope;
-  calculateAge: (date: string) => number;
+  calculateAge: (date: string) => number | null;
   getInitials: (nombres?: string, apellidos?: string) => string;
 }
 
@@ -112,7 +112,7 @@ export function PatientInfoCard({
               label="Nacimiento"
               value={formatDate(patient.fecha_nacimiento)}
             />
-            <Field label="Edad" value={`${age} años`} />
+             <Field label="Edad" value={age === null ? null : age === 0 ? "Menor de 1 año" : `${age} años`} />
             <Field
               icon={Phone}
               label="Teléfono"

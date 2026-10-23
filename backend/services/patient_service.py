@@ -5,15 +5,18 @@ from flask import current_app
 from database import db
 from datetime import date, datetime
 import re
+import unicodedata
+from sqlalchemy.exc import IntegrityError
+from zoneinfo import ZoneInfo
+from utils.identity_validation import DOCUMENT_PATTERNS, valid_email as _valid_email
 
-DOCUMENT_PATTERNS = {
-    'DNI': (re.compile(r'^\d{8}$'), 'El DNI debe tener exactamente 8 digitos.'),
-    'CE': (re.compile(r'^[A-Z0-9]{8,12}$'), 'El CE debe tener entre 8 y 12 caracteres alfanumericos.'),
-    'PAS': (re.compile(r'^[A-Z0-9]{3,9}$'), 'El Pasaporte debe tener entre 3 y 9 caracteres alfanumericos.'),
-}
-NAME_PATTERN = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$")
-EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 MAX_PATIENT_AGE = 120
+MIN_BIRTH_DATE = date(1900, 1, 1)
+CLINIC_ZONE = ZoneInfo('America/Lima')
+CONFLICT_MESSAGES = {
+    'nro_documento': 'El documento ya se encuentra registrado en el sistema.',
+    'correo': 'El correo ya se encuentra registrado en el sistema.',
+}
 PATIENT_REGISTRATION_FIELDS = frozenset({
     'tipo_doc', 'nro_documento', 'nombres', 'apellidos', 'sexo',
     'fecha_nacimiento', 'telefono', 'correo', 'direccion',
@@ -35,6 +38,16 @@ def _clean_text(value):
     return normalized or None
 
 
+def _valid_person_name(value):
+    if not value or any(unicodedata.category(char) in ('Cc', 'Cf') for char in value):
+        return False
+    name = unicodedata.normalize('NFC', value)
+    tokens = re.split(r" ?[-'’] ?| ", name)
+    return bool(tokens) and all(token and all(
+        char.isalpha() and unicodedata.name(char, '').startswith('LATIN ')
+        for char in token) for token in tokens)
+
+
 def _clean_multiline_text(value):
     if value is None:
         return None
@@ -49,13 +62,17 @@ def _normalize_document(value, tipo_doc):
     return re.sub(r'[^A-Za-z0-9]', '', raw).upper()
 
 
-def _parse_birth_date(value):
+def _parse_birth_date(value, *, today=None):
     try:
-        parsed = datetime.strptime(str(value), '%Y-%m-%d').date()
+        if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+            raise ValueError('invalid civil date')
+        parsed = date.fromisoformat(value)
     except (TypeError, ValueError):
-        return None, 'La fecha de nacimiento no es valida.'
+        return None, 'Verifica la fecha de nacimiento ingresada.'
 
-    today = date.today()
+    today = today or datetime.now(CLINIC_ZONE).date()
+    if parsed < MIN_BIRTH_DATE:
+        return None, 'La fecha de nacimiento debe ser igual o posterior al 01/01/1900.'
     if parsed > today:
         return None, 'La fecha de nacimiento no puede ser futura.'
 
@@ -79,39 +96,40 @@ def _validate_patient_data(
     correo,
     consentimiento_informado,
 ):
-    if not all([tipo_doc_codigo, nro_documento, nombres, apellidos, sexo, fecha_nacimiento]):
-        return 'Documento, nombres, apellidos, sexo y fecha de nacimiento son obligatorios'
+    errors = {}
 
     pattern_config = DOCUMENT_PATTERNS.get(tipo_doc_codigo)
     if not pattern_config:
-        return 'Tipo de documento invalido'
+        errors['tipo_doc'] = 'Tipo de documento inválido.'
+    elif not pattern_config[0].fullmatch(nro_documento):
+        errors['nro_documento'] = pattern_config[1]
 
-    pattern, message = pattern_config
-    if not pattern.match(nro_documento):
-        return message
-
-    if len(nombres) < 2 or len(nombres) > 80:
-        return 'Los nombres deben tener entre 2 y 80 caracteres.'
-    if len(apellidos) < 2 or len(apellidos) > 100:
-        return 'Los apellidos deben tener entre 2 y 100 caracteres.'
-    if not NAME_PATTERN.match(nombres):
-        return 'Los nombres solo deben contener letras, espacios, guiones o apostrofes.'
-    if not NAME_PATTERN.match(apellidos):
-        return 'Los apellidos solo deben contener letras, espacios, guiones o apostrofes.'
+    if not nombres:
+        errors['nombres'] = 'Debe ingresar nombres.'
+    elif len(nombres) < 2 or len(nombres) > 80:
+        errors['nombres'] = 'Los nombres deben tener entre 2 y 80 caracteres.'
+    elif not _valid_person_name(nombres):
+        errors['nombres'] = 'Ingresa un nombre válido, sin números ni símbolos.'
+    if not apellidos:
+        errors['apellidos'] = 'Debe ingresar apellidos.'
+    elif len(apellidos) < 2 or len(apellidos) > 100:
+        errors['apellidos'] = 'Los apellidos deben tener entre 2 y 100 caracteres.'
+    elif not _valid_person_name(apellidos):
+        errors['apellidos'] = 'Ingresa un apellido válido, sin números ni símbolos.'
 
     if sexo not in ('Masculino', 'Femenino'):
-        return 'Debe seleccionar un sexo valido.'
+        errors['sexo'] = 'Debe seleccionar un sexo válido.'
 
     if telefono and not re.match(r'^9\d{8}$', telefono):
-        return 'El telefono debe tener 9 digitos y empezar con 9.'
+        errors['telefono'] = 'El teléfono debe tener 9 dígitos y empezar con 9.'
 
-    if correo and (len(correo) > 150 or not EMAIL_PATTERN.match(correo)):
-        return 'Ingrese un correo electronico valido de maximo 150 caracteres.'
+    if correo and (len(correo) > 150 or not _valid_email(correo)):
+        errors['correo'] = 'Ingresa un correo electrónico válido.'
 
     if not consentimiento_informado:
-        return 'Debe registrar el consentimiento informado del paciente'
+        errors['consent'] = 'Debe registrar el consentimiento informado del paciente.'
 
-    return None
+    return errors
 
 def obtener_todos_pacientes(*, scope='clinical', include_severity=True):
     try:
@@ -143,8 +161,14 @@ def registrar_nuevo_paciente(datos_paciente_dict, *, create_scope, read_scope):
     tipo_doc_codigo = _clean_text(datos_paciente_dict.get('tipo_doc'))
     tipo_doc_codigo = tipo_doc_codigo.upper() if tipo_doc_codigo else None
     nro_documento = _normalize_document(datos_paciente_dict.get('nro_documento'), tipo_doc_codigo)
-    nombres = _clean_text(datos_paciente_dict.get('nombres'))
-    apellidos = _clean_text(datos_paciente_dict.get('apellidos'))
+    raw_names = (datos_paciente_dict.get('nombres'), datos_paciente_dict.get('apellidos'))
+    if any(value and any(unicodedata.category(char) in ('Cc', 'Cf') for char in value)
+           for value in raw_names):
+        return {"success": False, "message": "Ingresa nombres y apellidos válidos, sin caracteres de control."}, 400
+    nombres = _clean_text(raw_names[0])
+    apellidos = _clean_text(raw_names[1])
+    nombres = unicodedata.normalize('NFC', nombres) if nombres else None
+    apellidos = unicodedata.normalize('NFC', apellidos) if apellidos else None
     sexo = _clean_text(datos_paciente_dict.get('sexo'))
     fecha_nacimiento = datos_paciente_dict.get('fecha_nacimiento')
     telefono = re.sub(r'\D', '', str(datos_paciente_dict.get('telefono') or '')) or None
@@ -156,7 +180,7 @@ def registrar_nuevo_paciente(datos_paciente_dict, *, create_scope, read_scope):
     consentimiento_raw = datos_paciente_dict.get('consentimiento_informado')
     consentimiento_informado = consentimiento_raw is True or str(consentimiento_raw).lower() in ('1', 'true', 'si', 'sí')
 
-    validation_error = _validate_patient_data(
+    validation_errors = _validate_patient_data(
         tipo_doc_codigo,
         nro_documento,
         nombres,
@@ -167,19 +191,19 @@ def registrar_nuevo_paciente(datos_paciente_dict, *, create_scope, read_scope):
         correo,
         consentimiento_informado,
     )
-    if validation_error:
-        return {"success": False, "message": validation_error}, 400
-
     parsed_birth_date, birth_date_error = _parse_birth_date(fecha_nacimiento)
     if birth_date_error:
-        return {"success": False, "message": birth_date_error}, 400
+        validation_errors['fecha_nacimiento'] = birth_date_error
 
     if direccion and len(direccion) > 255:
-        return {"success": False, "message": "La direccion no puede superar 255 caracteres."}, 400
+        validation_errors['direccion'] = 'La dirección no puede superar 255 caracteres.'
     if antecedentes_clinicos and len(antecedentes_clinicos) > 2000:
-        return {"success": False, "message": "Los antecedentes clinicos no pueden superar 2000 caracteres."}, 400
+        validation_errors['antecedentes_clinicos'] = 'Los antecedentes clínicos no pueden superar 2000 caracteres.'
     if alergias and len(alergias) > 1000:
-        return {"success": False, "message": "Las alergias no pueden superar 1000 caracteres."}, 400
+        validation_errors['alergias'] = 'Las alergias no pueden superar 1000 caracteres.'
+    if validation_errors:
+        return {"success": False, "message": "Revisa los campos señalados.",
+                "errors": validation_errors}, 400
 
     # Convertir código de documento (ej. "DNI") a ID numérico de la BD
     td = DocumentRepository.obtener_tipo_documento_por_codigo(tipo_doc_codigo)
@@ -188,9 +212,13 @@ def registrar_nuevo_paciente(datos_paciente_dict, *, create_scope, read_scope):
     tipo_doc_id = td["id"]
 
     try:
-        # Verificar si existe ya el número de documento
+        errors = {}
         if PatientRepository.obtener_paciente_por_documento(tipo_doc_id, nro_documento):
-            return {"success": False, "message": "El documento ya se encuentra registrado en el sistema"}, 409
+            errors['nro_documento'] = CONFLICT_MESSAGES['nro_documento']
+        if correo and PatientRepository.obtener_paciente_por_correo(correo):
+            errors['correo'] = CONFLICT_MESSAGES['correo']
+        if errors:
+            return {"success": False, "message": "Revisa los campos señalados.", "errors": errors}, 409
 
         nuevo_paciente = Paciente(
             tipo_doc_id=tipo_doc_id,
@@ -219,6 +247,18 @@ def registrar_nuevo_paciente(datos_paciente_dict, *, create_scope, read_scope):
             "message": "Paciente registrado correctamente",
             "data": paciente_creado,
         }, 201
+    except IntegrityError as error:
+        db.session.rollback()
+        # Solo clasificar índices conocidos: otros fallos no son errores de usuario.
+        code = getattr(error.orig, 'args', (None,))[0]
+        detail = str(error.orig).lower()
+        field = ('nro_documento' if 'uq_pacientes_documento' in detail else
+                 'correo' if 'uq_pacientes_correo_normalizado' in detail else None)
+        if code == 1062 and field:
+            return {"success": False, "message": "Revisa los campos señalados.",
+                    "errors": {field: CONFLICT_MESSAGES[field]}}, 409
+        current_app.logger.error("Error de integridad al registrar paciente")
+        return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
     except Exception:
         db.session.rollback()
         # No registrar SQL ni parámetros con identidad o contenido clínico.

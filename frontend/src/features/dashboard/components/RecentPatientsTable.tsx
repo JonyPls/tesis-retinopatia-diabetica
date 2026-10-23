@@ -1,138 +1,54 @@
 import { Link } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { StatusBadge, Status } from "@/components/medical/StatusBadge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatClinicalDay } from "@/lib/clinicalDates";
 import { ArrowRight } from "lucide-react";
-import { Patient } from "../types";
+import type { Patient } from "../types";
 
-interface RecentPatientsTableProps {
+export function RecentPatientsTable({ patients, canViewPatients }: {
   patients: Patient[];
-  isLoading: boolean;
-  error: string | null;
-  calculateAge: (date: string) => string | number;
-}
-
-const getPatientStatus = (maxLevel?: number | null): Status => {
-  if (maxLevel === undefined || maxLevel === null) return "Sin Evaluar";
-  if (maxLevel >= 3) return "Crítico";
-  if (maxLevel >= 1) return "Seguimiento";
-  return "Normal";
-};
-
-export function RecentPatientsTable({
-  patients,
-  isLoading,
-  error,
-  calculateAge,
-}: RecentPatientsTableProps) {
+  canViewPatients: boolean;
+}) {
   return (
-    <Card className="lg:col-span-2 shadow-card">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+    <Card className="min-w-0 shadow-card">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
         <div>
-          <CardTitle className="text-base">Últimos Pacientes Atendidos</CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">
-            Ordenado por última visita
+          <CardTitle className="text-base">Actividad reciente</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Pacientes atendidos · última visita con fecha verificada
           </p>
         </div>
-        <Button asChild variant="ghost" size="sm" className="text-primary">
-          <Link to="/pacientes">
-            Ver todos <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </Button>
+        {canViewPatients && <Button asChild variant="ghost" size="sm" className="shrink-0 text-primary">
+          <Link to="/pacientes">Ver todos <ArrowRight className="h-3.5 w-3.5" /></Link>
+        </Button>}
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="overflow-x-auto p-0">
         <Table>
           <TableHeader>
-            <TableRow className="hover:bg-transparent border-border">
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">
-                Documento
-              </TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">
-                Nombre
-              </TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">
-                Última Visita
-              </TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">
-                Estado
-              </TableHead>
+            <TableRow>
+              <TableHead>Documento</TableHead>
+              <TableHead>Paciente</TableHead>
+              <TableHead>Última visita</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center py-8 text-muted-foreground text-sm"
-                >
-                  <span role="status">Cargando últimos pacientes...</span>
-                </TableCell>
-              </TableRow>
-            ) : error ? (
-              <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-sm text-destructive">
-                  <p role="alert">{error}</p>
-                </TableCell>
-              </TableRow>
-            ) : patients.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center py-8 text-muted-foreground text-sm"
-                >
-                  No hay pacientes con visitas registradas.
-                </TableCell>
-              </TableRow>
-            ) : (
-              patients.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className="hover:bg-muted/40 cursor-pointer"
-                >
-                  <TableCell>
-                    <div className="font-mono text-sm">{p.nro_documento}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">
-                      {p.tipo_doc_abrev || p.tipo_doc}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      to={`/pacientes/${p.id}`}
-                      className="font-medium text-foreground hover:text-primary"
-                    >
-                      {p.nombres_apellidos ||
-                        `${p.nombres || ""} ${p.apellidos || ""}`.trim()}
-                    </Link>
-                    <div className="text-xs text-muted-foreground">
-                      {calculateAge(p.fecha_nacimiento)} años
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                      {p.ultima_visita ? formatClinicalDay(p.ultima_visita) :
-                        p.visitas_sin_fecha_verificada ? "Fecha pendiente de conciliación" : "Sin registros"}
-                  </TableCell>
-                  <TableCell>
-                    {"maxima_gravedad" in p
-                      ? <StatusBadge status={getPatientStatus(p.maxima_gravedad)} />
-                      : <span className="text-xs text-muted-foreground">No disponible</span>}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            {patients.length === 0 ? <TableRow>
+              <TableCell colSpan={3} className="py-8 text-center text-sm text-muted-foreground">
+                No hay visitas con fecha verificada para mostrar.
+              </TableCell>
+            </TableRow> : patients.map((patient) => <TableRow key={patient.id}>
+              <TableCell className="font-mono text-sm">{patient.nro_documento}</TableCell>
+              <TableCell className="font-medium">
+                {canViewPatients ? <Link to={`/pacientes/${patient.id}`} className="hover:text-primary">
+                  {patient.nombres} {patient.apellidos}
+                </Link> : `${patient.nombres} ${patient.apellidos}`}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {patient.ultima_visita_origen === "UTC_VERIFICADO"
+                  ? formatClinicalDay(patient.ultima_visita) : "Fecha pendiente de conciliación"}
+              </TableCell>
+            </TableRow>)}
           </TableBody>
         </Table>
       </CardContent>

@@ -5,6 +5,10 @@ type SessionUser = { roles: string[]; permisos?: string[] } | null;
 const CLINICAL_ROLES = ["Oftalmologo", "Oftalmólogo", "Enfermero"];
 const PATIENT_ROLES = [...CLINICAL_ROLES, "Asistente administrativo"];
 
+export function hasOphthalmologistRole(user: SessionUser) {
+  return !!user?.roles.some((role) => ["Oftalmologo", "Oftalmólogo"].includes(role));
+}
+
 export function canReadPatients(user: SessionUser) {
   return !!user?.permisos?.includes("pacientes.ver") &&
     user.roles.some((role) => PATIENT_ROLES.includes(role));

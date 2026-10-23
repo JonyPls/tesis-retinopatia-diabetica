@@ -76,7 +76,7 @@ export function usePatientProfile(id: string | undefined) {
   }, [id]);
 
   const calculateAge = (birthDateStr: string) => {
-    return civilAge(birthDateStr) ?? 0;
+    return civilAge(birthDateStr);
   };
 
   const getInitials = (nombres?: string, apellidos?: string) => {

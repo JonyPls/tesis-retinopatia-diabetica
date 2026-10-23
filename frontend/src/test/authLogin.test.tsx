@@ -8,8 +8,10 @@ import { LoginForm } from "../features/auth/components/LoginForm";
 import { useLogin } from "../features/auth/hooks/useLogin";
 import { login as loginService } from "../features/auth/api/authService";
 import { useAuthStore } from "../features/auth/store/authStore";
+import api from "../lib/api";
 
 vi.mock("../features/auth/api/authService", () => ({ login: vi.fn() }));
+vi.mock("../lib/api", () => ({ default: { get: vi.fn() }, ACCESS_DENIED_EVENT: "app:access-denied" }));
 vi.mock("../features/auth/pages/Login", () => ({ default: () => <p>Acceso de prueba</p> }));
 vi.mock("../features/dashboard/pages/Dashboard", () => ({ default: () => <p>Panel de prueba</p> }));
 vi.mock("../features/patients/pages/Patients", () => ({ default: () => <p>Pacientes de prueba</p> }));
@@ -17,11 +19,13 @@ vi.mock("../features/patients/pages/PatientProfile", () => ({ default: () => <p>
 vi.mock("../features/patients/pages/PatientVisitDetail", () => ({ default: () => <p>Visita de prueba</p> }));
 vi.mock("../features/diagnosis/pages/Diagnosis", () => ({ default: () => <p>Diagnóstico de prueba</p> }));
 vi.mock("../features/reports/pages/ClinicalReports", () => ({ default: () => <p>Informe de prueba</p> }));
-vi.mock("../pages/Placeholder", () => ({ default: () => <p>Configuración de prueba</p> }));
+vi.mock("../features/configuration/pages/Configuration", () => ({ default: () => <p>Configuración de prueba</p> }));
 vi.mock("@/components/ui/toaster", () => ({ Toaster: () => null }));
 vi.mock("@/components/ui/sonner", () => ({ Toaster: () => null }));
 
 const mockLogin = vi.mocked(loginService);
+const mockGet = vi.mocked(api.get);
+const validToken = () => `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`;
 const fakeUser = {
   id: 42,
   username: "medico_ficticio",
@@ -30,6 +34,7 @@ const fakeUser = {
   roles: ["Médico"],
   permisos: ["pacientes.ver"],
 };
+const admin = { ...fakeUser, roles: ["Administrador del sistema"], permisos: ["configuracion.ver"] };
 
 function FormWithHook() {
   return <LoginForm {...useLogin()} />;
@@ -111,7 +116,7 @@ describe("LoginForm y useLogin: HTTP siempre simulado", () => {
   });
 });
 
-describe("Rutas y persistencia locales (sin navegador/API real)", () => {
+describe("Rutas y persistencia locales (HTTP simulado)", () => {
   it("CP-04 redirige una ruta privada sin sesión al login", () => {
     window.history.replaceState({}, "", "/pacientes");
     render(<App />);
@@ -119,35 +124,38 @@ describe("Rutas y persistencia locales (sin navegador/API real)", () => {
     expect(screen.queryByText("Pacientes de prueba")).not.toBeInTheDocument();
   });
 
-  it("A1-ROLE redirige un rol no autorizado desde configuración", () => {
-    useAuthStore.getState().login("synthetic-token-placeholder", fakeUser);
+  it("A1-ROLE una cuenta administradora espera el GET protegido antes de renderizar", async () => {
+    mockGet.mockResolvedValue({ data: { success: true } });
+    useAuthStore.getState().login(validToken(), admin);
     window.history.replaceState({}, "", "/configuracion");
     render(<App />);
-    expect(screen.getByText("Panel de prueba")).toBeInTheDocument();
     expect(screen.queryByText("Configuración de prueba")).not.toBeInTheDocument();
+    expect(await screen.findByText("Configuración de prueba")).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith("/configuracion/catalogo");
   });
 
   it("A1-RELOAD rehidrata una sesión local y permite navegación protegida", async () => {
-    useAuthStore.getState().login("synthetic-token-placeholder", fakeUser);
+    mockGet.mockResolvedValue({ data: { success: true } });
+    useAuthStore.getState().login(validToken(), admin);
     const saved = window.localStorage.getItem("auth-storage");
     expect(saved).not.toBeNull();
     useAuthStore.getState().logout();
     window.localStorage.setItem("auth-storage", saved!);
     await act(async () => { await useAuthStore.persist.rehydrate(); });
 
-    window.history.replaceState({}, "", "/pacientes");
+    window.history.replaceState({}, "", "/configuracion");
     render(<App />);
-    expect(screen.getByText("Pacientes de prueba")).toBeInTheDocument();
+    expect(await screen.findByText("Configuración de prueba")).toBeInTheDocument();
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
   });
 
-  it.fails("A1-EXPIRED-UI debería impedir mostrar una ruta con sesión local caducada", () => {
-    // Estado sintético: el guard solo conoce el indicador persistido, no comprueba exp.
-    useAuthStore.getState().login("expired-synthetic-placeholder", fakeUser);
+  it("A1-EXPIRED-UI impide mostrar una ruta con sesión local caducada", async () => {
+    const expired = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 }))}.signature`;
+    useAuthStore.getState().login(expired, fakeUser);
     window.history.replaceState({}, "", "/pacientes");
     render(<App />);
-    expect(screen.getByText("Pacientes de prueba")).toBeInTheDocument(); // Observado.
-    expect(screen.getByText("Acceso de prueba")).toBeInTheDocument(); // Objetivo, falla hoy.
+    expect(await screen.findByText("Acceso de prueba")).toBeInTheDocument();
+    expect(screen.queryByText("Pacientes de prueba")).not.toBeInTheDocument();
   });
 
   it("A1-LOGOUT borra la sesión local, no revoca tokens del servidor", () => {

@@ -1,9 +1,13 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 import { Patient, PatientFormData, PatientReadScope } from "../types";
 import { patientRequestError, type PatientRequestError } from "../patientAccess";
 import { useAuthStore } from "@/features/auth/store/authStore";
+import { isValidEmailAddress, isValidPersonName, normalizePersonName } from "@/lib/fieldValidation";
+import { DOC_RULES, normalizeDocument } from "@/lib/documentValidation";
+import { validateBirthDate } from "../birthDate";
+import { sortPatients, type PatientSort } from "../patientListing";
 
 export type PatientRegistrationScope = "administrative" | "assistance" | "clinical";
 
@@ -31,141 +35,73 @@ function hasFormChanges(formData: PatientFormData, consent: boolean) {
   );
 }
 
-const DOC_RULES: Record<
-  string,
-  { pattern: RegExp; message: string; maxLength: number }
-> = {
-  DNI: {
-    pattern: /^\d{8}$/,
-    message: "El DNI debe tener exactamente 8 dígitos.",
-    maxLength: 8,
-  },
-  CE: {
-    pattern: /^[A-Z0-9]{8,12}$/,
-    message: "El CE debe tener entre 8 y 12 caracteres alfanuméricos.",
-    maxLength: 12,
-  },
-  PAS: {
-    pattern: /^[A-Z0-9]{3,9}$/,
-    message: "El Pasaporte debe tener entre 3 y 9 caracteres alfanuméricos.",
-    maxLength: 9,
-  },
-};
 
-const NAME_PATTERN = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$/;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_PATIENT_AGE = 120;
+export type PatientFormField = keyof PatientFormData | "consent";
+export type PatientFormErrors = Partial<Record<PatientFormField, string>>;
+const FIELD_ORDER: PatientFormField[] = ["tipo_doc", "nro_documento", "nombres", "apellidos",
+  "sexo", "fecha_nacimiento", "telefono", "correo", "direccion", "antecedentes_clinicos", "alergias", "consent"];
+
+function firstInvalidField(errors: PatientFormErrors): PatientFormField {
+  return FIELD_ORDER.find((field) => !!errors[field]) ?? "nombres";
+}
 
 function normalizeSpaces(value: string) {
   return value.trim().replace(/\s+/g, " ");
 }
 
-function normalizeDocument(value: string, tipoDoc: string) {
-  if (tipoDoc === "DNI") {
-    return value.replace(/\D/g, "");
-  }
-  return value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-}
-
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return null;
-
-  const date = new Date(year, month - 1, day);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
-
-  return date;
-}
-
-function calculateAge(birthDate: Date, today = new Date()) {
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < birthDate.getDate())
-  ) {
-    age--;
-  }
-  return age;
-}
-
 function validatePatientForm(formData: PatientFormData, consent: boolean) {
+  const errors: PatientFormErrors = {};
   const tipoDoc = formData.tipo_doc;
   const docRule = DOC_RULES[tipoDoc];
   const documento = normalizeDocument(formData.nro_documento, tipoDoc);
-  const nombres = normalizeSpaces(formData.nombres);
-  const apellidos = normalizeSpaces(formData.apellidos);
+  const nombres = normalizePersonName(formData.nombres);
+  const apellidos = normalizePersonName(formData.apellidos);
   const telefono = formData.telefono.replace(/\D/g, "");
   const correo = formData.correo.trim();
 
-  if (!docRule) return "Debe seleccionar un tipo de documento válido.";
-  if (!docRule.pattern.test(documento)) return docRule.message;
+  if (!docRule) errors.tipo_doc = "Debe seleccionar un tipo de documento válido.";
+  else if (!docRule.pattern.test(documento)) errors.nro_documento = docRule.message;
 
-  if (!nombres || !apellidos) return "Debe ingresar nombres y apellidos.";
-  if (nombres.length < 2 || nombres.length > 80) {
-    return "Los nombres deben tener entre 2 y 80 caracteres.";
-  }
-  if (apellidos.length < 2 || apellidos.length > 100) {
-    return "Los apellidos deben tener entre 2 y 100 caracteres.";
-  }
-  if (!NAME_PATTERN.test(nombres)) {
-    return "Los nombres solo deben contener letras, espacios, guiones o apóstrofes.";
-  }
-  if (!NAME_PATTERN.test(apellidos)) {
-    return "Los apellidos solo deben contener letras, espacios, guiones o apóstrofes.";
-  }
+  if (!nombres) errors.nombres = "Debe ingresar nombres.";
+  else if (nombres.length < 2 || nombres.length > 80) errors.nombres = "Los nombres deben tener entre 2 y 80 caracteres.";
+  else if (!isValidPersonName(formData.nombres)) errors.nombres = "Ingresa un nombre válido, sin números ni símbolos.";
+  if (!apellidos) errors.apellidos = "Debe ingresar apellidos.";
+  else if (apellidos.length < 2 || apellidos.length > 100) errors.apellidos = "Los apellidos deben tener entre 2 y 100 caracteres.";
+  else if (!isValidPersonName(formData.apellidos)) errors.apellidos = "Ingresa un apellido válido, sin números ni símbolos.";
 
-  if (!["Masculino", "Femenino"].includes(formData.sexo)) {
-    return "Debe seleccionar un sexo válido.";
+  if (!["Masculino", "Femenino"].includes(formData.sexo)) errors.sexo = "Debe seleccionar un sexo válido.";
+
+  if (!formData.fecha_nacimiento) errors.fecha_nacimiento = "Debe ingresar la fecha de nacimiento.";
+  else {
+    const birthError = validateBirthDate(formData.fecha_nacimiento);
+    if (birthError) errors.fecha_nacimiento = birthError;
   }
 
-  if (!formData.fecha_nacimiento) {
-    return "Debe ingresar la fecha de nacimiento.";
-  }
+  if (telefono && !/^9\d{8}$/.test(telefono)) errors.telefono = "El teléfono debe tener 9 dígitos y empezar con 9.";
 
-  const birthDate = parseLocalDate(formData.fecha_nacimiento);
-  if (!birthDate) return "La fecha de nacimiento no es válida.";
+  if (correo.length > 150) errors.correo = "El correo no puede superar 150 caracteres.";
+  else if (correo && !isValidEmailAddress(correo)) errors.correo = "Ingresa un correo electrónico válido.";
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  birthDate.setHours(0, 0, 0, 0);
+  if (formData.direccion.trim().length > 255) errors.direccion = "La dirección no puede superar 255 caracteres.";
+  if (formData.antecedentes_clinicos.trim().length > 2000) errors.antecedentes_clinicos = "Los antecedentes clínicos no pueden superar 2000 caracteres.";
+  if (formData.alergias.trim().length > 1000) errors.alergias = "Las alergias no pueden superar 1000 caracteres.";
 
-  if (birthDate > today) {
-    return "La fecha de nacimiento no puede ser futura.";
-  }
-  if (calculateAge(birthDate, today) > MAX_PATIENT_AGE) {
-    return `La edad del paciente no puede superar ${MAX_PATIENT_AGE} años.`;
-  }
+  if (!consent) errors.consent = "Debe confirmar el archivo físico del consentimiento informado.";
 
-  if (telefono && !/^9\d{8}$/.test(telefono)) {
-    return "El teléfono debe tener 9 dígitos y empezar con 9.";
-  }
+  return errors;
+}
 
-  if (correo && (!EMAIL_PATTERN.test(correo) || correo.length > 150)) {
-    return "Ingrese un correo electrónico válido de máximo 150 caracteres.";
+function serverFieldErrors(value: unknown): PatientFormErrors {
+  const fields = new Set<PatientFormField>([...Object.keys(INITIAL_FORM) as (keyof PatientFormData)[], "consent"]);
+  const errors: PatientFormErrors = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [field, message] of Object.entries(value)) {
+      if (fields.has(field as PatientFormField) && typeof message === "string" && message.trim()) {
+        errors[field as PatientFormField] = message;
+      }
+    }
   }
-
-  if (formData.direccion.trim().length > 255) {
-    return "La dirección no puede superar 255 caracteres.";
-  }
-  if (formData.antecedentes_clinicos.trim().length > 2000) {
-    return "Los antecedentes clínicos no pueden superar 2000 caracteres.";
-  }
-  if (formData.alergias.trim().length > 1000) {
-    return "Las alergias no pueden superar 1000 caracteres.";
-  }
-
-  if (!consent) {
-    return "Debe confirmar el archivo físico del consentimiento informado.";
-  }
-
-  return null;
+  return errors;
 }
 
 interface UsePatientsOptions {
@@ -190,9 +126,13 @@ export function usePatients({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<PatientFormErrors>({});
+  const [validationFocus, setValidationFocus] = useState<{ field: PatientFormField; attempt: number } | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sort, setSort] = useState<PatientSort>(null);
+  const requestId = useRef(0);
 
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
@@ -200,24 +140,28 @@ export function usePatients({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchPatients = async () => {
+    const id = ++requestId.current;
     setIsLoading(true);
     setLoadError(null);
     try {
       const { data } = await api.get("/pacientes");
+      if (id !== requestId.current) return;
       setPatients(data.data || []);
       setScope(data.scope === "clinical" || data.scope === "assistance"
         ? data.scope : "administrative");
     } catch (error) {
+      if (id !== requestId.current) return;
       setPatients([]);
       setScope("administrative");
       setLoadError(patientRequestError(error));
     } finally {
-      setIsLoading(false);
+      if (id === requestId.current) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     if (autoFetch) fetchPatients();
+    return () => { requestId.current++; };
   }, [autoFetch]);
 
   const filtered = useMemo(() => {
@@ -233,13 +177,24 @@ export function usePatients({
     });
   }, [query, patients]);
 
-  const totalItems = filtered.length;
+  const ordered = useMemo(() => sortPatients(filtered, sort), [filtered, sort]);
+  const totalItems = ordered.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
-  const startIndex = (currentPage - 1) * itemsPerPage;
+  const validPage = Math.min(currentPage, totalPages);
+  useEffect(() => {
+    if (currentPage !== validPage) setCurrentPage(validPage);
+  }, [currentPage, validPage]);
+  const startIndex = (validPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentData = filtered.slice(startIndex, endIndex);
+  const currentData = ordered.slice(startIndex, endIndex);
+
+  const toggleSort = (field: "patient" | "age") => {
+    setSort((previous) => ({ field, direction: previous?.field === field && previous.direction === "asc" ? "desc" : "asc" }));
+    setCurrentPage(1);
+  };
 
   const handleDocumentChange = (value: string, tipoDoc: string) => {
+    setValidationErrors((errors) => { const { nro_documento: _removed, ...rest } = errors; return rest; });
     const rawValue = normalizeDocument(value, tipoDoc);
     const maxLength = DOC_RULES[tipoDoc]?.maxLength ?? 25;
     setFormData((prev) => ({
@@ -248,43 +203,77 @@ export function usePatients({
     }));
   };
 
+  const handleDocumentTypeChange = (value: string) => {
+    setValidationErrors((errors) => { const { tipo_doc: _type, nro_documento: _document, ...rest } = errors; return rest; });
+    setFormData((previous) => ({ ...previous, tipo_doc: value, nro_documento: "" }));
+  };
+
   const handlePhoneChange = (value: string) => {
+    setValidationErrors((errors) => { const { telefono: _removed, ...rest } = errors; return rest; });
     const rawValue = value.replace(/\D/g, "").slice(0, 9);
     const formatted = rawValue.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
     setFormData((prev) => ({ ...prev, telefono: formatted }));
   };
 
-  const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const handleChange = (field: keyof PatientFormData, value: string) => {
+    const next = { ...formData, [field]: value };
+    setValidationErrors((errors) => {
+      if (!errors[field]) return errors;
+      const message = validatePatientForm(next, consent)[field];
+      return { ...errors, [field]: message };
+    });
+    setFormData(next);
+  };
+
+  const handleNameBlur = (field: "nombres" | "apellidos") => {
+    const value = normalizePersonName(formData[field]);
+    const next = { ...formData, [field]: value };
+    setFormData(next);
+    setValidationErrors((errors) => ({ ...errors, [field]: validatePatientForm(next, consent)[field] }));
+  };
+
+  const handleConsentChange = (checked: boolean) => {
+    setValidationErrors((errors) => ({ ...errors, consent: checked ? undefined : errors.consent }));
+    setConsent(checked);
   };
 
   const resetPatientForm = () => {
     setConsent(false);
+    setValidationErrors({});
+    setValidationFocus(null);
     setFormData(INITIAL_FORM);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
-    const validationMessage = validatePatientForm(formData, consent);
+    const errors = validatePatientForm(formData, consent);
     const forbiddenField = (registrationScope !== "clinical" && formData.antecedentes_clinicos.trim()) ||
       (registrationScope === "administrative" && formData.alergias.trim());
-    if (validationMessage || forbiddenField) {
+    if (forbiddenField) {
+      errors[registrationScope === "administrative" && formData.alergias.trim() ? "alergias" : "antecedentes_clinicos"] =
+        "El perfil actual no puede registrar información clínica.";
+    }
+    if (Object.keys(errors).length) {
+      setValidationErrors(errors);
+      const field = firstInvalidField(errors);
+      setValidationFocus((previous) => ({ field, attempt: (previous?.attempt ?? 0) + 1 }));
       toast({
-        title: "Revise los datos del paciente",
-        description: forbiddenField ? "El perfil actual no puede registrar información clínica." : validationMessage,
+        title: "Revisa los campos señalados",
         variant: "warning",
       });
       return;
     }
 
+    setValidationErrors({});
     setIsSubmitting(true);
     try {
       const payload = {
         tipo_doc: formData.tipo_doc,
         nro_documento: normalizeDocument(formData.nro_documento, formData.tipo_doc),
-        nombres: normalizeSpaces(formData.nombres),
-        apellidos: normalizeSpaces(formData.apellidos),
+        nombres: normalizePersonName(formData.nombres),
+        apellidos: normalizePersonName(formData.apellidos),
         sexo: formData.sexo,
         fecha_nacimiento: formData.fecha_nacimiento,
         telefono: formData.telefono.replace(/\D/g, "") || null,
@@ -322,13 +311,24 @@ export function usePatients({
       setOpen(false);
       resetPatientForm();
       if (autoFetch) fetchPatients();
-    } catch (error: any) {
-      const status = error.response?.status;
-      const msg = status === 401 || status === 403
-        ? patientRequestError(error).message
-        : status === 400 || status === 409
-          ? error.response?.data?.message
-          : undefined;
+    } catch (error: unknown) {
+      const response = (error as { response?: { status?: number; data?: { errors?: unknown; message?: string } } }).response;
+      const status = response?.status;
+      let fieldErrors = status === 400 || status === 409 ? serverFieldErrors(response?.data?.errors) : {};
+      if (status === 409 && !Object.keys(fieldErrors).length) {
+        const message = response?.data?.message ?? "";
+        if (/documento/i.test(message)) fieldErrors = { nro_documento: "El documento ya se encuentra registrado en el sistema." };
+        else if (/correo/i.test(message)) fieldErrors = { correo: "El correo ya se encuentra registrado en el sistema." };
+      }
+      if (Object.keys(fieldErrors).length) {
+        setValidationErrors(fieldErrors);
+        setValidationFocus((previous) => ({ field: firstInvalidField(fieldErrors),
+          attempt: (previous?.attempt ?? 0) + 1 }));
+        toast({ title: "Revisa los campos señalados", variant: "warning" });
+        return;
+      }
+      const msg = status === 401 || status === 403 ? patientRequestError(error).message
+        : status === 400 || status === 409 ? response?.data?.message : undefined;
       toast({
         title: "No se pudo registrar el paciente",
         description: msg || "Error de conexión con el servidor.",
@@ -348,8 +348,10 @@ export function usePatients({
     query,
     setQuery,
     filtered,
-    currentPage,
+    currentPage: validPage,
     setCurrentPage,
+    sort,
+    toggleSort,
     itemsPerPage,
     setItemsPerPage,
     totalItems,
@@ -363,14 +365,19 @@ export function usePatients({
     setOpen,
     consent,
     setConsent,
+    handleConsentChange,
+    validationErrors,
+    validationFocus,
     formData,
     setFormData,
     hasPatientFormChanges: hasFormChanges(formData, consent),
     isSubmitting,
     resetPatientForm,
     handleDocumentChange,
+    handleDocumentTypeChange,
     handlePhoneChange,
     handleChange,
+    handleNameBlur,
     handleSubmit,
     fetchPatients,
   };

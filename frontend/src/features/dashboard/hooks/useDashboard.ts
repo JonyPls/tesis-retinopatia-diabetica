@@ -1,65 +1,56 @@
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
-import { civilAge, clinicalInstant } from "@/lib/clinicalDates";
-import { Patient } from "../types";
-import { patientRequestMessage } from "@/features/patients/patientAccess";
+import type { DashboardSummary } from "../types";
+
+function dashboardRequestMessage(error: unknown): string {
+  if (error instanceof Error && error.message === "Respuesta inesperada") {
+    return "No se pudo cargar el resumen clínico. Inténtelo más tarde.";
+  }
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status === 401) return "Su sesión ya no es válida. Inicie sesión nuevamente.";
+  if (status === 403) return "No tiene autorización para consultar el resumen clínico.";
+  if (!status) return "No se pudo conectar con el servidor. Compruebe su conexión.";
+  return "No se pudo cargar el resumen clínico. Inténtelo más tarde.";
+}
 
 export function useDashboard(enabled: boolean) {
-  const [recentPatients, setRecentPatients] = useState<Patient[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
-      setRecentPatients([]);
+      setSummary(null);
       setError(null);
       setIsLoading(false);
       return;
     }
     let active = true;
     setIsLoading(true);
-    const fetchRecentPatients = async () => {
+    const fetchSummary = async () => {
       try {
-        const { data } = await api.get("/pacientes");
-        if (active && data.data) {
-          const sorted = (data.data as Patient[])
-            .filter((p) => p.ultima_visita || p.visitas_sin_fecha_verificada)
-            .sort((a, b) => {
-              const first = a.ultima_visita_origen === "UTC_VERIFICADO"
-                ? clinicalInstant(a.ultima_visita, a.ultima_visita_origen)?.getTime() : undefined;
-              const second = b.ultima_visita_origen === "UTC_VERIFICADO"
-                ? clinicalInstant(b.ultima_visita, b.ultima_visita_origen)?.getTime() : undefined;
-              if (first !== undefined && second === undefined) return -1;
-              if (first === undefined && second !== undefined) return 1;
-              if (first !== undefined && second !== undefined && first !== second) return second - first;
-              return Number(b.id) - Number(a.id);
-            });
-
-          setRecentPatients(sorted.slice(0, 6));
-          setError(null);
-        }
+        const { data } = await api.get("/dashboard/clinico");
+        if (data.success !== true || !data.data ||
+            !data.data.kpis || !Array.isArray(data.data.severity) ||
+            !Array.isArray(data.data.recent_patients) ||
+            !data.data.actions || ["patients", "diagnosis", "reports"].some(
+              (action) => typeof data.data.actions[action] !== "boolean")) throw new Error("Respuesta inesperada");
+        if (!active) return;
+        setSummary(data.data as DashboardSummary);
+        setError(null);
       } catch (error) {
         if (active) {
-          setRecentPatients([]);
-          setError(patientRequestMessage(error));
+          setSummary(null);
+          setError(dashboardRequestMessage(error));
         }
       } finally {
         if (active) setIsLoading(false);
       }
     };
 
-    fetchRecentPatients();
+    void fetchSummary();
     return () => { active = false; };
   }, [enabled]);
 
-  const calculateAge = (birthDate: string) => {
-    return civilAge(birthDate) ?? "-";
-  };
-
-  return {
-    recentPatients,
-    isLoading,
-    error,
-    calculateAge,
-  };
+  return { summary, isLoading, error };
 }

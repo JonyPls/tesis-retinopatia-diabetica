@@ -1,31 +1,29 @@
 import type { ClinicalOrigin } from "@/lib/clinicalDates";
 
 export interface Patient {
-  id: string | number;
-  tipo_doc?: string;
-  tipo_doc_abrev?: string;
+  id: number;
   nro_documento: string;
-  nombres_apellidos?: string;
-  nombres?: string;
-  apellidos?: string;
-  fecha_nacimiento: string;
-  ultima_visita?: string;
-  ultima_visita_origen?: ClinicalOrigin;
-  visitas_sin_fecha_verificada?: number;
-  maxima_gravedad?: number | null;
+  nombres: string;
+  apellidos: string;
+  ultima_visita: string;
+  ultima_visita_origen: ClinicalOrigin;
 }
 
 export interface KpiItem {
   label: string;
-  value: string;
-  delta: string;
+  value: number;
   icon: React.ComponentType<{ className?: string }>;
-  tone: "primary" | "info" | "destructive" | "warning";
 }
 
 export interface RDLevelRow {
   level: number;
   label: string;
   count: number;
-  pct: number;
+}
+
+export interface DashboardSummary {
+  kpis: { patients: number; evaluations: number; validated: number; pending: number };
+  severity: RDLevelRow[];
+  recent_patients: Patient[];
+  actions: { patients: boolean; diagnosis: boolean; reports: boolean };
 }

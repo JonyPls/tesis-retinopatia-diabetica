@@ -77,6 +77,7 @@ export function PatientCardGrid({
           `${p.nombres || ""} ${p.apellidos || ""}`.trim();
         const initials = getInitials(p.nombres, p.apellidos);
         const status = getPatientStatus(p.maxima_gravedad);
+        const age = calculateAge(p.fecha_nacimiento);
 
         return (
           <Card
@@ -108,9 +109,9 @@ export function PatientCardGrid({
                       ? <StatusBadge status={status} />
                       : <span>No disponible</span>
                   )}
-                  <span className="tabular-nums text-foreground/80">
-                    {calculateAge(p.fecha_nacimiento)} años · {p.sexo}
-                  </span>
+                   <span className="tabular-nums text-foreground/80">
+                     {typeof age === "number" ? `${age} años` : age} · {p.sexo}
+                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Phone className="h-3 w-3" />
