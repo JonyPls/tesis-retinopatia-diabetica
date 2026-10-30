@@ -1,4 +1,4 @@
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
@@ -55,7 +55,7 @@ export default function ClinicalReports() {
             : `${hook.selectedPatient?.nombres} ${hook.selectedPatient?.apellidos}`;
 
   return (
-    <AppLayout title="Informes Clínicos" subtitle={stepSubtitle}>
+    <PageContent title="Informes Clínicos" subtitle={stepSubtitle}>
       <ReportsStepper step={hook.step} />
 
       {hook.step === 1 && (
@@ -475,6 +475,6 @@ export default function ClinicalReports() {
         confirmText="Sí, quitar"
         cancelText="Cancelar"
       />
-    </AppLayout>
+    </PageContent>
   );
 }

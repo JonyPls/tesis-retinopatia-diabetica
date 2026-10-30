@@ -12,11 +12,6 @@ vi.mock("../features/configuration/api/configurationService", () => ({
   createUser: vi.fn(), editUser: vi.fn(), getCatalog: vi.fn(), getUsers: vi.fn(),
   getRolePermissions: vi.fn(), updatePermissions: vi.fn(), updateRoles: vi.fn(), updateState: vi.fn(),
 }));
-vi.mock("../components/layout/AppLayout", () => ({
-  AppLayout: ({ children, title, subtitle }: { children: React.ReactNode; title: string; subtitle: string }) =>
-    <main><h1>{title}</h1><p>{subtitle}</p>{children}</main>,
-}));
-
 const catalog = {
   roles: [
     { id: 1, nombre: "Administrador", codigo: "ADMINISTRADOR_SISTEMA", descripcion: null,

@@ -61,6 +61,7 @@ beforeEach(() => {
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
   vi.clearAllMocks();
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
 
 afterEach(() => {
@@ -68,6 +69,7 @@ afterEach(() => {
   useAuthStore.getState().logout();
   window.localStorage.clear();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("LoginForm y useLogin: HTTP siempre simulado", () => {
@@ -131,7 +133,7 @@ describe("Rutas y persistencia locales (HTTP simulado)", () => {
     render(<App />);
     expect(screen.queryByText("Configuración de prueba")).not.toBeInTheDocument();
     expect(await screen.findByText("Configuración de prueba")).toBeInTheDocument();
-    expect(mockGet).toHaveBeenCalledWith("/configuracion/catalogo");
+    expect(mockGet).toHaveBeenCalledWith("/configuracion/catalogo", expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("A1-RELOAD rehidrata una sesión local y permite navegación protegida", async () => {

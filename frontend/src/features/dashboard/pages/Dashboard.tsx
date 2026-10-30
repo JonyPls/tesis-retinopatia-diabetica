@@ -2,7 +2,7 @@ import { RecentPatientsTable } from "../components/RecentPatientsTable";
 import { KpiGrid } from "../components/KpiGrid";
 import { RDLevelDistribution } from "../components/RDLevelDistribution";
 import { useDashboard } from "../hooks/useDashboard";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { hasOphthalmologistRole } from "@/features/patients/patientAccess";
 import { canAccessModule } from "@/features/auth/moduleAccess";
@@ -35,7 +35,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <AppLayout
+    <PageContent
       title="Dashboard"
       subtitle={clinical ? "Resumen clínico" : "Inicio del sistema"}
     >
@@ -66,7 +66,7 @@ export default function Dashboard() {
           <QuickAccess actions={actions} />
         </div>
       )}
-    </AppLayout>
+    </PageContent>
   );
 }
 

@@ -77,7 +77,7 @@ export function GlobalPatientSearch() {
     navigate(`/pacientes/${patient.id}`);
   };
 
-  return <div ref={searchRef} className={`relative min-w-0 ${mobileOpen ? "flex flex-1 items-center gap-1" : "ml-auto"} sm:ml-0 sm:w-72 md:w-80`}>
+  return <div ref={searchRef} className={`relative flex min-w-0 w-full max-w-md items-center justify-end gap-1 ${mobileOpen ? "flex-1" : ""} sm:block`}>
     <Button type="button" variant="ghost" size="icon" className="h-9 w-9 sm:hidden"
       aria-label={mobileOpen ? "Cerrar búsqueda de pacientes" : "Abrir búsqueda de pacientes"}
       aria-expanded={mobileOpen} onClick={() => {

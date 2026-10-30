@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AxiosError } from "axios";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -335,7 +335,7 @@ export default function Configuration() {
   }
 
   return (
-    <AppLayout title="Configuración" subtitle="Administración de usuarios, roles y permisos">
+    <PageContent title="Configuración" subtitle="Administración de usuarios, roles y permisos">
       {loading ? <p role="status" className="text-sm text-muted-foreground">Cargando configuración...</p> :
         restricted ? <p role="alert" className="text-sm text-muted-foreground">Acceso restringido.</p> :
           !catalog ? <div className="flex flex-wrap items-center gap-3 text-sm text-destructive">
@@ -443,6 +443,6 @@ export default function Configuration() {
         dirty={!!selected && (selected.role_ids.length !== draftRoles.length ||
           selected.role_ids.some((id) => !draftRoles.includes(id)))}
         onToggle={(id) => { toggleRole(id, draftRoles, setDraftRoles); setFormError(""); }} onSave={saveRoles} />}
-    </AppLayout>
+    </PageContent>
   );
 }

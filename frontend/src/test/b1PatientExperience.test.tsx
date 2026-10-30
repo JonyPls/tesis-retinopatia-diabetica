@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { AppLayout } from "../components/layout/AppLayout";
 import api from "../lib/api";
 import { useAuthStore } from "../features/auth/store/authStore";
 import Dashboard from "../features/dashboard/pages/Dashboard";
@@ -37,6 +38,16 @@ const page = (data: typeof patient[], has_more = false) => ({
 });
 const denied = { response: { status: 403, data: { message: "internal details must not appear" } } };
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
+
+function renderDashboard() {
+  return render(<MemoryRouter initialEntries={["/dashboard"]}>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Route>
+    </Routes>
+  </MemoryRouter>);
+}
 
 function DiagnosisLookup() {
   const hook = useDiagnosis();
@@ -218,7 +229,7 @@ describe("B1 búsqueda y recientes (HTTP simulado, UI real)", () => {
 describe("B1 inicio por perfil", () => {
   it("Administrador solo no consulta ni muestra datos clínicos ni métricas inventadas", () => {
     login(["Administrador del sistema"]);
-    render(<Dashboard />, { wrapper });
+    renderDashboard();
     expect(screen.getByText("Bienvenido al sistema")).toBeInTheDocument();
     expect(screen.queryByText("Últimos Pacientes Atendidos")).not.toBeInTheDocument();
     expect(screen.queryByText("Pacientes Registrados")).not.toBeInTheDocument();
@@ -228,7 +239,7 @@ describe("B1 inicio por perfil", () => {
 
   it("el nombre heredado Admin tampoco dispara consultas clínicas", () => {
     login(["Admin"]);
-    render(<Dashboard />, { wrapper });
+    renderDashboard();
     expect(screen.getByText("Bienvenido al sistema")).toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
   });
@@ -241,7 +252,7 @@ describe("B1 inicio por perfil", () => {
       kpis: { patients: 0, evaluations: 0, validated: 0, pending: 0 }, severity: [], recent_patients: [],
       actions: { patients: true, diagnosis: true, reports: false },
     } } });
-    render(<Dashboard />, { wrapper });
+    renderDashboard();
     expect(await screen.findByText("Actividad reciente")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Nueva Evaluación IA/ })).toHaveAttribute("href", "/diagnostico");
     expect(screen.getByRole("link", { name: "Diagnóstico IA" })).toBeInTheDocument();
@@ -251,7 +262,7 @@ describe("B1 inicio por perfil", () => {
   it("Oftalmólogo muestra pacientes reales y 403 no se transforma en lista vacía", async () => {
     login(["Oftalmologo"], ["pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver"]);
     get.mockRejectedValueOnce(denied);
-    render(<Dashboard />, { wrapper });
+    renderDashboard();
     expect(await screen.findByRole("alert")).toHaveTextContent("No tiene autorización");
     expect(screen.queryByText("No hay pacientes con visitas registradas.")).not.toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(1);
@@ -264,7 +275,7 @@ describe("B1 inicio por perfil", () => {
       recent_patients: [{ ...patient, ultima_visita: "2026-01-01T00:00:00Z", ultima_visita_origen: "UTC_VERIFICADO" }],
       actions: { patients: true, diagnosis: false, reports: false },
     } } });
-    render(<Dashboard />, { wrapper });
+    renderDashboard();
     expect(await screen.findByText("Paciente Sintético")).toBeInTheDocument();
     expect(screen.getByText("Pacientes registrados")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
@@ -273,7 +284,7 @@ describe("B1 inicio por perfil", () => {
 
   it("sin permiso de paciente evita la consulta incluso con rol oftalmológico local", () => {
     login(["Oftalmologo"], []);
-    render(<Dashboard />, { wrapper });
+    renderDashboard();
     expect(screen.getByRole("alert")).toHaveTextContent("No tiene autorización");
     expect(get).not.toHaveBeenCalled();
   });

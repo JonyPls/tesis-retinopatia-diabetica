@@ -1,10 +1,10 @@
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Card, CardContent } from "@/components/ui/card";
 import { Construction } from "lucide-react";
 
 export default function Placeholder({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <AppLayout title={title} subtitle={subtitle}>
+    <PageContent title={title} subtitle={subtitle}>
       <Card className="shadow-card">
         <CardContent className="py-20 flex flex-col items-center text-center">
           <div className="h-14 w-14 rounded-full bg-accent flex items-center justify-center mb-4">
@@ -16,6 +16,6 @@ export default function Placeholder({ title, subtitle }: { title: string; subtit
           </p>
         </CardContent>
       </Card>
-    </AppLayout>
+    </PageContent>
   );
 }

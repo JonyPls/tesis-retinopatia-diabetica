@@ -11,7 +11,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -135,7 +135,7 @@ export default function Diagnosis() {
   );
 
   return (
-    <AppLayout
+    <PageContent
       title="Módulo de Diagnóstico IA"
       subtitle="Evaluación asistida por Deep Learning · Retinopatía Diabética"
     >
@@ -480,6 +480,6 @@ export default function Diagnosis() {
           </div>
         );
       })()}
-    </AppLayout>
+    </PageContent>
   );
 }

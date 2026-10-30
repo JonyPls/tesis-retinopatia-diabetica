@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Brain, Download } from "lucide-react";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -111,35 +111,35 @@ export default function PatientVisitDetail() {
 
   if (hook.isLoading) {
     return (
-      <AppLayout title="Detalle de visita">
+      <PageContent title="Detalle de visita">
         <LoadingState />
-      </AppLayout>
+      </PageContent>
     );
   }
 
   if (hook.requestError || hook.comparisonRequestError) {
-    return <AppLayout title="Detalle de visita"><PatientLookupError error={hook.requestError ?? hook.comparisonRequestError!} /></AppLayout>;
+    return <PageContent title="Detalle de visita"><PatientLookupError error={hook.requestError ?? hook.comparisonRequestError!} /></PageContent>;
   }
 
   if (hook.error === "patient_not_found") {
     return (
-      <AppLayout title="Paciente no encontrado">
+      <PageContent title="Paciente no encontrado">
         <EmptyState
           description="No se pudieron encontrar los datos de este paciente."
           patientId={hook.pacienteId}
         />
-      </AppLayout>
+      </PageContent>
     );
   }
 
   if (hook.error || !hook.visit) {
     return (
-      <AppLayout title="Visita no encontrada">
+      <PageContent title="Visita no encontrada">
         <EmptyState
           description="No se encontró la visita solicitada para este paciente."
           patientId={hook.patient ? hook.pacienteId : undefined}
         />
-      </AppLayout>
+      </PageContent>
     );
   }
 
@@ -197,7 +197,7 @@ export default function PatientVisitDetail() {
   };
 
   return (
-    <AppLayout
+    <PageContent
       title="Detalle de visita"
       subtitle={patientIdentity}
       actions={
@@ -295,6 +295,6 @@ export default function PatientVisitDetail() {
           onSelect={selectComparisonVisit}
         />
       </div>
-    </AppLayout>
+    </PageContent>
   );
 }

@@ -38,7 +38,7 @@ const adminItems = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
   const navigate = useNavigate();
@@ -115,6 +115,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild className="hover:bg-transparent">
                     <NavLink
                       to={item.url}
+                      onClick={() => setOpenMobile(false)}
                       end={item.end}
                       className={navCls(isActive(item.url, item.end))}
                     >
@@ -143,6 +144,7 @@ export function AppSidebar() {
                     <SidebarMenuButton asChild className="hover:bg-transparent">
                       <NavLink
                         to={item.url}
+                        onClick={() => setOpenMobile(false)}
                         className={navCls(isActive(item.url))}
                       >
                         <item.icon className="h-4 w-4 shrink-0" />

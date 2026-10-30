@@ -77,9 +77,12 @@ Blob URL, CORS y Web Crypto del navegador no se observaron contra HTTP real.
    `app.config['RETINOGRAPH_PRIVATE_DIR']` con la ruta absoluta **preexistente**,
    y apuntar el ORM solo al MySQL temporal, las exportaciones y los JPEG a
    las carpetas temporales, y reemplazar CLIP/IA por dobles deterministas.
-   El `backend/app.py` actual **no** transfiere `RETINOGRAPH_PRIVATE_DIR` desde
-   `os.environ` a `app.config`: definir `$env:RETINOGRAPH_PRIVATE_DIR` en
-   PowerShell no resuelve el bloqueo. `RETINOGRAPH_EXPORT_DIR` sí se lee del
+   El `backend/app.py` actual sí transfiere `RETINOGRAPH_PRIVATE_DIR` desde
+   `os.environ` a `app.config` (y `load_dotenv()` permite definirlo también en
+   `backend/.env`). Si la variable falta, el arranque con `app.py` continúa y
+   la confirmación responde 503 «Almacenamiento privado no disponible.»;
+   `run_local.py` en cambio se niega a arrancar sin ella. La ruta debe ser
+   absoluta y preexistente. `RETINOGRAPH_EXPORT_DIR` sí se lee del
    entorno al importar el servicio; los JPEG se inicializan según el working
    directory de `diagnosis_service.py`. Se requiere un arranque de pruebas
    aprobado que inyecte esas rutas sin editar `.env` ni producción; no iniciar

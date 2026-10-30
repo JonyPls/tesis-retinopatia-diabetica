@@ -13,9 +13,6 @@ vi.mock("../features/reports/hooks/useReports", () => ({ useReports: vi.fn() }))
 vi.mock("../features/reports/api/reportHistoryService", () => ({
   getPatientReportHistory: vi.fn(), getReportVersions: vi.fn(),
 }));
-vi.mock("../components/layout/AppLayout", () => ({
-  AppLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
 vi.mock("../features/reports/components/ReportForm", () => ({
   ReportForm: ({ readOnly, initialData }: { readOnly?: boolean; initialData?: { id: number } }) =>
     <p>{readOnly ? `Solo lectura ${initialData?.id}` : "Formulario pendiente"}</p>,

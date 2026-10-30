@@ -1,6 +1,5 @@
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -16,14 +15,14 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-100 via-white to-teal-200 p-4">
       <Card className="w-full max-w-md shadow-xl border-0 overflow-hidden animate-in fade-in zoom-in-95 slide-in-from-bottom-10 duration-700 ease-out">
         <div className="h-1.5 w-full bg-gradient-to-r from-teal-600 via-teal-400 to-teal-600" />
-        <CardHeader className="space-y-2 text-center pt-6">
+        <CardHeader className="space-y-2 text-center pt-8">
           <img
             src={logoClinica}
-            alt="Logo"
-            className="w-16 h-16 mx-auto mb-2 object-contain"
+            alt="Logo Centro Oftalmológico del Norte"
+            className="w-24 h-24 sm:w-28 sm:h-28 mx-auto mb-3 object-contain"
           />
           <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
-            Iniciar Sesión
+            Bienvenido
           </CardTitle>
           <CardDescription className="text-sm">
             Sistema web de clasificación de Retinopatía Diabética

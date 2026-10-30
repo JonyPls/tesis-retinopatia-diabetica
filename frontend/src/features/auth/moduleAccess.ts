@@ -21,7 +21,8 @@ export function isModuleAccessDenial(module: ModuleName, url?: string, method?: 
     (method === "POST" && url === "/diagnosticar") ||
     isPatientReadDenial(url, method);
   if (module === "reports") return isPatientReadDenial(url, method) ||
-    (method === "GET" && (url === "/tipos-informe" || /^\/informes(?:\/\d+|\/paciente\/\d+|\/visita\/\d+|\/diagnostico\/\d+)$/.test(url))) ||
+    (method === "GET" && (url === "/tipos-informe" ||
+      /^\/informes(?:\/\d+|\/paciente\/\d+|\/visita\/\d+|\/diagnostico\/\d+)$/.test(url))) ||
     (method === "POST" && url === "/informes");
   return false;
 }
@@ -52,14 +53,21 @@ export function tokenIsCurrent(token: string): boolean {
   }
 }
 
+function ensureActive(signal?: AbortSignal) {
+  if (signal?.aborted) throw new Error("Comprobación de acceso cancelada.");
+}
+
 // 403 aquí significa JWT y cuenta válidos, aunque no tenga el permiso administrativo.
 // La guardia B1 ejecuta token_required antes de decidir sobre el módulo.
-export async function verifyDashboardSession(): Promise<"allowed" | "unauthenticated"> {
+export async function verifyDashboardSession(signal?: AbortSignal): Promise<"allowed" | "unauthenticated"> {
   try {
-    const response = await api.get("/configuracion/catalogo");
+    ensureActive(signal);
+    const response = await api.get("/configuracion/catalogo", { signal });
+    ensureActive(signal);
     if (response.data?.success !== true) throw new Error("Respuesta de sesión inesperada");
     return "allowed";
   } catch (error) {
+    ensureActive(signal);
     const status = (error as { response?: { status?: number } }).response?.status;
     if (status === 401) return "unauthenticated";
     if (status === 403) return "allowed";
@@ -67,9 +75,11 @@ export async function verifyDashboardSession(): Promise<"allowed" | "unauthentic
   }
 }
 
-type Probe = { url: string; missing?: string };
+type Probe = { url: string; missing?: string; dataIsArray?: boolean };
 const PROBES: Record<Exclude<ModuleName, "dashboard">, Probe[]> = {
-  patients: [{ url: "/pacientes/buscar?q=" }],
+  // Endpoints existentes que responden 200 con la misma regla B1 y sin
+  // solicitar recursos inexistentes ni consultas de diagnóstico sin contexto.
+  patients: [{ url: "/pacientes/recientes", dataIsArray: true }],
   patientVisit: [
     { url: "/pacientes/buscar?q=" },
     { url: "/pacientes/0/visitas", missing: "Paciente no encontrado" },
@@ -80,20 +90,26 @@ const PROBES: Record<Exclude<ModuleName, "dashboard">, Probe[]> = {
     { url: "/diagnosticar/visita/0/detalles", missing: "Diagnóstico no encontrado." },
   ],
   reports: [
-    { url: "/pacientes/buscar?q=" },
-    { url: "/informes/0", missing: "Informe no encontrado." },
+    { url: "/tipos-informe", dataIsArray: true },
+    { url: "/informes/visita/0", dataIsArray: true },
   ],
   configuration: [{ url: "/configuracion/catalogo", missing: "" }],
 };
 
-// Un 404 con el mensaje del handler confirma que B1 permitió llegar a un recurso
-// deliberadamente inexistente. Un 404 del router u otro error nunca concede acceso.
-export async function verifyModuleAccess(module: Exclude<ModuleName, "dashboard">): Promise<"allowed" | "denied" | "unauthenticated"> {
+// Una sonda confirmada por B1 responde 200 con `success: true` (y la forma
+// esperada) o un 404 con el mensaje exacto del handler para un recurso
+// deliberadamente inexistente. Cualquier otro error nunca concede acceso.
+export async function verifyModuleAccess(module: Exclude<ModuleName, "dashboard">, signal?: AbortSignal): Promise<"allowed" | "denied" | "unauthenticated"> {
   for (const probe of PROBES[module]) {
     try {
-      const response = await api.get(probe.url);
-      if (probe.missing || response.data?.success !== true) throw new Error("Respuesta de autorización inesperada");
+      ensureActive(signal);
+      const response = await api.get(probe.url, { signal });
+      ensureActive(signal);
+      if (probe.missing || response.data?.success !== true ||
+          (probe.dataIsArray && !Array.isArray(response.data.data)))
+        throw new Error("Respuesta de autorización inesperada");
     } catch (error) {
+      ensureActive(signal);
       const response = (error as { response?: { status?: number; data?: { success?: boolean; message?: string } } }).response;
       if (response?.status === 401) return "unauthenticated";
       if (response?.status === 403) return "denied";

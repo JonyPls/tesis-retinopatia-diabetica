@@ -1,4 +1,4 @@
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -38,7 +38,7 @@ export default function Patients() {
   };
 
   return (
-    <AppLayout
+    <PageContent
       title="Gestión de Pacientes"
       subtitle={`${hook.patients.length} pacientes en el sistema`}
       actions={
@@ -167,6 +167,6 @@ export default function Patients() {
             </div>
           )}
       </div>
-    </AppLayout>
+    </PageContent>
   );
 }

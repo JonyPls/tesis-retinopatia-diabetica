@@ -2,8 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { AppLayout } from "../components/layout/AppLayout";
+import { PageContent } from "../components/layout/PageContent";
+import { breadcrumbsFor } from "../components/layout/breadcrumbTrail";
 import { useAuthStore } from "../features/auth/store/authStore";
 import { buscarPacientesPaginado } from "../features/patients/api/patientService";
 
@@ -11,7 +13,9 @@ vi.mock("../features/patients/api/patientService", () => ({ buscarPacientesPagin
 
 const patient = { id: 7, nombres: "María", apellidos: "Pérez", tipo_doc_abrev: "DNI", nro_documento: "00001234" };
 const found = (patients = [patient]) => ({ data: patients, pagination: { page: 1, per_page: 5, total: patients.length, has_more: false } });
-const path = () => <output data-testid="path">{useLocation().pathname}</output>;
+function PathOutput() {
+  return <output data-testid="path">{useLocation().pathname}</output>;
+}
 const desktopWidth = window.innerWidth;
 
 function login(roles = ["Oftalmologo"], permisos = ["pacientes.ver"]) {
@@ -21,9 +25,12 @@ function login(roles = ["Oftalmologo"], permisos = ["pacientes.ver"]) {
 }
 
 function show(title = "Dashboard", subtitle?: string) {
-  const Location = path;
   return render(<MemoryRouter initialEntries={["/dashboard"]}>
-    <AppLayout title={title} subtitle={subtitle}><Location /></AppLayout>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="*" element={<PageContent title={title} subtitle={subtitle}><PathOutput /></PageContent>} />
+      </Route>
+    </Routes>
   </MemoryRouter>);
 }
 
@@ -83,6 +90,81 @@ it("tiene un único control en el header, contrae y expande el sidebar de escrit
   expect(trigger.querySelector("svg")).toHaveClass("lucide-panel-left-close");
 });
 
+it("muestra un header equilibrado: sidebar, búsqueda centrada y notificaciones al final", () => {
+  login();
+  show();
+  const header = screen.getByRole("banner");
+  expect(header).toHaveClass("h-14", "items-center");
+  const searchSlot = screen.getByRole("combobox").closest("div.flex-1");
+  expect(searchSlot).toHaveClass("justify-center");
+  expect(screen.getByRole("combobox").closest("div.max-w-md")).toBeInTheDocument();
+  expect(header.lastElementChild).toContainElement(screen.getByRole("button", { name: "Notificaciones" }));
+  expect(screen.queryByRole("navigation", { name: "Ruta de navegación" })).not.toBeInTheDocument();
+});
+
+it.each(["/dashboard", "/pacientes", "/diagnostico", "/informes", "/configuracion"])(
+  "no muestra breadcrumbs en la ruta principal %s", (pathname) => {
+    expect(breadcrumbsFor(pathname)).toEqual([]);
+  });
+
+it("describe la jerarquía en el perfil y no expone identificadores", () => {
+  login();
+  render(<MemoryRouter initialEntries={["/pacientes/7"]}>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/pacientes/:id" element={<PageContent title="Datos del paciente"><p>Perfil</p></PageContent>} />
+      </Route>
+    </Routes>
+  </MemoryRouter>);
+  const nav = screen.getByRole("navigation", { name: "Ruta de navegación" });
+  expect(within(nav).getByRole("link", { name: "Pacientes" })).toHaveAttribute("href", "/pacientes");
+  expect(within(nav).getByText("Perfil del paciente")).toHaveAttribute("aria-current", "page");
+  expect(within(nav).queryByRole("link", { name: "Perfil del paciente" })).not.toBeInTheDocument();
+  expect(nav).not.toHaveTextContent("7");
+  expect(screen.getByRole("banner")).not.toHaveTextContent("María");
+});
+
+it("permite volver al perfil desde la visita con el mismo header montado", () => {
+  login();
+  render(<MemoryRouter initialEntries={["/pacientes/7/visitas/9"]}>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/pacientes/:id" element={<PageContent title="Datos del paciente"><p>Perfil</p><PathOutput /></PageContent>} />
+        <Route path="/pacientes/:pacienteId/visitas/:visitaId" element={<PageContent title="Detalle de visita"><p>Visita</p></PageContent>} />
+      </Route>
+    </Routes>
+  </MemoryRouter>);
+  const header = screen.getByRole("banner");
+  const nav = within(header).getByRole("navigation", { name: "Ruta de navegación" });
+  expect(within(nav).getByRole("link", { name: "Pacientes" })).toHaveAttribute("href", "/pacientes");
+  expect(within(nav).getByRole("link", { name: "Perfil del paciente" })).toHaveAttribute("href", "/pacientes/7");
+  expect(within(nav).getByText("Visita")).toHaveAttribute("aria-current", "page");
+  fireEvent.click(within(nav).getByRole("link", { name: "Perfil del paciente" }));
+  expect(screen.getByTestId("path")).toHaveTextContent("/pacientes/7");
+  expect(screen.getByRole("banner")).toBe(header);
+  expect(screen.getByRole("navigation", { name: "Ruta de navegación" })).toBeInTheDocument();
+  expect(screen.getByText("Perfil del paciente")).toHaveAttribute("aria-current", "page");
+});
+
+it("en móvil conserva solo la ubicación actual sin desplazar los controles", () => {
+  window.innerWidth = 375;
+  login();
+  render(<MemoryRouter initialEntries={["/pacientes/7/visitas/9"]}>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/pacientes/:pacienteId/visitas/:visitaId" element={<PageContent title="Detalle de visita"><p>Visita</p></PageContent>} />
+      </Route>
+    </Routes>
+  </MemoryRouter>);
+  const header = screen.getByRole("banner");
+  const nav = within(header).getByRole("navigation", { name: "Ruta de navegación" });
+  expect(within(nav).getByRole("link", { name: "Pacientes", hidden: true }).parentElement).toHaveClass("hidden");
+  expect(within(nav).getByText("Visita")).toBeInTheDocument();
+  expect(within(header).getByRole("button", { name: "Expandir menú" })).toBeInTheDocument();
+  expect(within(header).getByRole("button", { name: "Abrir búsqueda de pacientes" })).toBeInTheDocument();
+  expect(within(header).getByRole("button", { name: "Notificaciones" })).toBeInTheDocument();
+});
+
 it("mantiene búsqueda y campana operativas con el menú contraído y admite el atajo de teclado", async () => {
   login();
   show();
@@ -112,6 +194,19 @@ it("en móvil abre el panel superpuesto desde el header y permite cerrarlo con E
   fireEvent.keyDown(document, { key: "Escape" });
   await waitFor(() => expect(trigger).toHaveAccessibleName("Expandir menú"));
   expect(trigger).toHaveAttribute("aria-expanded", "false");
+});
+
+it("cierra el menú móvil al navegar sin reconstruir el header", async () => {
+  window.innerWidth = 375;
+  login();
+  show();
+  const header = screen.getByRole("banner");
+  const trigger = within(header).getByRole("button", { name: "Expandir menú" });
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("link", { name: "Pacientes" }));
+  expect(screen.getByTestId("path")).toHaveTextContent("/pacientes");
+  await waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "false"));
+  expect(screen.getByRole("banner")).toBe(header);
 });
 
 it("busca con demora y límite SQL, por nombre o documento y navega con teclado", async () => {

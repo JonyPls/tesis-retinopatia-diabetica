@@ -1,5 +1,5 @@
 import { useParams, Link } from "react-router-dom";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Brain } from "lucide-react";
 import { usePatientProfile } from "../hooks/usePatientProfile";
@@ -18,7 +18,7 @@ export default function PatientProfile() {
 
   if (hook.isLoading) {
     return (
-      <AppLayout title="Cargando perfil del paciente...">
+      <PageContent title="Cargando perfil del paciente...">
         <div className="flex h-[50vh] items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Brain className="h-8 w-8 animate-pulse text-primary" />
@@ -27,17 +27,17 @@ export default function PatientProfile() {
             </p>
           </div>
         </div>
-      </AppLayout>
+      </PageContent>
     );
   }
 
   if (hook.patientError) {
-    return <AppLayout title="Datos del paciente"><PatientLookupError error={hook.patientError} /></AppLayout>;
+    return <PageContent title="Datos del paciente"><PatientLookupError error={hook.patientError} /></PageContent>;
   }
 
   if (!hook.patient) {
     return (
-      <AppLayout title="Paciente no encontrado">
+      <PageContent title="Paciente no encontrado">
         <div className="flex flex-col items-center justify-center py-16">
           <p className="mb-4 text-muted-foreground">
             No se pudieron encontrar los datos de este paciente en la base de
@@ -47,7 +47,7 @@ export default function PatientProfile() {
             <ArrowLeft className="mr-2 h-4 w-4" /> Volver a Gestión de Pacientes
           </Button>
         </div>
-      </AppLayout>
+      </PageContent>
     );
   }
 
@@ -65,7 +65,7 @@ export default function PatientProfile() {
   const showHistory = hook.scope === "clinical" && !hook.historyError;
 
   return (
-    <AppLayout
+    <PageContent
       title={hook.scope === "clinical" ? "Historia clínica" : "Datos del paciente"}
       subtitle={`${fullName} · ${docType} ${hook.patient.nro_documento}`}
     >
@@ -118,6 +118,6 @@ export default function PatientProfile() {
           </section>}
         </div>
       </div>
-    </AppLayout>
+    </PageContent>
   );
 }
