@@ -21,7 +21,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuthStore } from "@/features/auth/store/authStore";
@@ -98,13 +97,6 @@ export function AppSidebar() {
               </span>
             </div>
           )}
-          <SidebarTrigger
-            className={cn(
-              "hidden h-8 w-8 shrink-0 rounded-md border border-sidebar-border bg-sidebar-accent/70 text-sidebar-accent-foreground shadow-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:inline-flex",
-              !collapsed && "ml-auto",
-            )}
-            title={collapsed ? "Expandir menú" : "Contraer menú"}
-          />
         </div>
       </SidebarHeader>
 

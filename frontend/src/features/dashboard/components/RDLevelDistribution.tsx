@@ -4,23 +4,23 @@ import { RDLevelRow } from "../types";
 export function RDLevelDistribution({ rows }: { rows: RDLevelRow[] }) {
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   return (
-    <Card className="shadow-card">
+    <Card className="flex h-full min-w-0 flex-col shadow-card">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Distribución de gravedad por ojo validado</CardTitle>
         <p className="text-xs text-muted-foreground">
           Resultados finales validados · conteo acumulado de ojos, no de pacientes
         </p>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex-1 space-y-3">
         {total === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">
           Todavía no hay resultados validados para mostrar
         </p> : rows.map((row) => (
           <div key={row.level}>
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className="font-medium">
+            <div className="mb-1.5 flex items-start justify-between gap-2 text-xs">
+              <span className="min-w-0 font-medium leading-snug">
                 N{row.level} · {row.label}
               </span>
-              <span className="text-muted-foreground tabular-nums">
+              <span className="shrink-0 text-muted-foreground tabular-nums">
                 {row.count} {row.count === 1 ? "ojo" : "ojos"}
               </span>
             </div>

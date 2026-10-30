@@ -11,7 +11,7 @@ export function RecentPatientsTable({ patients, canViewPatients }: {
   canViewPatients: boolean;
 }) {
   return (
-    <Card className="min-w-0 shadow-card">
+    <Card className="flex h-full min-w-0 flex-col shadow-card">
       <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
         <div>
           <CardTitle className="text-base">Actividad reciente</CardTitle>
@@ -23,13 +23,13 @@ export function RecentPatientsTable({ patients, canViewPatients }: {
           <Link to="/pacientes">Ver todos <ArrowRight className="h-3.5 w-3.5" /></Link>
         </Button>}
       </CardHeader>
-      <CardContent className="overflow-x-auto p-0">
-        <Table>
+      <CardContent className="min-w-0 flex-1 overflow-x-auto p-0">
+        <Table className="min-w-[360px]">
           <TableHeader>
             <TableRow>
-              <TableHead>Documento</TableHead>
-              <TableHead>Paciente</TableHead>
-              <TableHead>Última visita</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">Documento</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">Paciente</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">Última visita</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -38,13 +38,13 @@ export function RecentPatientsTable({ patients, canViewPatients }: {
                 No hay visitas con fecha verificada para mostrar.
               </TableCell>
             </TableRow> : patients.map((patient) => <TableRow key={patient.id}>
-              <TableCell className="font-mono text-sm">{patient.nro_documento}</TableCell>
+              <TableCell className="break-all font-mono text-xs sm:text-sm">{patient.nro_documento}</TableCell>
               <TableCell className="font-medium">
                 {canViewPatients ? <Link to={`/pacientes/${patient.id}`} className="hover:text-primary">
                   {patient.nombres} {patient.apellidos}
                 </Link> : `${patient.nombres} ${patient.apellidos}`}
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
+              <TableCell className="text-xs text-muted-foreground sm:text-sm">
                 {patient.ultima_visita_origen === "UTC_VERIFICADO"
                   ? formatClinicalDay(patient.ultima_visita) : "Fecha pendiente de conciliación"}
               </TableCell>

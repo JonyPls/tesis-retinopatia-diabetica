@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { VariantProps, cva } from "class-variance-authority";
-import { PanelLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -222,7 +222,8 @@ Sidebar.displayName = "Sidebar";
 
 const SidebarTrigger = React.forwardRef<React.ElementRef<typeof Button>, React.ComponentProps<typeof Button>>(
   ({ className, onClick, ...props }, ref) => {
-    const { toggleSidebar } = useSidebar();
+    const { isMobile, open, openMobile, toggleSidebar } = useSidebar();
+    const expanded = isMobile ? openMobile : open;
 
     return (
       <Button
@@ -230,6 +231,9 @@ const SidebarTrigger = React.forwardRef<React.ElementRef<typeof Button>, React.C
         data-sidebar="trigger"
         variant="ghost"
         size="icon"
+        type="button"
+        aria-label={expanded ? "Contraer menú" : "Expandir menú"}
+        aria-expanded={expanded}
         className={cn("h-7 w-7", className)}
         onClick={(event) => {
           onClick?.(event);
@@ -237,8 +241,9 @@ const SidebarTrigger = React.forwardRef<React.ElementRef<typeof Button>, React.C
         }}
         {...props}
       >
-        <PanelLeft />
-        <span className="sr-only">Toggle Sidebar</span>
+        {expanded
+          ? <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+          : <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />}
       </Button>
     );
   },

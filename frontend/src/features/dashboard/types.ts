@@ -13,6 +13,7 @@ export interface KpiItem {
   label: string;
   value: number;
   icon: React.ComponentType<{ className?: string }>;
+  tone: "teal" | "blue" | "green" | "amber";
 }
 
 export interface RDLevelRow {

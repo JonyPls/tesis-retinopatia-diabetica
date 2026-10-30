@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -43,6 +43,10 @@ describe("Dashboard clínico", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Cargando");
     expect(await screen.findByText(/N4 · Grado catálogo 4/)).toBeInTheDocument();
     expect(screen.getByText("Evaluaciones IA")).toBeInTheDocument();
+    for (const [label, tone] of [["Pacientes registrados", "bg-primary/10"], ["Evaluaciones IA", "bg-blue-50"],
+      ["Diagnósticos validados", "bg-emerald-50"], ["Pendientes de validación", "bg-amber-50"]]) {
+      expect(screen.getByText(label).parentElement?.firstElementChild).toHaveClass(tone);
+    }
     expect(screen.getByText("8")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
@@ -56,6 +60,16 @@ describe("Dashboard clínico", () => {
     expect(screen.queryByText("Crítico")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Nueva Evaluación IA" })).toHaveAttribute("href", "/diagnostico");
     expect(screen.getByRole("link", { name: "Informes Clínicos" })).toHaveAttribute("href", "/informes");
+    const middle = screen.getByRole("group", { name: "Actividad clínica y gravedad" });
+    expect(middle).toHaveClass("lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]");
+    expect(middle.querySelector("table")).toBeInTheDocument();
+    expect(middle.querySelectorAll("thead th")).toHaveLength(3);
+    expect(middle).toHaveTextContent("Distribución de gravedad por ojo validado");
+    expect(screen.getByRole("heading", { name: "Accesos rápidos" }).parentElement).toHaveClass("space-y-3");
+    expect(screen.getAllByText(/Grado catálogo/)).toHaveLength(5);
+    const level = screen.getByText(/N4 · Grado catálogo 4/).closest("div")?.nextElementSibling?.firstElementChild;
+    expect(level).toHaveStyle({ width: "100%", backgroundColor: "hsl(var(--rd-4))" });
+    expect(screen.queryByText(/\+\d+|vs\. ayer|esta semana|Crítico|Seguimiento/)).not.toBeInTheDocument();
     expect(get).toHaveBeenCalledExactlyOnceWith("/dashboard/clinico");
   });
 
@@ -70,6 +84,20 @@ describe("Dashboard clínico", () => {
     expect(await screen.findByText("Todavía no hay resultados validados para mostrar")).toBeInTheDocument();
     expect(screen.getByText("No hay visitas con fecha verificada para mostrar.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/\b0 ojos validados\b/)).toBeInTheDocument();
+    expect(screen.getByText("Distribución de gravedad por ojo validado").closest(".shadow-card")?.querySelector('[style*="width:"]'))
+      .not.toBeInTheDocument();
+  });
+
+  it("mantiene accesos rápidos de consulta sin ofrecer creación al especialista de solo lectura", async () => {
+    login(["Oftalmologo"], clinicalPermissions);
+    get.mockResolvedValueOnce({ data: { success: true, data: summary } });
+    render(<Dashboard />, { wrapper });
+    expect(await screen.findByText("Distribución de gravedad por ojo validado")).toBeInTheDocument();
+    const shortcuts = within(screen.getByRole("heading", { name: "Accesos rápidos" }).parentElement!);
+    expect(shortcuts.getByRole("link", { name: "Pacientes" })).toHaveAttribute("href", "/pacientes");
+    expect(screen.queryByRole("link", { name: "Nueva Evaluación IA" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Informes Clínicos" })).not.toBeInTheDocument();
   });
 
   it("no sustituye 403 ni errores de red por ceros", async () => {

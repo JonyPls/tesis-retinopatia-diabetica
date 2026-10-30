@@ -3,7 +3,6 @@ import { KpiGrid } from "../components/KpiGrid";
 import { RDLevelDistribution } from "../components/RDLevelDistribution";
 import { useDashboard } from "../hooks/useDashboard";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { hasOphthalmologistRole } from "@/features/patients/patientAccess";
 import { canAccessModule } from "@/features/auth/moduleAccess";
@@ -23,10 +22,10 @@ export default function Dashboard() {
   const canViewReports = canAccessModule(user, "reports", deniedModules);
   const canConfigure = canAccessModule(user, "configuration", deniedModules);
   const kpis: KpiItem[] = summary ? [
-    { label: "Pacientes registrados", value: summary.kpis.patients, icon: Users },
-    { label: "Evaluaciones IA", value: summary.kpis.evaluations, icon: Activity },
-    { label: "Diagnósticos validados", value: summary.kpis.validated, icon: ClipboardCheck },
-    { label: "Pendientes de validación", value: summary.kpis.pending, icon: Clock3 },
+    { label: "Pacientes registrados", value: summary.kpis.patients, icon: Users, tone: "teal" },
+    { label: "Evaluaciones IA", value: summary.kpis.evaluations, icon: Activity, tone: "blue" },
+    { label: "Diagnósticos validados", value: summary.kpis.validated, icon: ClipboardCheck, tone: "green" },
+    { label: "Pendientes de validación", value: summary.kpis.pending, icon: Clock3, tone: "amber" },
   ] : [];
   const actions = [
     ...(canEvaluate && summary?.actions.diagnosis ? [{ label: "Nueva Evaluación IA", to: "/diagnostico", icon: Brain }] : []),
@@ -47,12 +46,13 @@ export default function Dashboard() {
           : error ? <p role="alert" className="rounded-md border border-border bg-card p-6 text-sm text-destructive">{error}</p>
             : summary ? <div className="space-y-6">
               <KpiGrid kpis={kpis} />
-              <RDLevelDistribution rows={summary.severity} />
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(220px,1fr)]">
+              <div role="group" aria-label="Actividad clínica y gravedad"
+                className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
                 <RecentPatientsTable patients={summary.recent_patients}
                   canViewPatients={canViewPatients && summary.actions.patients} />
-                <QuickAccess actions={actions} />
+                <RDLevelDistribution rows={summary.severity} />
               </div>
+              <QuickAccess actions={actions} />
             </div> : null
       ) : (
         <div className="max-w-2xl space-y-6">
@@ -72,13 +72,15 @@ export default function Dashboard() {
 
 function QuickAccess({ actions }: { actions: { label: string; to: string; icon: typeof Users }[] }) {
   if (!actions.length) return null;
-  return <Card className="shadow-card">
-    <CardHeader><CardTitle className="text-base">Accesos rápidos</CardTitle></CardHeader>
-    <CardContent className="space-y-1">
+  return <section aria-labelledby="quick-access-title" className="space-y-3">
+    <h3 id="quick-access-title" className="text-sm font-semibold text-foreground">Accesos rápidos</h3>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {actions.map(({ label, to, icon: Icon }) => <Link key={to} to={to}
-        className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-        <Icon className="h-4 w-4 text-primary" />{label}
+        className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground shadow-card transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>{label}
       </Link>)}
-    </CardContent>
-  </Card>;
+    </div>
+  </section>;
 }
