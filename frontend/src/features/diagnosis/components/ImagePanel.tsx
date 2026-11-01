@@ -1,20 +1,21 @@
 interface ImagePanelProps {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   src: string;
+  /** Presentación compacta del resultado, sin recortar la imagen clínica. */
+  compact?: boolean;
   /** Si es true, muestra el badge discreto "Grad-CAM" */
   overlay?: boolean;
 }
 
-export function ImagePanel({ title, subtitle, src, overlay }: ImagePanelProps) {
+export function ImagePanel({ title, subtitle, src, overlay, compact }: ImagePanelProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
-      {/* Imagen cuadrada */}
-      <div className="relative aspect-square bg-black">
+      <div className={compact ? "relative aspect-square bg-black sm:aspect-[4/3] lg:aspect-[3/2]" : "relative aspect-square bg-black"}>
         <img
           src={src}
           alt={title}
-          className="absolute inset-0 h-full w-full object-cover"
+          className={`absolute inset-0 h-full w-full ${compact ? "object-contain" : "object-cover"}`}
           loading="lazy"
         />
 
@@ -29,7 +30,7 @@ export function ImagePanel({ title, subtitle, src, overlay }: ImagePanelProps) {
       {/* Pie de imagen */}
       <div className="px-3 py-2.5">
         <div className="text-sm font-medium leading-none">{title}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+        {subtitle && <div className={`mt-1 text-xs text-muted-foreground${compact ? " break-all" : ""}`}>{subtitle}</div>}
       </div>
     </div>
   );

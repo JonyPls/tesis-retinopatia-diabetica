@@ -1,12 +1,14 @@
 import { Info, Sparkles, UploadCloud } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { EyeKey, EyeState } from "../types";
+import { EyeKey, EyeState, EyeProcessingStatus } from "../types";
 import { DropZone } from "./DropZone";
 
 interface ImageUploaderProps {
   eyes: Record<EyeKey, EyeState>;
   busyEyes?: Record<EyeKey, boolean>;
+  lockedEyes?: Partial<Record<EyeKey, boolean>>;
+  eyeProcessing?: Partial<Record<EyeKey, EyeProcessingStatus>>;
   eyeActionError?: Partial<Record<EyeKey, string>>;
   handleFile: (eye: EyeKey, file?: File) => void;
   clearEye: (eye: EyeKey) => void;
@@ -19,6 +21,8 @@ interface ImageUploaderProps {
 export function ImageUploader({
   eyes,
   busyEyes = { OD: false, OI: false },
+  lockedEyes = {},
+  eyeProcessing = {},
   eyeActionError = {},
   handleFile,
   clearEye,
@@ -27,9 +31,18 @@ export function ImageUploader({
   isSaving = false,
   embedded = false,
 }: ImageUploaderProps) {
-  const loadedCount = (["OD", "OI"] as EyeKey[]).filter(
-    (e) => eyes[e].file !== null,
-  ).length;
+  const eyeStatus = (eye: EyeKey) => {
+    if (lockedEyes[eye]) return "Analizado";
+    if (eyeProcessing[eye] === "incierto") return "Registro de IA sin confirmar";
+    if (eyeProcessing[eye] === "procesando") return "Análisis en curso";
+    if (!eyes[eye].file) return "Pendiente de imagen";
+    if (eyes[eye].isExistingImage && (eyes[eye].confirmation !== "CONFIRMADA" ||
+        !eyes[eye].expiresAt || !(Date.parse(eyes[eye].expiresAt) > Date.now()))) {
+      return "Pendiente de confirmación vigente";
+    }
+    if (eyeProcessing[eye] === "error") return "Imagen pendiente de revisión";
+    return "Imagen lista para analizar";
+  };
 
   const content = (
     <>
@@ -57,7 +70,7 @@ export function ImageUploader({
             <Button
               type="button"
               onClick={onAutoSelect}
-              disabled={isAutoSelecting || isSaving || busyEyes.OD || busyEyes.OI || !onAutoSelect}
+              disabled={isAutoSelecting || isSaving || busyEyes.OD || busyEyes.OI || !onAutoSelect || !!(lockedEyes.OD && lockedEyes.OI)}
               className="shrink-0 bg-gradient-primary hover:opacity-90"
             >
               <Sparkles className="h-4 w-4" />
@@ -71,67 +84,47 @@ export function ImageUploader({
           <div className="space-y-2">
             <DropZone
             eye="OD"
-            disabled={busyEyes.OD}
+            disabled={busyEyes.OD || lockedEyes.OD}
+            readOnly={lockedEyes.OD}
             preview={eyes.OD.preview}
             fileName={eyes.OD.file?.name}
             hasFile={eyes.OD.file !== null}
             onFile={handleFile}
             onClear={clearEye}
             />
-            {eyeActionError.OD && <p role="alert" className="text-xs text-destructive">{eyeActionError.OD}</p>}
+            {!lockedEyes.OD && eyeActionError.OD && <p role="alert" className="text-xs text-destructive">{eyeActionError.OD}</p>}
           </div>
           <div className="space-y-2">
             <DropZone
             eye="OI"
-            disabled={busyEyes.OI}
+            disabled={busyEyes.OI || lockedEyes.OI}
+            readOnly={lockedEyes.OI}
             preview={eyes.OI.preview}
             fileName={eyes.OI.file?.name}
             hasFile={eyes.OI.file !== null}
             onFile={handleFile}
             onClear={clearEye}
             />
-            {eyeActionError.OI && <p role="alert" className="text-xs text-destructive">{eyeActionError.OI}</p>}
+            {!lockedEyes.OI && eyeActionError.OI && <p role="alert" className="text-xs text-destructive">{eyeActionError.OI}</p>}
           </div>
         </div>
-        {(eyes.OD.isExistingImage || eyes.OI.isExistingImage) && (
+        {(["OD", "OI"] as EyeKey[]).some((eye) => eyes[eye].isExistingImage && !lockedEyes[eye]) && (
           <p className="text-xs text-muted-foreground">
-            {(["OD", "OI"] as EyeKey[]).filter((eye) => eyes[eye].isExistingImage).map((eye) =>
+            {(["OD", "OI"] as EyeKey[]).filter((eye) => eyes[eye].isExistingImage && !lockedEyes[eye]).map((eye) =>
               `${eye}: ${eyes[eye].confirmation === "CONFIRMADA" ? "asociación confirmada" :
                 eyes[eye].confirmation === "CONSUMIDA" ? "confirmación consumida" :
                 "confirmación no vigente"}`).join(" · ")}
           </p>
         )}
 
-        {/* Barra de progreso de carga (0 / 1 / 2 imágenes) */}
-        {loadedCount > 0 && (
-          <div className="rounded-md border border-primary/20 bg-accent/30 px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1">
-                {[0, 1].map((i) => (
-                  <span
-                    key={i}
-                    className={
-                      i < loadedCount
-                        ? "h-2 w-6 rounded-full bg-primary"
-                        : "h-2 w-6 rounded-full bg-border"
-                    }
-                  />
-                ))}
-              </div>
-              <span className="text-xs font-medium text-foreground">
-                {loadedCount} de 2{" "}
-                {loadedCount === 1 ? "imagen cargada" : "imágenes cargadas"}
-              </span>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {(["OD", "OI"] as EyeKey[]).some((eye) => eyes[eye].candidate &&
-                (eyes[eye].confirmation !== "CONFIRMADA" || !eyes[eye].expiresAt ||
-                 Date.parse(eyes[eye].expiresAt) <= Date.now()))
-                ? "Revise la vigencia de la asociación"
-                : loadedCount === 2 ? "Listo para analizar" : "Puede continuar con 1"}
-            </span>
+        <div className="rounded-md border border-primary/20 bg-accent/30 px-4 py-3 text-xs">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {(["OD", "OI"] as EyeKey[]).map((eye) => (
+              <p key={eye}><span className="font-medium">{eye}:</span> {eyeStatus(eye)}</p>
+            ))}
           </div>
-        )}
+          <p className="mt-1 text-muted-foreground">Puede evaluar un solo ojo.</p>
+        </div>
 
         {/* Nota informativa sobre el preprocesamiento */}
         <div className="flex items-start gap-2.5 rounded-md bg-muted/50 border border-border px-4 py-3">

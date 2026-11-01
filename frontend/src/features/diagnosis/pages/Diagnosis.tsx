@@ -33,6 +33,7 @@ import { DiagnosisResults } from "../components/DiagnosisResults";
 import { DiagnosisStepper } from "../components/DiagnosisStepper";
 import { ImageUploader } from "../components/ImageUploader";
 import { AutoSelectionModal } from "../components/AutoSelectionModal";
+import { ManualImageConfirmation } from "../components/ManualImageConfirmation";
 import { useDiagnosis } from "../hooks/useDiagnosis";
 
 const STEP_COPY = {
@@ -61,6 +62,8 @@ export default function Diagnosis() {
   const {
     step,
     goBack,
+    returnToResults,
+    isNavigationBusy,
     goNext,
     canNext,
     isSaving,
@@ -93,6 +96,8 @@ export default function Diagnosis() {
   const StepIcon = currentStep.icon;
   const selectedPatient = diagnosisHook.selectedPatient;
   const processedEyes = Object.values(diagnosisHook.results).filter(Boolean).length;
+  const hasPendingEye = processedEyes === 1;
+  const lockedEyes = { OD: !!diagnosisHook.results.OD, OI: !!diagnosisHook.results.OI };
 
   const handleDismissError = () => {
     setModalClosing(true);
@@ -146,15 +151,14 @@ export default function Diagnosis() {
             : "grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]"
         }
       >
-        {step === 3 ? (
-          <DiagnosisStepper step={step} variant="compact" />
-        ) : (
+        {step !== 3 && (
           <aside className="xl:sticky xl:top-6 xl:self-start">
             <DiagnosisStepper
               step={step}
               selectedPatient={selectedPatient}
               eyes={diagnosisHook.eyes}
               processedEyes={processedEyes}
+              hasExistingVisit={!!diagnosisHook.confirmedVisitId || !!diagnosisHook.selectedVisita}
             />
           </aside>
         )}
@@ -210,6 +214,8 @@ export default function Diagnosis() {
               <><ImageUploader
                embedded
                eyes={diagnosisHook.eyes}
+                lockedEyes={lockedEyes}
+                eyeProcessing={diagnosisHook.eyeProcessing}
                 busyEyes={diagnosisHook.busyEyes}
                 eyeActionError={diagnosisHook.eyeActionError}
                 handleFile={diagnosisHook.handleFile}
@@ -217,7 +223,12 @@ export default function Diagnosis() {
                 onAutoSelect={diagnosisHook.autoSelectRetinographImages}
                 isAutoSelecting={diagnosisHook.isAutoSelectingImages}
                 isSaving={isSaving}
-               />
+                />
+               {diagnosisHook.manualReview && <ManualImageConfirmation
+                 review={diagnosisHook.manualReview}
+                 onCancel={diagnosisHook.cancelManualReview}
+                 onConfirm={diagnosisHook.confirmManualReview}
+               />}
                <AutoSelectionModal
                  open={diagnosisHook.autoModalOpen}
                  patientName={selectedPatient ? `${selectedPatient.nombres} ${selectedPatient.apellidos}` : ""}
@@ -225,7 +236,8 @@ export default function Diagnosis() {
                  chosen={diagnosisHook.autoPreview}
                  loading={diagnosisHook.autoPreviewLoading}
                   confirming={diagnosisHook.isAutoSelectingImages || diagnosisHook.busyEyes.OD || diagnosisHook.busyEyes.OI}
-                  eyes={diagnosisHook.eyes}
+                   eyes={diagnosisHook.eyes}
+                   lockedEyes={lockedEyes}
                   notice={diagnosisHook.autoFocusEye ? diagnosisHook.eyeActionError[diagnosisHook.autoFocusEye] ?? null : null}
                  onSelect={diagnosisHook.selectAutoCandidate}
                  onConfirm={diagnosisHook.confirmEye}
@@ -239,14 +251,36 @@ export default function Diagnosis() {
 
             {step === 3 && (
               <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">Visita confirmada: {diagnosisHook.confirmedVisitId ?? "No disponible"}. Los ojos se muestran por separado; el estado del diagnóstico padre no confirma cada ojo.</p>
+              <section className="rounded-lg border border-border bg-muted/25 px-4 py-3">
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold leading-tight">Resultados de la evaluación</h2>
+                    {selectedPatient ? (
+                      <p className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                        <span
+                          className="max-w-full truncate font-medium text-foreground"
+                          title={`${selectedPatient.nombres} ${selectedPatient.apellidos}`}
+                        >
+                          {selectedPatient.nombres} {selectedPatient.apellidos}
+                        </span>
+                        <span className="whitespace-nowrap">
+                          {selectedPatient.tipo_doc_abrev} {selectedPatient.nro_documento}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">Paciente no identificado</p>
+                    )}
+                  </div>
+                </div>
+              </section>
               {diagnosisHook.processingNotice && <div role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
                 <p>{diagnosisHook.processingNotice}</p>
                 {diagnosisHook.confirmedVisitId && <Button type="button" variant="outline" className="mt-2" onClick={diagnosisHook.reconcileResults}>Consultar estado de la visita</Button>}
               </div>}
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {(["OD", "OI"] as const).map((eye) => <span key={eye}>{eye}: {diagnosisHook.eyeProcessing[eye] === "pendiente_validacion" ? "IA registrada · validación pendiente" : diagnosisHook.eyeProcessing[eye] === "validado" ? "Validado" : diagnosisHook.eyeProcessing[eye] === "incierto" ? "Persistencia sin confirmar" : diagnosisHook.eyeProcessing[eye] === "error" ? "No procesado · error" : diagnosisHook.eyeProcessing[eye] === "procesando" ? "Procesando" : "No procesado"}</span>)}
-              </div>
+              {(["OD", "OI"] as const).some((eye) => !diagnosisHook.results[eye]) && <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {(["OD", "OI"] as const).filter((eye) => !diagnosisHook.results[eye]).map((eye) => <span key={eye}>{eye}: {diagnosisHook.eyeProcessing[eye] === "incierto" ? "Registro de IA sin confirmar" : diagnosisHook.eyeProcessing[eye] === "error" ? "No procesado · error" : diagnosisHook.eyeProcessing[eye] === "procesando" ? "Procesando" : "No procesado"}</span>)}
+              </div>}
               <DiagnosisResults
                 results={diagnosisHook.results}
                 eyes={diagnosisHook.eyes}
@@ -268,18 +302,18 @@ export default function Diagnosis() {
 
           <div
             className={`flex flex-col-reverse gap-3 border-t border-border bg-muted/25 px-5 py-4 sm:flex-row sm:items-center lg:px-6 ${
-              step === 1 ? "sm:justify-end" : "sm:justify-between"
+              step === 1 || (step === 3 && !hasPendingEye) ? "sm:justify-end" : "sm:justify-between"
             }`}
           >
-            {step !== 1 && (
+            {(step === 2 || (step === 3 && hasPendingEye)) && (
               <Button
                 variant="outline"
                 onClick={goBack}
-                disabled={isSaving}
+                disabled={isNavigationBusy}
                 className="sm:w-auto"
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Anterior
+                {step === 3 ? "Añadir ojo pendiente" : "Anterior"}
               </Button>
             )}
 
@@ -295,24 +329,35 @@ export default function Diagnosis() {
             )}
 
             {step === 2 && (
-              <Button
-                onClick={goNext}
-                disabled={!canNext || isSaving}
-                className="bg-gradient-primary shadow-elevated hover:opacity-90"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Procesando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Guardar y analizar
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                {processedEyes > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={returnToResults}
+                    disabled={isNavigationBusy}
+                  >
+                    Volver a resultados
+                  </Button>
                 )}
-              </Button>
+                <Button
+                  onClick={goNext}
+                  disabled={!canNext || isNavigationBusy}
+                  className="bg-gradient-primary shadow-elevated hover:opacity-90"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Guardar y analizar
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
             )}
 
             {step === 3 && (

@@ -12,6 +12,7 @@ interface DropZoneProps {
   onFile: (eye: EyeKey, file?: File) => void;
   onClear: (eye: EyeKey) => void;
   disabled?: boolean;
+  readOnly?: boolean;
 }
 
 const EYE_LABEL: Record<EyeKey, { short: string; full: string }> = {
@@ -44,8 +45,10 @@ export function DropZone({
   hasFile,
   onFile,
   onClear,
-  disabled = false,
+  disabled: disabledProp = false,
+  readOnly = false,
 }: DropZoneProps) {
+  const disabled = disabledProp || readOnly;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +114,7 @@ export function DropZone({
   };
 
   // ── Render: con imagen cargada ─────────────────────────────────
-  if (hasFile && preview) {
+  if ((hasFile || readOnly) && preview) {
     return (
       <div className="flex flex-col gap-2">
         {/* Badge de etiqueta */}
@@ -119,7 +122,7 @@ export function DropZone({
           <span className="text-xs font-semibold uppercase tracking-wider text-primary">
             {label.full}
           </span>
-          <div className="flex items-center gap-3">
+          {readOnly ? <span className="text-xs text-muted-foreground">Análisis registrado</span> : <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleReplace}
@@ -138,7 +141,7 @@ export function DropZone({
               <X className="h-3 w-3" />
               Quitar
             </button>
-          </div>
+          </div>}
         </div>
 
         {/* Imagen con vista ampliada */}
@@ -165,14 +168,14 @@ export function DropZone({
           </div>
         </button>
 
-        <input
+        {!readOnly && <input
           ref={inputRef}
           type="file"
           disabled={disabled}
           accept=".jpg,.jpeg,.png,.tif,.tiff"
           className="hidden"
           onChange={onInputChange}
-        />
+        />}
 
         {previewOpen && (
           <ImagePreviewLightbox
@@ -188,14 +191,14 @@ export function DropZone({
   }
 
   // ── Render: con archivo pero sin preview ───────────────────────
-  if (hasFile && !preview) {
+  if ((hasFile || readOnly) && !preview) {
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-primary">
             {label.full}
           </span>
-          <button
+          {readOnly ? <span className="text-xs text-muted-foreground">Análisis registrado</span> : <button
             type="button"
             onClick={handleClear}
             disabled={disabled}
@@ -203,7 +206,7 @@ export function DropZone({
           >
             <X className="h-3 w-3" />
             Quitar
-          </button>
+          </button>}
         </div>
         <div
           className="rounded-lg border-2 border-primary/30 bg-muted/50 flex flex-col items-center justify-center gap-2 p-6"
@@ -211,7 +214,7 @@ export function DropZone({
         >
           <Eye className="h-10 w-10 text-primary/60" />
           <span className="text-xs text-muted-foreground text-center">
-            Archivo cargado.
+            {readOnly ? "Imagen del análisis registrado." : "Archivo cargado."}
             <br />
             Vista previa no disponible.
           </span>

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDiagnosis } from "../features/diagnosis/hooks/useDiagnosis";
 import { crearDiagnostico, obtenerDetallesVisita, validarDetalleDiagnostico } from "../features/diagnosis/api/diagnosisService";
 import { toast } from "../hooks/use-toast";
+import { confirmManualPhotos } from "./diagnosisTestActions";
 
 vi.mock("../features/patients/api/patientService", () => ({
   obtenerPacientesRecientes: vi.fn().mockResolvedValue([]),
@@ -43,6 +44,7 @@ async function prepared() {
   });
   act(() => hook.result.current.goNext());
   act(() => hook.result.current.goNext());
+  confirmManualPhotos(hook.result);
   await waitFor(() => expect(hook.result.current.results.OI?.detalle_id).toBe(12), { timeout: 3500 });
   return hook;
 }
@@ -113,6 +115,7 @@ describe("primera validación médica por ojo", () => {
       await act(async () => { await hook.result.current.handleFile("OD", new File(["a"], "od.jpg")); });
       act(() => hook.result.current.goNext());
       act(() => hook.result.current.goNext());
+      confirmManualPhotos(hook.result);
       await waitFor(() => expect(hook.result.current.isSaving).toBe(false));
       expect(hook.result.current.modalPhase).toBe("idle");
       expect(hook.result.current.results).toEqual({});

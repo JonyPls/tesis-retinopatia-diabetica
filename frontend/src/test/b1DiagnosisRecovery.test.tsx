@@ -8,6 +8,7 @@ import type { DetalleDiagnosticoExistente, DiagnosisResult } from "../features/d
 import { toast } from "../hooks/use-toast";
 import { revokePreviewUrl } from "../lib/imageUtils";
 import { obtenerVisitasPaciente } from "../features/patients/api/patientService";
+import { confirmManualPhotos } from "./diagnosisTestActions";
 
 vi.mock("../features/patients/api/patientService", () => ({
   obtenerPacientesRecientes: vi.fn().mockResolvedValue([]),
@@ -52,6 +53,7 @@ async function start(eyes: ("OD" | "OI")[], visitId?: number) {
   });
   act(() => hook.result.current.goNext());
   act(() => hook.result.current.goNext());
+  confirmManualPhotos(hook.result);
   await waitFor(() => expect(hook.result.current.isSaving).toBe(false), { timeout: 3500 });
   return hook;
 }
@@ -230,6 +232,7 @@ describe("creación secuencial y conciliación por ojo", () => {
     await act(async () => hook.result.current.handleFile("OD", new File(["a"], "a.jpg")));
     act(() => hook.result.current.goNext());
     act(() => hook.result.current.goNext());
+    confirmManualPhotos(hook.result);
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
     act(() => { hook.result.current.selectPatient({ id: 8 } as Parameters<typeof hook.result.current.selectPatient>[0]); hook.result.current.selectVisita(null); });
     await act(async () => resolve(result("OD", 30)));

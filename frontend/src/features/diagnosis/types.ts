@@ -25,11 +25,18 @@ export interface AutoPreview {
   preview: string | null;
 }
 
+export interface ManualImageReview {
+  patient: PatientSearchResult;
+  images: { eye: EyeKey; file: File; preview: string | null }[];
+}
+
 export interface DiagnosisHook {
   // Navegación
   step: number;
   goNext: () => void;
   goBack: () => void;
+  returnToResults: () => void;
+  isNavigationBusy: boolean;
   resetAll: () => void;
   canNext: boolean;
   isSaving: boolean;
@@ -69,6 +76,9 @@ export interface DiagnosisHook {
   clearPatient: () => void;
 
   // Paso 2 — Imágenes
+  manualReview: ManualImageReview | null;
+  cancelManualReview: () => void;
+  confirmManualReview: (review: ManualImageReview, accepted: boolean) => void;
   eyes: Record<EyeKey, EyeState>;
   handleFile: (eye: EyeKey, file?: File) => Promise<void>;
   autoSelectRetinographImages: () => Promise<void>;

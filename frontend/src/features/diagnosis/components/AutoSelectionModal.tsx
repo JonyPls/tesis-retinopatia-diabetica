@@ -15,6 +15,7 @@ interface Props {
   loading: boolean;
   confirming: boolean;
   eyes: Record<EyeKey, EyeState>;
+  lockedEyes?: Partial<Record<EyeKey, boolean>>;
   notice: string | null;
   onSelect: (candidate: RetinographAutoImage) => void;
   onConfirm: (eye: EyeKey) => void;
@@ -28,12 +29,13 @@ function exportDate(value: string) {
 }
 
 export function AutoSelectionModal({ open, patientName, candidates, chosen, loading, confirming,
-  eyes, notice, onSelect, onConfirm, onRevoke, onClose }: Props) {
-  const selected = chosen?.image;
+  eyes, lockedEyes = {}, notice, onSelect, onConfirm, onRevoke, onClose }: Props) {
+  const selected = chosen && !lockedEyes[chosen.image.ojo] ? chosen.image : undefined;
   const eye = selected?.ojo;
+  const eligibleCandidates = candidates.filter((candidate) => !lockedEyes[candidate.ojo]);
   const listRef = useRef<HTMLDivElement>(null);
   const groups = (["OD", "OI"] as EyeKey[])
-    .filter((key) => candidates.some((candidate) => candidate.ojo === key))
+    .filter((key) => eligibleCandidates.some((candidate) => candidate.ojo === key))
     .sort((first, second) => Number(eyes[first].confirmation === "CONFIRMADA") -
       Number(eyes[second].confirmation === "CONFIRMADA"));
   const isConfirmed = !!selected && eyes[selected.ojo].candidate?.filename === selected.filename &&
@@ -43,7 +45,7 @@ export function AutoSelectionModal({ open, patientName, candidates, chosen, load
     eyes[selected.ojo].confirmation !== "CONSUMIDA";
   const needsReselection = !!selected && eyes[selected.ojo].file === chosen?.file &&
     eyes[selected.ojo].candidate?.filename === selected.filename && !isConfirmed;
-  const alternative = selected && candidates.find((candidate) => candidate.ojo === selected.ojo &&
+  const alternative = selected && eligibleCandidates.find((candidate) => candidate.ojo === selected.ojo &&
     candidate.filename !== selected.filename);
 
   useEffect(() => {
@@ -58,19 +60,23 @@ export function AutoSelectionModal({ open, patientName, candidates, chosen, load
         <AppModalBody className="grid gap-4 bg-background md:grid-cols-[minmax(220px,1fr)_minmax(0,1.5fr)]">
           <div ref={listRef} className="min-h-0 space-y-3 md:max-h-[58vh] md:overflow-y-auto" aria-label="Fotografías candidatas">
             <p className="text-sm font-semibold">Fotografías disponibles</p>
+            {(["OD", "OI"] as EyeKey[]).filter((key) => lockedEyes[key]).map((key) => (
+              <p key={key} className="text-xs text-muted-foreground">{key}: análisis registrado.</p>
+            ))}
+            {!eligibleCandidates.length && <p className="text-xs text-muted-foreground">No hay fotografías pendientes disponibles.</p>}
             {groups.map((key) => <section key={key} aria-label={`Ojo ${key === "OD" ? "derecho" : "izquierdo"} (${key})`}
               className="space-y-2">
               <h3 className="border-b border-border pb-1 text-xs font-semibold text-muted-foreground">
                 {key === "OD" ? "Ojo derecho (OD)" : "Ojo izquierdo (OI)"}
-                {eyes[key].confirmation === "CONFIRMADA" ? " · Confirmado" : " · Pendiente"}
+                 {eyes[key].confirmation === "CONFIRMADA" ? " · Confirmado" : " · Pendiente"}
               </h3>
-              {candidates.filter((candidate) => candidate.ojo === key).map((candidate, index) => {
+              {eligibleCandidates.filter((candidate) => candidate.ojo === key).map((candidate, index) => {
               const confirmed = eyes[candidate.ojo].candidate?.filename === candidate.filename &&
                 eyes[candidate.ojo].confirmation === "CONFIRMADA";
               return <button key={candidate.filename} type="button"
                 aria-label={`Ver fotografía ${index + 1} de ${candidate.ojo}`}
                 aria-pressed={selected?.filename === candidate.filename}
-                disabled={confirming || loading}
+                 disabled={confirming || loading || lockedEyes[candidate.ojo]}
                 onClick={() => onSelect(candidate)}
                 className={`w-full rounded-md border p-3 text-left text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected?.filename === candidate.filename ? "border-primary bg-primary/5" : "border-border"}`}>
                 <span className="block font-medium">{patientName}</span>
@@ -84,7 +90,7 @@ export function AutoSelectionModal({ open, patientName, candidates, chosen, load
             <p className="text-sm font-semibold">Vista previa ampliada</p>
             <div className="flex min-h-[260px] flex-1 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30">
               {loading ? <p className="text-sm text-muted-foreground">Cargando fotografía...</p>
-                : chosen?.preview ? <img src={chosen.preview} alt={`Fotografía Color, ${eye} sugerido de ${patientName}`}
+                : selected && chosen?.preview ? <img src={chosen.preview} alt={`Fotografía Color, ${eye} sugerido de ${patientName}`}
                   className="max-h-[50vh] w-full object-contain" />
                 : <p className="px-4 text-center text-sm text-muted-foreground">Elija una fotografía para revisarla antes de confirmar.</p>}
             </div>

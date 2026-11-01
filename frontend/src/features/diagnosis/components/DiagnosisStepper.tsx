@@ -7,7 +7,6 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import type { PatientSearchResult } from "@/features/patients/api/patientService";
 import { cn } from "@/lib/utils";
 import type { EyeKey, EyeState } from "../types";
@@ -41,40 +40,24 @@ const EYE_LABELS: Record<EyeKey, string> = {
 
 interface DiagnosisStepperProps {
   step: number;
-  variant?: "full" | "compact";
   selectedPatient?: PatientSearchResult | null;
   eyes?: Record<EyeKey, EyeState>;
   processedEyes?: number;
+  hasExistingVisit?: boolean;
 }
 
 export function DiagnosisStepper({
   step,
-  variant = "full",
   selectedPatient,
   eyes,
   processedEyes = 0,
+  hasExistingVisit = false,
 }: DiagnosisStepperProps) {
   const [previewImage, setPreviewImage] = useState<{
     eye: EyeKey;
     src: string;
     fileName?: string;
   } | null>(null);
-
-  if (variant === "compact") {
-    const current = STEPS.find((s) => s.n === step) ?? STEPS[0];
-    return (
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-xs text-muted-foreground">
-          Paso {step} de {STEPS.length} ·{" "}
-          <span className="font-medium text-foreground">{current.label}</span>
-        </p>
-        <Progress
-          value={(step / STEPS.length) * 100}
-          className="h-1.5 w-full max-w-[220px]"
-        />
-      </div>
-    );
-  }
 
   return (
     <>
@@ -157,7 +140,11 @@ export function DiagnosisStepper({
           <hr />
           <div className="mt-5 rounded-md border border-border bg-muted/40 p-3">
             <p className="text-xs leading-relaxed text-muted-foreground">
-              La visita clínica se creará automáticamente al procesar las imágenes.
+              {processedEyes > 0
+                ? "La evaluación conserva su visita clínica."
+                : hasExistingVisit
+                  ? "Se utilizará la visita clínica seleccionada."
+                  : "La visita clínica se creará automáticamente al procesar las imágenes."}
             </p>
           </div>
         </CardContent>
