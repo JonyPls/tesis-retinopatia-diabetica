@@ -74,7 +74,7 @@ def _open_posix(root, name):
 
 
 @contextmanager
-def _open_windows(root, name):
+def _open_windows(root, name, *, for_delete=False):
     # CreateFileW + OPEN_REPARSE_POINT impide seguir enlaces/junctions. Se
     # conservan abiertos todos los ancestros (sin FILE_SHARE_DELETE ni WRITE)
     # y el archivo hasta terminar la lectura; no se reabre por su ruta.
@@ -111,7 +111,8 @@ def _open_windows(root, name):
     root = os.path.normpath(root)
 
     def checked_open(path, directory):
-        handle = create(path, 0x80 if directory else 0x80000000, 0x1,
+        access = 0x80 if directory else 0x80000000 | (0x10000 if for_delete else 0)
+        handle = create(path, access, 0x1,
                         None, 3, flags, None)  # READ_ATTRIBUTES/GENERIC_READ; SHARE_READ
         if handle == wintypes.HANDLE(-1).value:
             raise OSError(ctypes.get_last_error(), "No se puede abrir la exportación")

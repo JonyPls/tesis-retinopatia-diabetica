@@ -13,6 +13,9 @@ function isPatientReadDenial(url: string, method?: string): boolean {
 // bloquear a quien solo tiene acceso de lectura al módulo (p. ej. enfermería).
 export function isModuleAccessDenial(module: ModuleName, url?: string, method?: string): boolean {
   if (!url) return false;
+  // Operaciones adicionales: su 403 no revoca lectura/inferencia del módulo.
+  if ((method === "GET" && /^\/diagnosticar\/visita\/\d+\/(?:contexto-descarte|operaciones-descarte\/[0-9a-f-]+)(?:\?|$)/.test(url)) ||
+      (method === "POST" && /^\/diagnosticar\/visita\/\d+\/descartar-resultados$/.test(url))) return false;
   if (module === "configuration") return method === "GET" && url === "/configuracion/catalogo";
   if (module === "patients") return isPatientReadDenial(url, method);
   if (module === "patientVisit") return isPatientReadDenial(url, method) ||

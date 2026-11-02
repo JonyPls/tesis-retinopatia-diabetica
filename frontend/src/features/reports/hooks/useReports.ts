@@ -13,6 +13,9 @@ import {
 import { TipoInforme, Informe, ReportFormHandle } from "../types";
 import { SUPPORTED_REPORT_TYPE_IDS } from "../supportedTypes";
 import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
+import { useAuthStore } from "@/features/auth/store/authStore";
+import { diagnosisDiscardEnabled } from "@/lib/clinicalFeatures";
+import { getInferenceRevision } from "@/features/diagnosis/api/diagnosisDiscardService";
 
 function withMinDuration<T>(promise: Promise<T>, ms = 400): Promise<T> {
   const delay = new Promise<void>((r) => setTimeout(r, ms));
@@ -64,6 +67,48 @@ export function useReports() {
   const [formValidity, setFormValidity] = useState<Record<number, boolean>>({});
   const formRefs = useRef<Record<number, ReportFormHandle | null>>({});
   const backupSelectedTipos = useRef<TipoInforme[]>([]);
+  const mounted = useRef(true);
+  const savingRequest = useRef<object | null>(null);
+  const revisionRequest = useRef(0);
+  const revisionSnapshot = useRef<{ patientId: number; visitId: number; revision: number } | null>(null);
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [revisionNotice, setRevisionNotice] = useState<string | null>(null);
+  const invalidateRevision = () => {
+    revisionRequest.current++;
+    revisionSnapshot.current = null;
+    setRevisionLoading(false);
+    setRevisionNotice(null);
+  };
+  const captureRevision = async (patientId: number, visitId: number) => {
+    if (!diagnosisDiscardEnabled()) return;
+    const request = ++revisionRequest.current;
+    const session = useAuthStore.getState();
+    setRevisionLoading(true);
+    const current = () => mounted.current && request === revisionRequest.current &&
+      session.token === useAuthStore.getState().token && session.user === useAuthStore.getState().user;
+    try {
+      const revision = await getInferenceRevision(visitId, patientId);
+      if (current()) revisionSnapshot.current = { patientId, visitId, revision };
+    } catch {
+      if (current()) setRevisionNotice("No se pudo verificar la revisión de la visita. Vuelva a seleccionar la visita y revise la información antes de guardar.");
+    } finally {
+      if (current()) setRevisionLoading(false);
+    }
+  };
+  useEffect(() => {
+    mounted.current = true;
+    const unsubscribe = useAuthStore.subscribe((session, previous) => {
+      if (session.token !== previous.token || session.user !== previous.user || session.isAuthenticated !== previous.isAuthenticated) {
+        revisionRequest.current++;
+        revisionSnapshot.current = null;
+        if (mounted.current && diagnosisDiscardEnabled()) {
+          setRevisionLoading(false);
+          setRevisionNotice("La sesión cambió. Vuelva a seleccionar la visita y revise el contexto del informe.");
+        }
+      }
+    });
+    return () => { mounted.current = false; revisionRequest.current++; unsubscribe(); };
+  }, []);
 
   // Load tipos on mount
   useEffect(() => {
@@ -100,6 +145,7 @@ export function useReports() {
     setHasSearched(false);
     setIsSearching(false);
     if (selectedPatient) {
+      invalidateRevision();
       patientContext.current++;
       existingContext.current++;
       setSelectedPatient(null);
@@ -142,6 +188,7 @@ export function useReports() {
   };
 
   const selectPatient = (p: PatientSearchResult) => {
+    invalidateRevision();
     searchRequest.current++;
     patientContext.current++;
     existingContext.current++;
@@ -179,11 +226,13 @@ export function useReports() {
   }, []);
 
   const selectVisita = (v: DiagnosticoVisita | null) => {
+    invalidateRevision();
     existingContext.current++;
     setIsLoadingInformesExistentes(false);
     setSelectedVisita(v);
     setInformesExistentes([]);
     setActiveTipoIndex(0);
+    if (v && selectedPatient) void captureRevision(selectedPatient.id, v.visita_id);
     if (v === null && backupSelectedTipos.current.length > 0) {
       setSelectedTipos(backupSelectedTipos.current);
       backupSelectedTipos.current = [];
@@ -348,7 +397,14 @@ export function useReports() {
   };
 
   const saveAll = async () => {
-    if (!selectedPatient || selectedTipos.length === 0) return;
+    if (!selectedPatient || selectedTipos.length === 0 || savingRequest.current) return;
+    const revisionMode = diagnosisDiscardEnabled();
+    const snapshot = revisionSnapshot.current;
+    if (revisionMode && selectedVisita && (!snapshot || snapshot.patientId !== selectedPatient.id ||
+        snapshot.visitId !== selectedVisita.visita_id || revisionLoading || revisionNotice)) {
+      setRevisionNotice("Debe revisar la visita con una revisión disponible antes de guardar. Vuelva a seleccionarla; no se envió el informe.");
+      return;
+    }
 
     // Phase 1: validate all forms before saving any
     const invalidIndex = selectedTipos.findIndex(
@@ -365,12 +421,21 @@ export function useReports() {
     }
 
     // Phase 2: save all (all valid at this point)
+    const operation = {};
+    const patientVersion = patientContext.current;
+    const revisionVersion = revisionRequest.current;
+    const session = useAuthStore.getState();
+    const isCurrent = () => mounted.current && savingRequest.current === operation &&
+      patientVersion === patientContext.current && revisionVersion === revisionRequest.current &&
+      session.token === useAuthStore.getState().token && session.user === useAuthStore.getState().user;
+    savingRequest.current = operation;
     setIsSaving(true);
     let hasError = false;
     let savedCount = 0;
     let nuevaVisitaId: number | null = null;
 
     for (const tipo of selectedTipos) {
+      if (!isCurrent()) break;
       const handle = formRefs.current[tipo.id];
       try {
         const payload: Record<string, any> = {
@@ -380,16 +445,26 @@ export function useReports() {
         };
         if (selectedVisita) {
           payload.visita_id = selectedVisita.visita_id;
+          if (revisionMode) payload.revision_inferencia_esperada = snapshot!.revision;
         } else if (nuevaVisitaId !== null) {
           payload.visita_id = nuevaVisitaId;
+          // Visita creada por el primer informe del lote: revisión inicial 0.
+          // Ese informe ya impide cualquier descarte concurrente en la visita.
+          if (revisionMode) payload.revision_inferencia_esperada = 0;
         }
         const res = await api.post("/informes", payload);
+        if (!isCurrent()) break;
         if (!selectedVisita && nuevaVisitaId === null) {
           nuevaVisitaId = res.data.data?.visita_id ?? res.data.data?.diagnostico_id ?? null;
         }
         savedCount++;
       } catch (err: any) {
+        if (!isCurrent()) break;
         hasError = true;
+        if (revisionMode && err.response?.status === 409 && ["CONTEXTO_INFORME_OBSOLETO", "REVISION_INFORME_REQUERIDA"].includes(err.response?.data?.code)) {
+          revisionSnapshot.current = null;
+          setRevisionNotice("La evaluación cambió desde que abrió el formulario. Revise la información y vuelva a seleccionar la visita. No se actualizó la revisión ni se reintentó el guardado.");
+        }
         const msg =
           err.response?.data?.message || `Error al guardar ${tipo.nombre}.`;
         toast({ title: "Error", description: msg, variant: "destructive" });
@@ -397,9 +472,13 @@ export function useReports() {
       }
     }
 
-    setIsSaving(false);
+    const finishedCurrent = isCurrent();
+    if (savingRequest.current === operation) {
+      savingRequest.current = null;
+      if (mounted.current) setIsSaving(false);
+    }
 
-    if (!hasError) {
+    if (!hasError && finishedCurrent) {
       toast({
         title: "Informes guardados",
         description: `${savedCount} informe(s) registrado(s) correctamente.`,
@@ -409,6 +488,7 @@ export function useReports() {
   };
 
   const clearPatient = () => {
+    invalidateRevision();
     searchRequest.current++;
     patientContext.current++;
     existingContext.current++;
@@ -432,6 +512,7 @@ export function useReports() {
   };
 
   const resetAll = () => {
+    invalidateRevision();
     searchRequest.current++;
     patientContext.current++;
     existingContext.current++;
@@ -459,6 +540,11 @@ export function useReports() {
   };
 
   return {
+    revisionLoading,
+    revisionNotice,
+    revisionBlocked: diagnosisDiscardEnabled() && !!selectedVisita &&
+      (revisionLoading || !!revisionNotice || !revisionSnapshot.current ||
+       revisionSnapshot.current.patientId !== selectedPatient?.id || revisionSnapshot.current.visitId !== selectedVisita.visita_id),
     step,
     tipos,
     selectedTipos,

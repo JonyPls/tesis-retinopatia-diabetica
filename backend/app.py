@@ -10,6 +10,7 @@ from routes.files_routes import files_bp
 from routes.informe_routes import informe_bp
 from routes.configuration_routes import configuration_bp
 from routes.dashboard_routes import dashboard_bp
+from routes.diagnosis_discard_routes import diagnosis_discard_bp
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -25,6 +26,12 @@ frontend_origins = [
 CORS(app, resources={r"/*": {"origins": frontend_origins}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes', 'on')
+# Opt-in estricto: no leer .env para activar borrados. El despliegue autorizado
+# deberá configurar las tres compuertas después de instalar/verificar esquema
+# e integrar el contrato de revisión de Informes (Prompt 73).
+app.config['DIAGNOSIS_DISCARD_ENABLED'] = False
+app.config['DIAGNOSIS_DISCARD_SCHEMA_VERIFIED'] = False
+app.config['DIAGNOSIS_DISCARD_REPORT_CONTRACT_READY'] = False
 private_dir = os.getenv('RETINOGRAPH_PRIVATE_DIR')
 if private_dir:
     app.config['RETINOGRAPH_PRIVATE_DIR'] = private_dir
@@ -42,6 +49,7 @@ app.register_blueprint(files_bp)
 app.register_blueprint(informe_bp)
 app.register_blueprint(configuration_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(diagnosis_discard_bp)
 
 # --- RUTAS BASE ---
 

@@ -70,6 +70,10 @@ OPERATION_RULES = MappingProxyType({
         "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear", "imagenes.ver", "visitas.crear",
     ),
     "diagnosis.validate": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.validar"),
+    "diagnosis.discard_pending": _rule(
+        "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.descartar_pendiente",
+        "pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver", "imagenes.ver",
+    ),
     "images.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO), "imagenes.ver"),
     "retinograph.select": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
     "retinograph.download": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
@@ -83,6 +87,9 @@ OPERATION_RULES = MappingProxyType({
     "reports.full_read": _rule("specialist", (OFTALMOLOGO,), "informes.ver"),
     "reports.catalog_read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "informes.ver"),
     "reports.create": _rule("specialist", (OFTALMOLOGO,), "informes.crear"),
+    "reports.inference_context": _rule(
+        "specialist", (OFTALMOLOGO,), "informes.crear", "pacientes.ver", "visitas.ver",
+    ),
     "reports.create_with_visit": _rule(
         "specialist", (OFTALMOLOGO,), "informes.crear", "visitas.crear",
     ),

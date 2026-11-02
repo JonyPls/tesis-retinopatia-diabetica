@@ -1,10 +1,12 @@
 import json
 import math
-from flask import current_app
+from flask import current_app, has_app_context
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from database import db
 from src.repositories.informe_repository import InformeRepository
 from utils.clinical_dates import clinical_instant
+from utils.diagnosis_discard_gate import DiscardError, enabled as discard_enabled, require_ready
+from src.repositories.diagnosis_discard_repository import DiagnosisDiscardRepository
 
 
 def _extraer_conclusion(datos_estructurados):
@@ -27,12 +29,13 @@ def obtener_tipos():
     return {"success": True, "data": tipos}, 200
 
 
-_FIELDS = {'paciente_id', 'tipo_informe_id', 'datos_estructurados', 'visita_id', 'diagnostico_id'}
+_FIELDS = {'paciente_id', 'tipo_informe_id', 'datos_estructurados', 'visita_id', 'diagnostico_id',
+           'revision_inferencia_esperada'}
 _RESERVED = {'id', 'usuario_id', 'user_id', 'creador', 'estado', 'fecha_creado', 'fecha_actualizado',
              'paciente_id', 'tipo_informe_id', 'visita_id', 'diagnostico_id', 'schema_version',
               'revision_actual', 'numero_version', 'editor_id', 'autor_operacion_id', 'fecha_operacion',
               'fecha_visita_origen', 'fecha_creado_origen', 'fecha_actualizado_origen',
-              'fecha_operacion_origen', 'fecha_validacion_origen'}
+               'fecha_operacion_origen', 'fecha_validacion_origen'}
 
 
 class InvalidReportData(Exception):
@@ -47,6 +50,11 @@ def _validar_datos_estructurados(value):
     """Contrato estructural, sin decidir rangos ni diagnósticos clínicos."""
     if type(value) is not dict or not value:
         raise InvalidReportData()
+    # Con descarte apagado conservar exactamente las claves del contrato previo.
+    # La revisión técnica pertenece al envelope solo cuando opera esa capacidad.
+    reserved = _RESERVED
+    if has_app_context() and discard_enabled():
+        reserved = reserved | {'revision_inferencia_esperada'}
 
     def visit(node, depth):
         if depth > 8:
@@ -56,7 +64,7 @@ def _validar_datos_estructurados(value):
                 raise InvalidReportData()
             for key, item in node.items():
                 if (type(key) is not str or not key or len(key) > 100 or
-                        key.lower() in _RESERVED):
+                        key.lower() in reserved):
                     raise InvalidReportData()
                 visit(item, depth + 1)
         elif type(node) is list:
@@ -137,6 +145,12 @@ def crear_nuevo_informe(datos, usuario_id):
 
     commit_started = False
     try:
+        if discard_enabled():
+            require_ready()
+            # Liberar snapshot de autenticación antes de la lectura bloqueante.
+            db.session.rollback()
+            if visita_id:
+                DiagnosisDiscardRepository.check_report(visita_id, datos.get('revision_inferencia_esperada'))
         InformeRepository.validar_paciente(paciente_id)
         tipo = InformeRepository.obtener_tipo_informe_por_id(tipo_id)
         if not tipo:
@@ -157,6 +171,9 @@ def crear_nuevo_informe(datos, usuario_id):
         InformeRepository.crear_version_inicial(informe_id, usuario_id)
         commit_started = True
         db.session.commit()
+    except DiscardError as error:
+        _rollback_informe()
+        return {"success": False, "code": error.code, "message": "El contexto de visita cambió o no está disponible."}, error.status
     except InformeRepository.NotFound:
         _rollback_informe()
         return {"success": False, "message": "Recurso no encontrado."}, 404

@@ -31,6 +31,7 @@ export interface ManualImageReview {
 }
 
 export interface DiagnosisHook {
+  correction: ReturnType<typeof import("./hooks/useDiagnosisCorrection").useDiagnosisCorrection>;
   // Navegación
   step: number;
   goNext: () => void;

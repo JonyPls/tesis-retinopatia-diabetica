@@ -50,6 +50,59 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("presentación y acciones del Paso 3", () => {
+  const configureCorrection = (canOpen: boolean) => {
+    state.correction = { canOpen, context: null, review: null, loading: false, pending: false, notice: null,
+      otherPending: 0, recoveries: [], blocked: vi.fn(() => false), open: vi.fn(), refresh: vi.fn(), close: vi.fn(),
+      confirm: vi.fn(), reconcile: vi.fn() };
+  };
+  it("sin disponibilidad de backend no ofrece la acción destructiva", () => {
+    configureCorrection(false);
+    render(<Diagnosis />);
+    expect(screen.queryByRole("button", { name: "Corregir fotografías" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Guardar diagnóstico" })).toBeInTheDocument();
+    expect(state.correction.open).not.toHaveBeenCalled();
+  });
+  it("ofrece una consulta real para un marcador de otra evaluación sin navegar ni guardar", () => {
+    configureCorrection(false);
+    const consult = vi.fn(async () => {});
+    state.correction.recoveries = [{ operationId: "technical-only", loading: false,
+      notice: "Existe una corrección pendiente de verificar en esta pestaña.", consult }];
+    render(<Diagnosis />);
+    fireEvent.click(screen.getByRole("button", { name: "Consultar corrección pendiente" }));
+    expect(consult).toHaveBeenCalledTimes(1);
+    expect(state.goBack).not.toHaveBeenCalled(); expect(state.validateAll).not.toHaveBeenCalled();
+  });
+  it("deshabilita la consulta de recuperación mientras está en curso", () => {
+    configureCorrection(false);
+    state.correction.recoveries = [{ operationId: "technical-only", loading: true,
+      notice: "Verificando corrección.", consult: vi.fn(async () => {}) }];
+    render(<Diagnosis />);
+    expect(screen.getByRole("button", { name: "Consultar corrección pendiente" })).toBeDisabled();
+  });
+  it("ofrece corrección contextual sin recuperar Anterior ni ejecutar la inferencia", () => {
+    configureCorrection(true);
+    render(<Diagnosis />);
+    fireEvent.click(screen.getByRole("button", { name: "Corregir fotografías" }));
+    expect(state.correction.open).toHaveBeenCalledTimes(1);
+    expect(state.goBack).not.toHaveBeenCalled();
+    expect(state.goNext).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Anterior" })).not.toBeInTheDocument();
+  });
+  it("conecta selección y aceptación al contrato de corrección sin guardar diagnóstico", () => {
+    configureCorrection(true);
+    state.correction.review = { visita_id: 30, paciente_id: 7, diagnostico_retinopatia_id: 9,
+      estado_visita: "ACTIVA", estado_diagnostico: "PROCESADO", revision: 0, detalles: [
+        { detalle_id: 11, ojo: "OD", estado_validacion: "APROBADO", elegible: false, bloqueo: "RESULTADO_VALIDADO" },
+        { detalle_id: 12, ojo: "OI", estado_validacion: "PENDIENTE", elegible: true, bloqueo: null },
+      ] };
+    render(<Diagnosis />);
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription("Paciente Sintético de Prueba · DNI 12345678");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Descartar OI" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Confirmo que deseo/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Descartar resultados" }));
+    expect(state.correction.confirm).toHaveBeenCalledExactlyOnceWith(state.correction.review, [12], true);
+    expect(state.validateAll).not.toHaveBeenCalled();
+  });
   it("conserva la identificación del paciente sin progreso ni identificador de visita", () => {
     render(<Diagnosis />);
     expect(screen.getByRole("heading", { name: "Resultados de la evaluación" })).toBeInTheDocument();

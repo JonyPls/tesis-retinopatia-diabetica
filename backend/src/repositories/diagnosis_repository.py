@@ -38,8 +38,10 @@ class DiagnosisRepository:
 
     @staticmethod
     def crear_diagnostico_y_detalle(datos_bd, visita_id=None,
-                                   *, require_existing_diagnosis=False):
+                                   *, require_existing_diagnosis=False, inference_revision=None):
+        from src.repositories.diagnosis_discard_repository import DiagnosisDiscardRepository
         if visita_id is None:
+            DiagnosisDiscardRepository.check_inference(None, inference_revision)
             visita = VisitaClinica(
                 paciente_id=datos_bd['paciente_id'],
                 usuario_id=datos_bd['usuario_id'],
@@ -58,6 +60,8 @@ class DiagnosisRepository:
                 raise DiagnosisValidationError(409, "La visita no corresponde al paciente.")
             if visita.estado != 'ACTIVA':
                 raise DiagnosisValidationError(409, "La visita no está disponible para diagnóstico.")
+
+            DiagnosisDiscardRepository.check_inference(visita_id, inference_revision)
 
         diag = Diagnostico.query.filter_by(visita_id=visita_id).with_for_update().populate_existing().first()
         if require_existing_diagnosis and diag is None:

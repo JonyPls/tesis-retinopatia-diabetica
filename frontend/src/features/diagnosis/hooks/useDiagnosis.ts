@@ -28,6 +28,10 @@ import {
 import type { RetinographAutoImage } from "@/features/diagnosis/api/diagnosisService";
 import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
 import { EyeKey, EyeState, EyeProcessingStatus, DiagnosisHook, AutoPreview, ManualImageReview } from "../types";
+import { useDiagnosisCorrection } from "./useDiagnosisCorrection";
+import { getDiscardContext } from "../api/diagnosisDiscardService";
+import { useDiagnosisDiscardStore } from "../store/diagnosisDiscardStore";
+import { diagnosisDiscardEnabled } from "@/lib/clinicalFeatures";
 
 type BoundConfirmation = { token: string; patientId: number; eye: EyeKey; filename: string; file: File };
 const eyeName = (eye: EyeKey) => eye === "OD" ? "Derecho" : "Izquierdo";
@@ -152,6 +156,7 @@ export function useDiagnosis(): DiagnosisHook {
   const mountedRef = useRef(false);
   const confirmedVisitRef = useRef<number | null>(null);
   const resultsRef = useRef<Partial<Record<EyeKey, DiagnosisResult>>>({});
+  const discardedIdsRef = useRef(new Set<number>());
   const [manualReview, setManualReview] = useState<ManualImageReview | null>(null);
   const manualReviewRef = useRef<{ review: ManualImageReview; isCurrent: () => boolean } | null>(null);
   const cancelManualReview = () => {
@@ -160,6 +165,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const keepResults = (next: Partial<Record<EyeKey, DiagnosisResult>>) => {
+    next = Object.fromEntries(Object.entries(next).filter(([, result]) => result && !discardedIdsRef.current.has(result.detalle_id)));
     const previous = resultsRef.current;
     resultsRef.current = { ...resultsRef.current, ...next };
     setResults({ ...resultsRef.current });
@@ -197,7 +203,7 @@ export function useDiagnosis(): DiagnosisHook {
       if (version !== contextVersion.current) return null;
       const persisted: Partial<Record<EyeKey, DiagnosisResult>> = {};
       details.forEach((detail) => {
-        if (detail.ojo === "OD" || detail.ojo === "OI") {
+        if ((detail.ojo === "OD" || detail.ojo === "OI") && !discardedIdsRef.current.has(detail.detalle_id)) {
           persisted[detail.ojo] = resultadoPersistido(visitId, detail);
         }
       });
@@ -214,7 +220,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const reconcileResults = async () => {
-    if (validationRequestRef.current) return;
+    if (validationRequestRef.current || correction.blocked()) return;
     const visitId = confirmedVisitRef.current;
     if (!visitId) {
       setProcessingNotice("No se recibió un identificador de visita. Consulte el historial antes de volver a procesar.");
@@ -232,6 +238,7 @@ export function useDiagnosis(): DiagnosisHook {
       confirmingRef.current.OI !== undefined || revokingRef.current.OD || revokingRef.current.OI;
     const discarded = !!confirmationsRef.current.OD || !!confirmationsRef.current.OI;
     contextVersion.current++;
+    discardedIdsRef.current.clear();
     cancelManualReview();
     validationRequestRef.current = null;
     setIsValidating(false);
@@ -278,6 +285,80 @@ export function useDiagnosis(): DiagnosisHook {
   const [isValidating, setIsValidating] = useState(false);
   const [validatedEyes, setValidatedEyes] = useState<Partial<Record<EyeKey, "APROBADO" | "CORREGIDO">>>({});
   const [validationConflict, setValidationConflict] = useState(false);
+
+  const correction = useDiagnosisCorrection({
+    step, patientId: selectedPatient?.id ?? null, visitId: confirmedVisitId ?? selectedVisita?.visita_id ?? null,
+    results, version: () => contextVersion.current,
+    busy: () => savingRef.current || !!validationRequestRef.current || hasPendingAssociation() ||
+      autoSelectingRef.current || autoPreviewLoading || Object.values(eyeProcessing).some((s) => s === "incierto" || s === "procesando"),
+    recover: async (context, operation, current) => {
+      // Solo una selección limpia: no sustituir resultados ni borradores que
+      // continúen en memoria. Tras recarga/reselección se consulta el servidor.
+      const empty = () => !Object.keys(resultsRef.current).length && !Object.values(eyesRef.current).some((e) => e.file) &&
+        !autoPreviewRef.current && !savingRef.current && !validationRequestRef.current;
+      if (!current() || !empty() || context.visita_id !== confirmedVisitRef.current || context.paciente_id !== selectedPatient?.id) return false;
+      const details = context.detalles.length ? await obtenerDetallesVisita(context.visita_id) : [];
+      if (!Array.isArray(details) || details.length !== context.detalles.length || details.some((d) =>
+          !context.detalles.some((expected) => expected.ojo === d.ojo && expected.detalle_id === d.detalle_id &&
+            expected.estado_validacion === d.estado_validacion)) ||
+          new Set(details.map((d) => d.detalle_id)).size !== details.length) return false;
+      if (!current() || !empty()) return false;
+      const fresh = await getDiscardContext(context.visita_id, operation.operacion_id);
+      const identity = (c: typeof context) => JSON.stringify([c.visita_id, c.paciente_id, c.revision,
+        c.estado_visita, c.diagnostico_retinopatia_id, c.estado_diagnostico,
+        c.detalles.map((d) => [d.detalle_id, d.ojo, d.estado_validacion]).sort()]);
+      if (!current() || !empty() || identity(fresh) !== identity(context)) return false;
+      const persisted: Partial<Record<EyeKey, DiagnosisResult>> = {};
+      details.forEach((d) => { persisted[d.ojo] = resultadoPersistido(context.visita_id, d); });
+      contextVersion.current++;
+      cancelManualReview();
+      operation.resultado.detalle_ids_descartados.forEach((id) => discardedIdsRef.current.add(id));
+      keepResults(persisted); // Solo datos persistidos actuales; nunca del marcador.
+      setComments({ OD: details.find((d) => d.ojo === "OD")?.comentario_medico ?? "",
+        OI: details.find((d) => d.ojo === "OI")?.comentario_medico ?? "" });
+      setCorrectionReasons({ OD: details.find((d) => d.ojo === "OD")?.motivo_correccion ?? "",
+        OI: details.find((d) => d.ojo === "OI")?.motivo_correccion ?? "" });
+      setProcessingNotice("Corrección conciliada con el estado actual del servidor. Se conserva la misma visita; no se recuperaron archivos ni borradores locales. Cargue fotografías solo en los ojos disponibles.");
+      setStep(2);
+      return true;
+    },
+    apply: (entry, operation) => {
+      if (entry.visitId !== confirmedVisitRef.current || entry.request.paciente_id !== selectedPatient?.id ||
+          entry.targets.some(({ eye, detailId }) => resultsRef.current[eye]?.detalle_id !== detailId)) return false;
+      const ids = entry.request.detalle_ids;
+      const remaining = Object.values(resultsRef.current).filter((r) => r && !ids.includes(r.detalle_id));
+      if (remaining.length !== operation.resultado.detalle_ids_restantes.length ||
+          remaining.some((r) => !operation.resultado.detalle_ids_restantes.includes(r!.detalle_id)) ||
+          (!!remaining.length && operation.resultado.diagnostico_retinopatia_id === null)) return false;
+      contextVersion.current++;
+      cancelManualReview();
+      const next = { ...resultsRef.current };
+      const nextEyes = { ...eyesRef.current };
+      for (const { eye, detailId } of entry.targets) {
+        discardedIdsRef.current.add(detailId);
+        delete next[eye];
+        eyeGeneration.current[eye]++;
+        statusRequest.current[eye]++;
+        delete confirmationsRef.current[eye];
+        revokePreviewUrl(nextEyes[eye].preview);
+        nextEyes[eye] = { ...EMPTY_EYE };
+        setFinalSelectionState((prev) => ({ ...prev, [eye]: 0 }));
+        setComments((prev) => ({ ...prev, [eye]: "" }));
+        setCorrectionReasons((prev) => ({ ...prev, [eye]: "" }));
+        setValidatedEyes((prev) => { const copy = { ...prev }; delete copy[eye]; return copy; });
+        setEyeProcessing((prev) => ({ ...prev, [eye]: "sin_procesar" }));
+        setEyeError(eye);
+      }
+      resultsRef.current = next;
+      setResults(next);
+      eyesRef.current = nextEyes;
+      setEyes(nextEyes);
+      setActiveEye(entry.targets[0].eye);
+      setProcessingNotice("Resultados seleccionados descartados. Cargue las fotografías correctas; se conserva la misma visita.");
+      setStep(2);
+      return true;
+    },
+  });
 
   const validationFailure = (error: unknown, eye: EyeKey) => {
     const status = (error as { response?: { status?: number; data?: { message?: string } } })?.response?.status;
@@ -395,6 +476,10 @@ export function useDiagnosis(): DiagnosisHook {
       const recent = (data || [])
         .filter((visit) => {
           if (visit.estado === "ANULADA") return false;
+          // La recuperación permite RESELECCIONAR su visita real, incluso si
+          // conserva otro ojo o dejó de pertenecer a la ventana de recientes.
+          if (diagnosisDiscardEnabled() && useDiagnosisDiscardStore.getState().markers.some((m) =>
+              m.actorId === useAuthStore.getState().user?.id && m.visitId === visit.visita_id)) return true;
           if (Number(visit.tiene_diagnostico_ia) === 1) return false;
           const visitTime = visit.fecha_visita_origen === "UTC_VERIFICADO"
             ? clinicalInstant(visit.fecha_visita, visit.fecha_visita_origen)?.getTime() ?? null
@@ -649,7 +734,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const handleFile = async (eye: EyeKey, file?: File) => {
-    if (!file || savingRef.current || validationRequestRef.current || confirmingRef.current[eye] !== undefined || revokingRef.current[eye]) return;
+    if (!file || correction.blocked() || savingRef.current || validationRequestRef.current || confirmingRef.current[eye] !== undefined || revokingRef.current[eye]) return;
     if (preventRegisteredImageChange(eye)) return;
     if (eyesRef.current[eye].isExistingImage && !await removeConfirmed(eye)) return;
     if (!eyesRef.current[eye].isExistingImage && !discardEye(eye)) return;
@@ -682,12 +767,12 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const clearEye = async (eye: EyeKey) => {
-    if (savingRef.current || validationRequestRef.current || confirmingRef.current[eye] !== undefined || revokingRef.current[eye]) return;
+    if (correction.blocked() || savingRef.current || validationRequestRef.current || confirmingRef.current[eye] !== undefined || revokingRef.current[eye]) return;
     await removeConfirmed(eye);
   };
 
   const autoSelectRetinographImages = async () => {
-    if (autoSelectingRef.current || savingRef.current ||
+    if (correction.blocked() || autoSelectingRef.current || savingRef.current ||
         hasPendingAssociation()) return;
     if (!selectedPatient) {
       toast({
@@ -759,6 +844,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const selectAutoCandidate = async (image: RetinographAutoImage) => {
+    if (correction.blocked()) return;
     if (!selectedPatient || !autoCandidates.includes(image) ||
         hasPendingAssociation()) return;
     if (preventRegisteredImageChange(image.ojo)) return;
@@ -810,7 +896,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const confirmEye = async (eye: EyeKey) => {
-    if (savingRef.current || validationRequestRef.current || preventRegisteredImageChange(eye)) return;
+    if (correction.blocked() || savingRef.current || validationRequestRef.current || preventRegisteredImageChange(eye)) return;
     const patientId = selectedPatient?.id;
     const chosen = autoPreviewRef.current;
     if (!patientId || !chosen || !chosen.preview || !autoModalOpen ||
@@ -934,6 +1020,7 @@ export function useDiagnosis(): DiagnosisHook {
   });
 
   const handleSave = async (reviewed?: ManualImageReview) => {
+    if (correction.blocked()) return;
     if (!mountedRef.current) return;
     if (reviewed && (manualReviewRef.current?.review !== reviewed ||
         !manualReviewRef.current.isCurrent())) {
@@ -1134,7 +1221,7 @@ export function useDiagnosis(): DiagnosisHook {
 
   // ── Validación ────────────────────────────────────────────────────
   const setFinalSelection = (eye: EyeKey, value: number) => {
-    if (validationRequestRef.current) return;
+    if (validationRequestRef.current || correction.blocked()) return;
     setFinalSelectionState((prev) => ({ ...prev, [eye]: value }));
     const currentIa = results[eye]?.diagnostico_codigo;
     if (currentIa !== undefined && Number(value) === Number(currentIa)) {
@@ -1143,12 +1230,12 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const setComment = (eye: EyeKey, text: string) => {
-    if (validationRequestRef.current) return;
+    if (validationRequestRef.current || correction.blocked()) return;
     setComments((prev) => ({ ...prev, [eye]: text }));
   };
 
   const setCorrectionReason = (eye: EyeKey, text: string) => {
-    if (validationRequestRef.current) return;
+    if (validationRequestRef.current || correction.blocked()) return;
     setCorrectionReasons((prev) => ({ ...prev, [eye]: text }));
   };
 
@@ -1174,7 +1261,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const beginValidation = (targets: Partial<Record<EyeKey, DiagnosisResult>>) => {
-    if (!mountedRef.current || validationRequestRef.current) return null;
+    if (!mountedRef.current || validationRequestRef.current || correction.blocked()) return null;
     const request = {};
     const version = contextVersion.current; // Cambia al sustituir paciente/visita o desmontar.
     const visitId = confirmedVisitRef.current;
@@ -1315,9 +1402,9 @@ export function useDiagnosis(): DiagnosisHook {
 
   // ── Navegación ────────────────────────────────────────────────────
   const isNavigationBusy = isSaving || isValidating || isAutoSelectingImages ||
-    autoPreviewLoading || busyEyes.OD || busyEyes.OI;
+    autoPreviewLoading || busyEyes.OD || busyEyes.OI || correction.blocked();
   const navigationBlocked = () => savingRef.current || !!validationRequestRef.current ||
-    hasPendingAssociation() || autoSelectingRef.current || isNavigationBusy;
+    hasPendingAssociation() || autoSelectingRef.current || correction.blocked() || isNavigationBusy;
 
   const canNext =
     (step === 1 && selectedPatient !== null && selectedVisita !== undefined) ||
@@ -1380,6 +1467,7 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   return {
+    correction,
     step,
     goNext,
     goBack,

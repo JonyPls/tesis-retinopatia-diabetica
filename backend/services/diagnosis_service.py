@@ -15,6 +15,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from utils.diagnosis_storage import DiagnosisFiles
 from services import retinograph_confirmation_service as confirmations
+from src.repositories.diagnosis_discard_repository import DiagnosisDiscardRepository
+from utils.diagnosis_discard_gate import DiscardError
 
 RD_LABELS = {
     0: "Normal",
@@ -44,6 +46,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             paciente_id, ojo_evaluado, visita_id,
             require_existing_diagnosis=require_existing_diagnosis,
         )
+        inference_revision = DiagnosisDiscardRepository.capture_inference(visita_id)
         if confirmacion_token is not None:
             confirmed = confirmations.load_for_inference(
                 confirmacion_token, paciente_id, ojo_evaluado, usuario_id)
@@ -134,6 +137,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
                 confirmacion_token, paciente_id, ojo_evaluado, usuario_id, confirmed)
         visita_id, diagnostico_retinopatia_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(
             datos_bd, visita_id, require_existing_diagnosis=require_existing_diagnosis,
+            inference_revision=inference_revision,
         )
         if confirmed is not None:
             confirmations.consume_with_detail(
@@ -159,6 +163,10 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
         return {"success": True, "data": resultado_ia}, 200
 
+    except DiscardError as error:
+        _undo_creation(files, commit_attempted, detalle_id)
+        return {"success": False, "code": error.code,
+                "message": "Contexto de inferencia no disponible o modificado."}, error.status
     except (DiagnosisValidationError, confirmations.ConfirmationUseError) as error:
         _undo_creation(files, commit_attempted, detalle_id)
         return {"success": False, "message": str(error)}, error.status_code

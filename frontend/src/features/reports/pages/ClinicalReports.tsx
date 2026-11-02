@@ -152,6 +152,8 @@ export default function ClinicalReports() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left: form */}
           <div className="lg:col-span-2 space-y-4">
+            {hook.revisionLoading && <p role="status" className="text-sm text-muted-foreground">Verificando el contexto de la visita...</p>}
+            {hook.revisionNotice && <p role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">{hook.revisionNotice}</p>}
             {/* Editing forms — only rendered when not viewing existing (avoids space-y margin) */}
             {viewingExistingId === null && hook.selectedTipos.length > 0 && (
               <div>
@@ -411,7 +413,7 @@ export default function ClinicalReports() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    disabled={hook.isSaving || !hook.allValid}
+                    disabled={hook.isSaving || !hook.allValid || hook.revisionBlocked}
                     className="w-full bg-gradient-primary hover:opacity-90"
                   >
                     {hook.isSaving ? (

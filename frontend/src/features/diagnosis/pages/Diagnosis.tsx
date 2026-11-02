@@ -35,6 +35,8 @@ import { ImageUploader } from "../components/ImageUploader";
 import { AutoSelectionModal } from "../components/AutoSelectionModal";
 import { ManualImageConfirmation } from "../components/ManualImageConfirmation";
 import { useDiagnosis } from "../hooks/useDiagnosis";
+import { CorrectPhotographsModal } from "../components/CorrectPhotographsModal";
+import { formatClinicalInstant } from "@/lib/clinicalDates";
 
 const STEP_COPY = {
   1: {
@@ -185,6 +187,22 @@ export default function Diagnosis() {
           )}
 
           <CardContent className="p-5 lg:p-6">
+            {diagnosisHook.correction?.recoveries?.map((recovery) => <div key={recovery.operationId} role="status"
+              className="mb-4 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
+              <p>{recovery.notice}</p>
+              <Button type="button" variant="outline" className="mt-2" disabled={recovery.loading}
+                onClick={recovery.consult}>Consultar corrección pendiente</Button>
+            </div>)}
+            {!!diagnosisHook.correction?.otherPending && <p role="status" className="mb-4 text-sm text-muted-foreground">
+              Hay correcciones de otra evaluación pendientes de conciliación. Su identidad se conserva en esta sesión; no se modificó el contexto actual.
+            </p>}
+            {diagnosisHook.correction?.notice && <div role="alert" className="mb-4 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
+              <p>{diagnosisHook.correction.notice}</p>
+              <Button type="button" variant="outline" className="mt-2" disabled={diagnosisHook.correction.loading}
+                onClick={diagnosisHook.correction.pending ? diagnosisHook.correction.reconcile : diagnosisHook.correction.refresh}>
+                {diagnosisHook.correction.pending ? "Consultar operación de corrección" : "Actualizar disponibilidad de corrección"}
+              </Button>
+            </div>}
             {step === 1 && (
               <DiagnosisPatientStep
                 query={diagnosisHook.query}
@@ -222,7 +240,7 @@ export default function Diagnosis() {
                 clearEye={diagnosisHook.clearEye}
                 onAutoSelect={diagnosisHook.autoSelectRetinographImages}
                 isAutoSelecting={diagnosisHook.isAutoSelectingImages}
-                isSaving={isSaving}
+                isSaving={isSaving || !!diagnosisHook.correction?.blocked()}
                 />
                {diagnosisHook.manualReview && <ManualImageConfirmation
                  review={diagnosisHook.manualReview}
@@ -274,6 +292,17 @@ export default function Diagnosis() {
                   </div>
                 </div>
               </section>
+              {diagnosisHook.correction?.canOpen && <div className="flex justify-end">
+                <Button type="button" variant="outline" className="text-destructive" disabled={isNavigationBusy}
+                  onClick={diagnosisHook.correction.open}>Corregir fotografías</Button>
+              </div>}
+              {diagnosisHook.correction?.review && selectedPatient && <CorrectPhotographsModal
+                context={diagnosisHook.correction.review}
+                patientLabel={`${selectedPatient.nombres} ${selectedPatient.apellidos} · ${selectedPatient.tipo_doc_abrev} ${selectedPatient.nro_documento}`}
+                visitLabel={diagnosisHook.selectedVisita?.fecha_visita
+                  ? `Visita de ${formatClinicalInstant(diagnosisHook.selectedVisita.fecha_visita, diagnosisHook.selectedVisita.fecha_visita_origen)}`
+                  : "Visita actual de esta evaluación"}
+                onCancel={diagnosisHook.correction.close} onConfirm={diagnosisHook.correction.confirm} />}
               {diagnosisHook.processingNotice && <div role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
                 <p>{diagnosisHook.processingNotice}</p>
                 {diagnosisHook.confirmedVisitId && <Button type="button" variant="outline" className="mt-2" onClick={diagnosisHook.reconcileResults}>Consultar estado de la visita</Button>}
@@ -293,7 +322,7 @@ export default function Diagnosis() {
                 correctionReasons={diagnosisHook.correctionReasons}
                 setCorrectionReason={diagnosisHook.setCorrectionReason}
                 validateDiagnosis={diagnosisHook.validateDiagnosis}
-                isValidating={diagnosisHook.isValidating}
+                isValidating={diagnosisHook.isValidating || !!diagnosisHook.correction?.blocked()}
                 validatedEyes={diagnosisHook.validatedEyes}
               />
               </div>
@@ -364,7 +393,7 @@ export default function Diagnosis() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    disabled={isValidating || diagnosisHook.validationConflict || Object.keys(diagnosisHook.results).every((eye) => !!diagnosisHook.validatedEyes[eye as keyof typeof diagnosisHook.validatedEyes])}
+                    disabled={isNavigationBusy || isValidating || diagnosisHook.validationConflict || Object.keys(diagnosisHook.results).every((eye) => !!diagnosisHook.validatedEyes[eye as keyof typeof diagnosisHook.validatedEyes])}
                     className="bg-primary hover:bg-primary/90"
                   >
                     {isValidating ? (
