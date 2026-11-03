@@ -59,7 +59,8 @@ it.each(["Dashboard", "Gestión de Pacientes", "Datos del paciente", "Diagnósti
     expect(screen.getByRole("banner")).not.toHaveTextContent(title);
     expect(within(screen.getByRole("banner")).getByRole("button", { name: "Contraer menú" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("combobox", { name: "Buscar paciente o documento" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Notificaciones" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Notificaciones" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Notificaciones")).not.toBeVisible();
   });
 
 it("tiene un único control en el header, contrae y expande el sidebar de escritorio", () => {
@@ -76,7 +77,8 @@ it("tiene un único control en el header, contrae y expande el sidebar de escrit
   expect(header).toHaveClass("items-center");
   expect(trigger).toHaveClass("h-9", "w-9", "focus-visible:ring-2");
   expect(header).toContainElement(screen.getByRole("combobox"));
-  expect(header).toContainElement(screen.getByRole("button", { name: "Notificaciones" }));
+  expect(header).toContainElement(screen.getByLabelText("Notificaciones"));
+  expect(screen.getByLabelText("Notificaciones")).not.toBeVisible();
   fireEvent.click(trigger);
   expect(container).toHaveAttribute("data-state", "collapsed");
   expect(trigger).toHaveAccessibleName("Expandir menú");
@@ -90,7 +92,7 @@ it("tiene un único control en el header, contrae y expande el sidebar de escrit
   expect(trigger.querySelector("svg")).toHaveClass("lucide-panel-left-close");
 });
 
-it("muestra un header equilibrado: sidebar, búsqueda centrada y notificaciones al final", () => {
+it("mantiene sidebar y búsqueda centrada sin mostrar notificaciones", () => {
   login();
   show();
   const header = screen.getByRole("banner");
@@ -98,7 +100,8 @@ it("muestra un header equilibrado: sidebar, búsqueda centrada y notificaciones 
   const searchSlot = screen.getByRole("combobox").closest("div.flex-1");
   expect(searchSlot).toHaveClass("justify-center");
   expect(screen.getByRole("combobox").closest("div.max-w-md")).toBeInTheDocument();
-  expect(header.lastElementChild).toContainElement(screen.getByRole("button", { name: "Notificaciones" }));
+  expect(screen.getByLabelText("Notificaciones")).toHaveAttribute("hidden");
+  expect(screen.getByLabelText("Notificaciones")).toHaveClass("hidden");
   expect(screen.queryByRole("navigation", { name: "Ruta de navegación" })).not.toBeInTheDocument();
 });
 
@@ -162,10 +165,11 @@ it("en móvil conserva solo la ubicación actual sin desplazar los controles", (
   expect(within(nav).getByText("Visita")).toBeInTheDocument();
   expect(within(header).getByRole("button", { name: "Expandir menú" })).toBeInTheDocument();
   expect(within(header).getByRole("button", { name: "Abrir búsqueda de pacientes" })).toBeInTheDocument();
-  expect(within(header).getByRole("button", { name: "Notificaciones" })).toBeInTheDocument();
+  expect(within(header).queryByRole("button", { name: "Notificaciones" })).not.toBeInTheDocument();
+  expect(within(header).getByLabelText("Notificaciones")).not.toBeVisible();
 });
 
-it("mantiene búsqueda y campana operativas con el menú contraído y admite el atajo de teclado", async () => {
+it("mantiene la búsqueda y el atajo de teclado con la campana oculta y su código conservado", async () => {
   login();
   show();
   const trigger = screen.getByRole("button", { name: "Contraer menú" });
@@ -176,7 +180,9 @@ it("mantiene búsqueda y campana operativas con el menú contraído y admite el 
   const input = screen.getByRole("combobox", { name: "Buscar paciente o documento" });
   fireEvent.change(input, { target: { value: "María" } });
   expect(await screen.findByRole("option", { name: /María Pérez/ })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Notificaciones" }));
+  expect(screen.getByLabelText("Notificaciones")).not.toBeVisible();
+  // Activación sintética: conserva el popover, aunque su botón no es accesible en la UI.
+  fireEvent.click(screen.getByLabelText("Notificaciones"));
   expect(await screen.findByText("Notificaciones no disponibles por ahora.")).toBeInTheDocument();
 });
 
@@ -296,7 +302,7 @@ it.each(["Enfermero", "Asistente administrativo"])("permite búsqueda identifica
   expect(screen.queryByText(/diagnóstico|retinopatía/i)).not.toBeInTheDocument();
 });
 
-it("en móvil abre búsqueda sin sustituir la campana; notificaciones no simula alertas", async () => {
+it("en móvil abre búsqueda con la campana oculta y conserva el popover sin simular alertas", async () => {
   login();
   show();
   fireEvent.click(screen.getByRole("button", { name: "Abrir búsqueda de pacientes" }));
@@ -304,13 +310,16 @@ it("en móvil abre búsqueda sin sustituir la campana; notificaciones no simula 
   expect(screen.getByRole("button", { name: "Cerrar búsqueda de pacientes" })).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByRole("combobox")).toHaveFocus();
   fireEvent.click(screen.getByRole("button", { name: "Cerrar búsqueda de pacientes" }));
-  fireEvent.click(screen.getByRole("button", { name: "Notificaciones" }));
+  expect(screen.queryByRole("button", { name: "Notificaciones" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Notificaciones")).not.toBeVisible();
+  // Comprobar la implementación conservada no requiere mostrar el activador.
+  fireEvent.click(screen.getByLabelText("Notificaciones"));
   expect(await screen.findByText("Notificaciones no disponibles por ahora.")).toBeInTheDocument();
   expect(screen.queryByText(/No hay notificaciones/)).not.toBeInTheDocument();
   expect(screen.queryByText(/\d+ notificaciones/)).not.toBeInTheDocument();
   fireEvent.keyDown(document, { key: "Escape" });
   await waitFor(() => expect(screen.queryByText("Notificaciones no disponibles por ahora.")).not.toBeInTheDocument());
-  fireEvent.click(screen.getByRole("button", { name: "Notificaciones" }));
+  fireEvent.click(screen.getByLabelText("Notificaciones"));
   expect(screen.getByText("Notificaciones no disponibles por ahora.")).toBeInTheDocument();
   await new Promise((resolve) => window.setTimeout(resolve, 0));
   fireEvent.pointerDown(document.body, { button: 0, pointerType: "mouse" });

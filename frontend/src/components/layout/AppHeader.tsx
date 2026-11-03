@@ -16,7 +16,7 @@ export function AppHeader() {
     <Popover>
       <PopoverTrigger asChild>
         <Button type="button" variant="ghost" size="icon" aria-label="Notificaciones"
-          className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground">
+          hidden className="hidden h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground">
           <Bell className="h-4 w-4" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
