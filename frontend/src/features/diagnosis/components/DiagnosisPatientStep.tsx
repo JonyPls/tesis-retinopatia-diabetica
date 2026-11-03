@@ -219,7 +219,7 @@ function VisitSelectionBlock({
           <div>
             <p className="text-sm font-semibold">Visita clínica</p>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              Seleccione una visita de las últimas 24 horas o cree una nueva.
+              Seleccione una visita elegible o cree una nueva.
             </p>
           </div>
         </div>
@@ -270,10 +270,10 @@ function VisitSelectionBlock({
         ) : (
           <div className="rounded-md border border-dashed border-border bg-muted/25 px-4 py-4 text-center">
             <p className="text-sm font-medium text-muted-foreground">
-              No hay visitas disponibles de las últimas 24 horas.
+              No hay visitas recientes elegibles.
             </p>
             <p className="mt-1 text-xs text-muted-foreground/80">
-              Puede continuar creando una nueva visita.
+              Este selector muestra atenciones de las últimas 24 horas sin resultados IA registrados; no muestra todo el historial.
             </p>
           </div>
         )}

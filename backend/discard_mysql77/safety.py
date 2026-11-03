@@ -1,6 +1,7 @@
 """Fase A: únicamente biblioteca estándar, lecturas locales y ningún SQL."""
 import ast
 from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import importlib.util
 import json
@@ -8,10 +9,13 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 from uuid import UUID
 
 
 APPROVED_TEMP = Path(r'C:\Users\ricar\AppData\Local\Temp\opencode')
+MANIFEST_VERSION = 2
+HARNESS_VERSION = 'codn-discard-mysql77-78d-pid-evidence-v2'
 SCOPES = ('start_owned_mysql', 'create_synthetic_schema', 'synthetic_sql_writes',
           'synthetic_files', 'stop_owned_process', 'retire_owned_resources')
 STUBS = {'dl_model.validator', 'dl_model.inference', 'services.report_service'}
@@ -46,9 +50,9 @@ utils/strict_authorization.py
 utils/temporal_provenance.py
 utils/utc_clock.py'''.splitlines())
 HARNESS_FILES = tuple(f'discard_mysql77/{name}.py' for name in
-                      ('__init__', 'safety', 'runtime', 'application', 'cases', 'worker', 'schema', 'resources'))
+                      ('__init__', 'safety', 'runtime', 'application', 'cases', 'worker', 'schema', 'resources', 'process_identity'))
 COPY_FILES = (*APP_FILES, *HARNESS_FILES, 'b1_mysql_disposable_trial.py',
-              'migrations/72_descarte_ia_propuesta.sql')
+              'migrations/72_descarte_ia_propuesta.sql', 'discard_mysql_trial77.py')
 DEPENDENCIES = ('flask', 'flask_sqlalchemy', 'sqlalchemy', 'pymysql', 'dotenv', 'jwt', 'PIL', 'numpy')
 
 
@@ -152,6 +156,11 @@ class Plan:
     sources_sha256: str
     authorization: str
     scopes: tuple
+    authorization_status: str = 'NOT_AUTHORIZED'
+    prepared_at_utc: str | None = None
+    manifest_version: int = MANIFEST_VERSION
+    harness_version: str = HARNESS_VERSION
+    declared_resources: tuple = ()
 
     @property
     def root(self):
@@ -162,16 +171,79 @@ class Plan:
         return 'codn77_' + self.run_id.replace('-', '')
 
 
+def planned_resources(plan):
+    """Descripción exacta del runtime; NO son overrides de rutas, cuentas o puertos."""
+    root = plan.root
+    system = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32'
+    return {
+        'root': str(root), 'datadir': str(root / 'data'),
+        'bootstrap_directory': str(root), 'bootstrap_file': str(root / 'bootstrap.sql'),
+        'backend_copy': str(root / 'backend'),
+        'retinal_and_gradcam_files': str(root / 'backend/uploads/retinas'),
+        'temporary_files': str(root / 'tmp'), 'retinograph_exports': str(root / 'exports'),
+        'private_retinograph_copies': str(root / 'private'), 'evidence': str(root / 'evidence'),
+        'owner_marker': str(root / 'owner.json'), 'pid_file': str(root / 'mysql.pid'),
+        'schema': plan.schema, 'application_account': 'codn77_app@127.0.0.1',
+        'application_grants': 'SELECT,INSERT,UPDATE,DELETE on own schema only',
+        'administrator_account': 'root@localhost in NEW disposable instance only',
+        'mysql_initializer_and_server': str(plan.mysql_server),
+        'python_worker_and_restart': str(Path(sys.executable).absolute()),
+        'windows_identity_helper': str(system / 'whoami.exe'),
+        'windows_acl_helper': str(system / 'icacls.exe'),
+        'listener_address': '127.0.0.1',
+        'port_policy': 'ephemeral_loopback_after_authorization_never_3306_no_existing_server',
+        'process_policy': 'Popen handles created by this run; own Windows Job and descendants; no HTTP server',
+        'credentials_policy': 'ephemeral generated ONLY during authorized execution; no habitual credentials',
+        'retirement_operation': 'retire_owned_resources',
+        'retirement_policy': 'stop own Job and handles; verify empty and FS identity; remove private tree; INCOMPLETE if unsafe',
+        'removable_entries': 'data,backend,tmp,exports,private,bootstrap.sql,init.log,mysql.log,mysql.pid,owner.json,raw evidence',
+        'retained_entries': 'evidence/ sanitized results,failure,startup,DDL fingerprints,retirement only',
+    }
+
+
+def validate_metadata(plan):
+    require(type(plan.manifest_version) is int and plan.manifest_version == MANIFEST_VERSION and
+            plan.harness_version == HARNESS_VERSION, 'VERSION_MANIFIESTO_NO_COMPATIBLE')
+    try:
+        date = datetime.strptime(plan.prepared_at_utc, '%Y-%m-%dT%H:%M:%SZ')
+        require(date.strftime('%Y-%m-%dT%H:%M:%SZ') == plan.prepared_at_utc, 'FECHA_MANIFIESTO_NO_CANONICA')
+    except (TypeError, ValueError):
+        raise SafetyError('FECHA_MANIFIESTO_NO_VALIDA') from None
+    require(plan.authorization_status in ('NOT_AUTHORIZED', 'AUTHORIZED') and
+            type(plan.authorization) is str and
+            (plan.authorization == '' if plan.authorization_status == 'NOT_AUTHORIZED' else bool(plan.authorization)),
+            'ESTADO_AUTORIZACION_INCONSISTENTE')
+    require(plan.scopes == SCOPES, 'ALCANCE_MANIFIESTO_INCONSISTENTE')
+    require(dict(plan.declared_resources) == planned_resources(plan), 'RECURSOS_MANIFIESTO_INCONSISTENTES')
+
+
 def load_plan(path):
     try:
-        data = json.loads(no_links(Path(path).absolute()).read_text(encoding='utf-8'))
+        file = no_links(Path(path).absolute())
+        require(file.suffix.lower() == '.json' and file.is_file() and file.stat().st_nlink == 1 and
+                file.stat().st_size <= 262144, 'ARCHIVO_MANIFIESTO_NO_VALIDO')
+        def unique_keys(pairs):
+            result = {}
+            for key, value in pairs:
+                require(key not in result, 'CLAVE_MANIFIESTO_DUPLICADA')
+                result[key] = value
+            return result
+        data = json.loads(file.read_text(encoding='utf-8'), object_pairs_hook=unique_keys)
         require(set(data) == {'run_id', 'mysql_server', 'mysql_sha256', 'sources_sha256',
-                              'authorization', 'scopes'}, 'CONFIG_INCOMPLETA_O_EXTRA')
+                              'authorization', 'scopes', 'authorization_status', 'prepared_at_utc',
+                              'manifest_version', 'harness_version', 'resources'}, 'CONFIG_INCOMPLETA_O_EXTRA')
         require(str(UUID(data['run_id'])) == data['run_id'], 'RUN_ID_NO_CANONICO')
         require(all(re.fullmatch('[0-9a-f]{64}', data[key]) for key in
                     ('mysql_sha256', 'sources_sha256')), 'HASH_INVALIDO')
-        return Plan(data['run_id'], Path(data['mysql_server']), data['mysql_sha256'],
-                    data['sources_sha256'], data['authorization'], tuple(data['scopes']))
+        require(type(data['resources']) is dict and
+                all(type(key) is str and type(value) is str for key, value in data['resources'].items()),
+                'RECURSOS_MANIFIESTO_NO_VALIDOS')
+        plan = Plan(data['run_id'], Path(data['mysql_server']), data['mysql_sha256'],
+                    data['sources_sha256'], data['authorization'], tuple(data['scopes']),
+                    data['authorization_status'], data['prepared_at_utc'], data['manifest_version'],
+                    data['harness_version'], tuple(sorted(data['resources'].items())))
+        validate_metadata(plan)
+        return plan
     except (OSError, ValueError, TypeError, KeyError):
         raise SafetyError('CONFIG_NO_VALIDA') from None
 
@@ -193,6 +265,8 @@ def preflight(source, plan=None):
             require(str(UUID(plan.run_id)) == plan.run_id, 'RUN_ID_NO_CANONICO')
         except (ValueError, TypeError, AttributeError):
             raise SafetyError('RUN_ID_NO_CANONICO') from None
+        if plan.prepared_at_utc is not None or plan.declared_resources:
+            validate_metadata(plan)
         require(plan.sources_sha256 == digest, 'FUENTES_CAMBIARON')
         root = inside(plan.root, APPROVED_TEMP)
         require(not root.exists(), 'NO_REUTILIZAR_ENSAYO')
@@ -202,12 +276,16 @@ def preflight(source, plan=None):
                 'BINARIO_CAMBIO')
         require(not root.is_relative_to(source) and not source.is_relative_to(root),
                 'RAIZ_HABITUAL')
-        result.update(run_id=plan.run_id, schema=plan.schema, destination='OWN_NEW_PROCESS_ONLY')
+        result.update(run_id=plan.run_id, schema=plan.schema, destination='OWN_NEW_PROCESS_ONLY',
+                      authorization_status=plan.authorization_status, harness_version=plan.harness_version,
+                      prepared_at_utc=plan.prepared_at_utc)
     return result
 
 
 def authorize(source, plan, confirmation):
     require(plan is not None and confirmation == plan.run_id, 'AUTORIZACION_EXPLICITA_REQUERIDA')
+    require(plan.authorization_status == 'AUTHORIZED', 'MANIFIESTO_NO_AUTORIZADO')
+    validate_metadata(plan)
     require(plan.authorization == 'PROMPT78_DISPOSABLE_ONLY:' + plan.run_id and
             plan.scopes == SCOPES, 'ALCANCE_NO_AUTORIZADO')
     require(os.name == 'nt', 'FASE_B_SOLO_WINDOWS_REVISADO')

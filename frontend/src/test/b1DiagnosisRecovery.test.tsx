@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDiagnosis } from "../features/diagnosis/hooks/useDiagnosis";
@@ -9,6 +9,8 @@ import { toast } from "../hooks/use-toast";
 import { revokePreviewUrl } from "../lib/imageUtils";
 import { obtenerVisitasPaciente } from "../features/patients/api/patientService";
 import { confirmManualPhotos } from "./diagnosisTestActions";
+import { DiagnosisPatientStep } from "../features/diagnosis/components/DiagnosisPatientStep";
+import { formatClinicalInstant } from "../lib/clinicalDates";
 
 vi.mock("../features/patients/api/patientService", () => ({
   obtenerPacientesRecientes: vi.fn().mockResolvedValue([]),
@@ -83,6 +85,99 @@ describe("creación secuencial y conciliación por ojo", () => {
       hook.unmount();
     } finally {
       clock.mockRestore();
+    }
+  });
+
+  it.each([
+    { name: "ACTIVA reciente sin IA", state: "ACTIVA", diagnosis: 0, ageMs: 3600_000, eligible: true },
+    { name: "ACTIVA reciente con IA", state: "ACTIVA", diagnosis: 1, ageMs: 3600_000, eligible: false },
+    { name: "CERRADA reciente", state: "CERRADA", diagnosis: 0, ageMs: 3600_000, eligible: false },
+    { name: "ANULADA reciente", state: "ANULADA", diagnosis: 0, ageMs: 3600_000, eligible: false },
+    { name: "estado ausente", state: undefined, diagnosis: 0, ageMs: 3600_000, eligible: false },
+    { name: "estado desconocido", state: "DESCONOCIDA", diagnosis: 0, ageMs: 3600_000, eligible: false },
+    { name: "ACTIVA con más de 24 horas", state: "ACTIVA", diagnosis: 0, ageMs: 24 * 3600_000 + 1, eligible: false },
+    { name: "límite exacto de 24 horas", state: "ACTIVA", diagnosis: 0, ageMs: 24 * 3600_000, eligible: true },
+    { name: "instante actual", state: "ACTIVA", diagnosis: 0, ageMs: 0, eligible: true },
+    { name: "fecha futura", state: "ACTIVA", diagnosis: 0, ageMs: -1, eligible: false },
+  ])("elegibilidad: $name", async ({ state, diagnosis, ageMs, eligible }) => {
+    const now = Date.parse("2030-01-02T02:30:00Z");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([{
+      visita_id: 30, fecha_visita: new Date(now - ageMs).toISOString(),
+      fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético",
+      estado: state, tiene_diagnostico_ia: diagnosis,
+    }]);
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    try {
+      act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
+      await waitFor(() => expect(hook.result.current.isLoadingVisitas).toBe(false));
+      expect(hook.result.current.visitasRecientes.map((v) => v.visita_id)).toEqual(eligible ? [30] : []);
+      expect(obtenerVisitasPaciente).toHaveBeenCalledWith(7);
+      expect(hook.result.current.selectedVisita).toBeUndefined();
+      expect(hook.result.current.canNext).toBe(false);
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      hook.unmount(); clock.mockRestore();
+    }
+  });
+
+  it("UTC y Lima representan la misma visita reciente aunque cambie el día civil", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2030-01-02T02:30:00Z"));
+    const utc = "2030-01-02T00:30:00Z";
+    const lima = "2030-01-01T19:30:00-05:00";
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValueOnce([utc, lima].map((date, index) => ({
+      visita_id: 30 + index, fecha_visita: date, fecha_visita_origen: "UTC_VERIFICADO",
+      medico_tratante: "Sintético", estado: "ACTIVA", tiene_diagnostico_ia: 0,
+    })));
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    try {
+      act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
+      await waitFor(() => expect(hook.result.current.visitasRecientes).toHaveLength(2));
+      expect(formatClinicalInstant(utc)).toBe(formatClinicalInstant(lima));
+      expect(formatClinicalInstant(utc)).toContain("01/01/2030");
+      expect(formatClinicalInstant(utc)).toContain("19:30");
+    } finally {
+      hook.unmount(); clock.mockRestore();
+    }
+  });
+
+  it("una respuesta tardía no incorpora visitas del paciente anterior", async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof obtenerVisitasPaciente>>) => void;
+    vi.mocked(obtenerVisitasPaciente).mockReturnValueOnce(new Promise((done) => { resolve = done; })).mockResolvedValueOnce([]);
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    try {
+      act(() => hook.result.current.selectPatient({ id: 7 } as Parameters<typeof hook.result.current.selectPatient>[0]));
+      act(() => hook.result.current.selectPatient({ id: 8 } as Parameters<typeof hook.result.current.selectPatient>[0]));
+      await waitFor(() => expect(hook.result.current.isLoadingVisitas).toBe(false));
+      await act(async () => { resolve([{
+        visita_id: 30, fecha_visita: new Date().toISOString(), fecha_visita_origen: "UTC_VERIFICADO",
+        medico_tratante: "Sintético", estado: "ACTIVA", tiene_diagnostico_ia: 0,
+      }]); });
+      expect(hook.result.current.selectedPatient?.id).toBe(8);
+      expect(hook.result.current.visitasRecientes).toEqual([]);
+      expect(hook.result.current.selectedVisita).toBeUndefined();
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      hook.unmount();
+    }
+  });
+
+  it("explica que el selector no es el historial y conserva la opción Nueva visita", () => {
+    const select = vi.fn();
+    const view = render(<DiagnosisPatientStep query="" searchResults={[]} recentPatients={[]}
+      selectedPatient={{ id: 7, nombres: "Paciente", apellidos: "Sintético", tipo_doc_abrev: "DNI", nro_documento: "00000000" }}
+      isSearching={false} isLoadingMore={false} hasMoreSearchResults={false} searchError={null} recentError={null}
+      hasSearched={false} isLoadingRecent={false} visitasRecientes={[]} selectedVisita={undefined} isLoadingVisitas={false}
+      registrationDialog={null} onQueryChange={vi.fn()} onLoadMore={vi.fn()} onSelect={vi.fn()}
+      onSelectVisita={select} onClear={vi.fn()} />);
+    try {
+      expect(screen.getByText("No hay visitas recientes elegibles.")).toBeTruthy();
+      expect(screen.getByText("Este selector muestra atenciones de las últimas 24 horas sin resultados IA registrados; no muestra todo el historial.")).toBeTruthy();
+      expect(screen.queryByText("No hay visitas disponibles de las últimas 24 horas.")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: /Nueva visita/i }));
+      expect(select).toHaveBeenCalledWith(null);
+    } finally {
+      view.unmount();
     }
   });
 
@@ -174,6 +269,29 @@ describe("creación secuencial y conciliación por ojo", () => {
     expect(read).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(2);
     if (status === 503) expect(hook.result.current.processingNotice).not.toMatch(/no retiniana/i);
+    hook.unmount();
+  });
+
+  it.each([
+    { code: "DESCARTE_NO_INSTALADO", expected: "configuración de base de datos está incompleta" },
+    { code: "VALIDADOR_IMAGEN_NO_DISPONIBLE", expected: "La validación de imagen no está disponible" },
+    { code: undefined, expected: "El procesamiento no está disponible temporalmente" },
+    { code: "DESCONOCIDO", expected: "El procesamiento no está disponible temporalmente" },
+  ])("distingue la causa del 503 de OI sin culpar a la imagen: $code", async ({ code, expected }) => {
+    create.mockResolvedValueOnce(result("OD")).mockRejectedValueOnce({ response: {
+      status: 503, data: { code, message: "internal private details must not be rendered" },
+    } });
+    const hook = await start(["OD", "OI"]);
+    expect(hook.result.current.processingNotice).toContain(expected);
+    expect(hook.result.current.processingNotice).not.toContain("internal private");
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Procesamiento interrumpido: OI", description: expect.stringContaining(expected),
+    }));
+    expect(hook.result.current.results.OD?.detalle_id).toBe(11);
+    expect(hook.result.current.results.OI).toBeUndefined();
+    expect(hook.result.current.eyes.OI.file).not.toBeNull();
+    expect(hook.result.current.eyeProcessing.OI).toBe("error");
+    expect(create).toHaveBeenCalledTimes(2); expect(read).not.toHaveBeenCalled();
     hook.unmount();
   });
 

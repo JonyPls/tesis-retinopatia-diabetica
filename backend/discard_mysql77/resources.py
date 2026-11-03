@@ -10,6 +10,7 @@ import stat
 import subprocess
 
 from .safety import inside, no_links, require
+from .process_identity import sanitize_startup, sanitize_worker_pid, windows_handle_metadata
 
 
 class WindowsJob:
@@ -47,6 +48,15 @@ class WindowsJob:
     def assign(self, process):
         require(self.kernel.AssignProcessToJobObject(self.handle, int(process._handle)), 'JOB_NO_ASIGNADO')
 
+    def contains(self, process):
+        from ctypes import wintypes
+        self.kernel.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+        self.kernel.IsProcessInJob.restype = wintypes.BOOL
+        member = wintypes.BOOL()
+        require(self.kernel.IsProcessInJob(int(process._handle), self.handle, ctypes.byref(member)),
+                'JOB_PERTENENCIA_NO_VERIFICADA')
+        return bool(member.value)
+
     def stop(self):
         # Termina solo miembros de ESTE job, incluidos workers descendientes.
         require(self.kernel.TerminateJobObject(self.handle, 1), 'JOB_NO_TERMINADO')
@@ -76,11 +86,16 @@ def identity(path):
 
 def sanitized_json(name, content):
     value = json.loads(content)
+    if name == 'startup.json':
+        return sanitize_startup(value)
     safe_word = lambda word: isinstance(word, str) and re.fullmatch(r'[A-Za-z0-9_]{1,160}', word)
     if name == 'failure.json':
         require(safe_word(value.get('error_class')), 'EVIDENCIA_INVALIDA')
         code = value.get('mysql_code')
-        return {'error_class': value['error_class'], 'mysql_code': code if type(code) is int else None}
+        result = {'error_class': value['error_class'], 'mysql_code': code if type(code) is int else None}
+        if 'worker_pid' in value:
+            result['worker_pid'] = sanitize_worker_pid(value['worker_pid'])
+        return result
     require(name == 'results.json', 'EVIDENCIA_NO_PERMITIDA')
     cases = []
     for item in value['cases']:
@@ -132,6 +147,8 @@ class OwnedTrial:
         self._marker_identity = identity(self.marker)
         self._job_factory, self._job = job_factory, None
         self._processes = []
+        self._roles = {}
+        self._assignments = {}
 
     def owned(self):
         require(no_links(self.root) == self.root and identity(self.root) == self._identity,
@@ -141,25 +158,47 @@ class OwnedTrial:
                 json.loads(marker.read_text(encoding='utf-8')) ==
                 {'run_id': self.run_id, 'owner': self.owner}, 'PROPIEDAD_NO_ACREDITADA')
 
-    def spawn(self, command, **options):
+    def spawn(self, command, *, role='OTHER', **options):
+        require(role in ('OTHER', 'INITIALIZER', 'MYSQL', 'WORKER'), 'PROCESS_ROLE_INVALID')
         self.owned()
         if self._job is None:
             self._job = self._job_factory()
         process = subprocess.Popen(command, **options)
         self._processes.append(process)  # Handle obtenido de nuestra creación, nunca de un PID recibido.
+        self._roles[id(process)] = role
+        self._assignments[id(process)] = 'FAILED'
         try:
             self._job.assign(process)
+            self._assignments[id(process)] = 'ASSIGNED'
         except Exception:
             process.terminate()
             process.wait(timeout=30)
             raise
         return process
 
-    def run(self, command, *, input=None, timeout, **options):
-        process = self.spawn(command, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+    def run(self, command, *, input=None, timeout, role='OTHER', **options):
+        process = self.spawn(command, role=role, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options)
         output, errors = process.communicate(input=input, timeout=timeout)
         return subprocess.CompletedProcess(command, process.returncode, output, errors)
+
+    def latest_process(self, role):
+        return next((process for process in reversed(self._processes) if self._roles[id(process)] == role), None)
+
+    def process_identity(self, process, executable):
+        registered = any(item is process for item in self._processes)
+        result = dict(registered_process=registered, metadata_state='NOT_CHECKED', handle_valid=False,
+            handle_pid=None, os_exit_code=None, executable_match=None, metadata_error_code=None,
+            job_member=None, job_assignment=self._assignments.get(id(process), 'NOT_RECORDED'))
+        if not registered:
+            return result  # Nunca consultar un handle ajeno a spawn().
+        try:
+            result.update(windows_handle_metadata(process, executable))
+            if result['handle_valid']:
+                result['job_member'] = self._job.contains(process) if self._job is not None else False
+        except Exception:
+            result['metadata_state'] = 'ERROR'  # No guardar excepciones con argumentos/secretos.
+        return result
 
     def _tree(self, path):
         """Inventario sin seguir enlaces; borrar solo si TODO el candidato es seguro."""
@@ -237,7 +276,7 @@ class OwnedTrial:
                         inside(path, self.root)
                         require(path.is_file() and path.stat().st_nlink == 1 and path.stat().st_size <= 10_000_000,
                                 'EVIDENCIA_INVALIDA')
-                        if path.name in ('results.json', 'failure.json'):
+                        if path.name in ('results.json', 'failure.json', 'startup.json'):
                             saved[path.name] = sanitized_json(path.name, path.read_text(encoding='utf-8'))
                         elif path.name in ('actual-schema.sql', 'synthetic-schema.sql', 'base-schema.sql'):
                             # No conservar SQL crudo ni posibles literales privados: solo huellas.

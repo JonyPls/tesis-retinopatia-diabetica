@@ -98,7 +98,6 @@ export default function Diagnosis() {
   const StepIcon = currentStep.icon;
   const selectedPatient = diagnosisHook.selectedPatient;
   const processedEyes = Object.values(diagnosisHook.results).filter(Boolean).length;
-  const hasPendingEye = processedEyes === 1;
   const lockedEyes = { OD: !!diagnosisHook.results.OD, OI: !!diagnosisHook.results.OI };
 
   const handleDismissError = () => {
@@ -190,8 +189,12 @@ export default function Diagnosis() {
             {diagnosisHook.correction?.recoveries?.map((recovery) => <div key={recovery.operationId} role="status"
               className="mb-4 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
               <p>{recovery.notice}</p>
-              <Button type="button" variant="outline" className="mt-2" disabled={recovery.loading}
-                onClick={recovery.consult}>Consultar corrección pendiente</Button>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="outline" disabled={recovery.loading}
+                  onClick={recovery.consult}>Consultar corrección pendiente</Button>
+                {recovery.resume && <Button type="button" variant="outline" disabled={recovery.loading}
+                  onClick={recovery.resume}>Reanudar corrección pendiente</Button>}
+              </div>
             </div>)}
             {!!diagnosisHook.correction?.otherPending && <p role="status" className="mb-4 text-sm text-muted-foreground">
               Hay correcciones de otra evaluación pendientes de conciliación. Su identidad se conserva en esta sesión; no se modificó el contexto actual.
@@ -292,10 +295,6 @@ export default function Diagnosis() {
                   </div>
                 </div>
               </section>
-              {diagnosisHook.correction?.canOpen && <div className="flex justify-end">
-                <Button type="button" variant="outline" className="text-destructive" disabled={isNavigationBusy}
-                  onClick={diagnosisHook.correction.open}>Corregir fotografías</Button>
-              </div>}
               {diagnosisHook.correction?.review && selectedPatient && <CorrectPhotographsModal
                 context={diagnosisHook.correction.review}
                 patientLabel={`${selectedPatient.nombres} ${selectedPatient.apellidos} · ${selectedPatient.tipo_doc_abrev} ${selectedPatient.nro_documento}`}
@@ -307,14 +306,20 @@ export default function Diagnosis() {
                 <p>{diagnosisHook.processingNotice}</p>
                 {diagnosisHook.confirmedVisitId && <Button type="button" variant="outline" className="mt-2" onClick={diagnosisHook.reconcileResults}>Consultar estado de la visita</Button>}
               </div>}
-              {(["OD", "OI"] as const).some((eye) => !diagnosisHook.results[eye]) && <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {(["OD", "OI"] as const).filter((eye) => !diagnosisHook.results[eye]).map((eye) => <span key={eye}>{eye}: {diagnosisHook.eyeProcessing[eye] === "incierto" ? "Registro de IA sin confirmar" : diagnosisHook.eyeProcessing[eye] === "error" ? "No procesado · error" : diagnosisHook.eyeProcessing[eye] === "procesando" ? "Procesando" : "No procesado"}</span>)}
+              {(["OD", "OI"] as const).some((eye) => !diagnosisHook.results[eye] && ["incierto", "error", "procesando"].includes(diagnosisHook.eyeProcessing[eye])) && <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {(["OD", "OI"] as const).filter((eye) => !diagnosisHook.results[eye] && ["incierto", "error", "procesando"].includes(diagnosisHook.eyeProcessing[eye])).map((eye) => <span key={eye}>{eye}: {diagnosisHook.eyeProcessing[eye] === "incierto" ? "Registro de IA sin confirmar" : diagnosisHook.eyeProcessing[eye] === "error" ? "No procesado · error" : "Procesando"}</span>)}
               </div>}
               <DiagnosisResults
                 results={diagnosisHook.results}
                 eyes={diagnosisHook.eyes}
                 activeEye={diagnosisHook.activeEye}
                 setActiveEye={diagnosisHook.setActiveEye}
+                onAddPendingEye={goBack}
+                isNavigationBusy={isNavigationBusy}
+                toolbarActions={diagnosisHook.correction?.canOpen && (
+                  <Button type="button" variant="outline" className="text-destructive" disabled={isNavigationBusy}
+                    onClick={diagnosisHook.correction.open}>Corregir fotografías</Button>
+                )}
                 finalSelection={diagnosisHook.finalSelection}
                 setFinalSelection={diagnosisHook.setFinalSelection}
                 comments={diagnosisHook.comments}
@@ -331,10 +336,10 @@ export default function Diagnosis() {
 
           <div
             className={`flex flex-col-reverse gap-3 border-t border-border bg-muted/25 px-5 py-4 sm:flex-row sm:items-center lg:px-6 ${
-              step === 1 || (step === 3 && !hasPendingEye) ? "sm:justify-end" : "sm:justify-between"
+              step === 1 || step === 3 ? "sm:justify-end" : "sm:justify-between"
             }`}
           >
-            {(step === 2 || (step === 3 && hasPendingEye)) && (
+            {step === 2 && (
               <Button
                 variant="outline"
                 onClick={goBack}
@@ -342,7 +347,7 @@ export default function Diagnosis() {
                 className="sm:w-auto"
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                {step === 3 ? "Añadir ojo pendiente" : "Anterior"}
+                Anterior
               </Button>
             )}
 

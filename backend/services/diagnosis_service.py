@@ -83,7 +83,8 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
         check = validar_contenido_semantico(image_bytes)
         if not check["valido"]:
             if check.get("status") == 503:
-                return {"success": False, "message": "Validación de imagen no disponible."}, 503
+                return {"success": False, "code": "VALIDADOR_IMAGEN_NO_DISPONIBLE",
+                        "message": "Validación de imagen no disponible."}, 503
             if check.get("status") == 500:
                 return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
             return {"success": False, "message": check["error"]}, 422

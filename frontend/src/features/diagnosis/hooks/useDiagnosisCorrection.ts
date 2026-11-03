@@ -17,8 +17,9 @@ interface Options {
   version: () => number;
   busy: () => boolean;
   apply: (entry: PendingDiscard, operation: DiscardOperation) => boolean;
-  recover?: (context: DiscardContext, operation: DiscardOperation, current: () => boolean) => Promise<boolean>;
+  recover?: (context: DiscardContext, operation: DiscardOperation, current: () => boolean, resume?: boolean) => Promise<boolean>;
 }
+export class CorrectionRecoveryUnavailable extends Error {}
 const pending = (e: PendingDiscard) => e.status !== "applied" && e.status !== "rejected";
 const status = (error: unknown) => (error as { response?: { status?: number } }).response?.status;
 const sameIds = (a: number[], b: number[]) => a.length === b.length && a.every((id) => b.includes(id));
@@ -28,6 +29,7 @@ export function useDiagnosisCorrection(options: Options) {
   latest.current = options;
   const mounted = useRef(false);
   const reader = useRef<object | null>(null);
+  const resuming = useRef<object | null>(null);
   const checking = useRef(new Set<string>());
   const sessionVersion = useRef(0);
   const [checkingIds, setCheckingIds] = useState<string[]>([]);
@@ -55,7 +57,7 @@ export function useDiagnosisCorrection(options: Options) {
   const blocked = () => {
     if (!enabled) return false;
     const state = useDiagnosisDiscardStore.getState();
-    return !!reader.current || !!reviewRef.current || !!currentPending() || !!currentMarker() ||
+    return !!resuming.current || !!reader.current || !!reviewRef.current || !!currentPending() || !!currentMarker() ||
       (!!actorId && (state.recoveryActorId !== actorId || state.storageError));
   };
   const markerFor = (e: PendingDiscard): DiscardMarker => ({ version: 1, actorId: e.actorId,
@@ -88,10 +90,11 @@ export function useDiagnosisCorrection(options: Options) {
         sessionVersion.current++;
       }
     });
-    return () => { mounted.current = false; reader.current = null; reviewRef.current = null; unsubscribe(); };
+    return () => { mounted.current = false; resuming.current = null; reader.current = null; reviewRef.current = null; unsubscribe(); };
   }, []);
   useLayoutEffect(() => {
     if (enabled) hydrateDiscardMarkers(actorId);
+    resuming.current = null;
     setRecoveryMessages({});
     setCheckingIds([]);
   }, [enabled, actorId]);
@@ -158,9 +161,17 @@ export function useDiagnosisCorrection(options: Options) {
     }
     return false;
   };
-  const consultMarker = async (saved: DiscardMarker) => {
+  const consultMarker = async (saved: DiscardMarker, resume = false) => {
     const session = useAuthStore.getState();
     if (!enabled || !session.isAuthenticated || session.user?.id !== saved.actorId || checking.current.has(saved.operationId)) return;
+    const markerPresent = () => {
+      const state = useDiagnosisDiscardStore.getState();
+      return state.recoveryActorId === saved.actorId && !state.storageError && state.markers.some((m) =>
+        m.actorId === saved.actorId && m.visitId === saved.visitId && m.operationId === saved.operationId);
+    };
+    if (resume && (!authorizedLocally || !latest.current.recover || !markerPresent() || resuming.current ||
+        reader.current || reviewRef.current || latest.current.busy() ||
+        useDiagnosisDiscardStore.getState().entries.some((e) => e.actorId === saved.actorId && e.status === "sending"))) return;
     const target = useDiagnosisDiscardStore.getState().entries.find((e) => e.actorId === saved.actorId && e.request.operacion_id === saved.operationId);
     if (target?.status === "sending") return;
     if (target?.status === "rejected") { retireDiscardMarker(saved); return; }
@@ -170,11 +181,14 @@ export function useDiagnosisCorrection(options: Options) {
       session.token === useAuthStore.getState().token && session.user === useAuthStore.getState().user &&
       useAuthStore.getState().isAuthenticated;
     const message = (text: string) => { if (sameSession()) setRecoveryMessages((prev) => ({ ...prev, [saved.operationId]: text })); };
+    const request = {};
+    if (resume) resuming.current = request; // Exclusión síncrona antes del primer GET.
     checking.current.add(saved.operationId);
     setCheckingIds([...checking.current]);
     try {
       // Un hecho ya confirmado no se degrada por una lectura posterior ausente.
-      const operation = target?.operation ?? await getDiscardOperation(saved.visitId, saved.operationId);
+      const operation = resume ? await getDiscardOperation(saved.visitId, saved.operationId)
+        : target?.operation ?? await getDiscardOperation(saved.visitId, saved.operationId);
       if (!operation) {
         if (target) recordDiscard({ ...target, status: "uncertain" });
         message("Existe una corrección cuyo resultado aún no se ha podido confirmar. Verifique su estado antes de continuar con esta evaluación.");
@@ -184,33 +198,48 @@ export function useDiagnosisCorrection(options: Options) {
       if (operation.operacion_id !== saved.operationId || result.visita_id !== saved.visitId || result.revision < 1 ||
           (result.diagnostico_retinopatia_id === null) !== (result.detalle_ids_restantes.length === 0) ||
           result.detalle_ids_descartados.some((id) => result.detalle_ids_restantes.includes(id))) throw new Error("Otra operación");
-      if (target && target.status !== "applied") {
+      if (!resume && target && target.status !== "applied") {
         if (acceptOperation(target, operation, () => sameSession() && isCurrent() && latest.current.visitId === saved.visitId)) return;
       }
-      message("La corrección está confirmada. Seleccione de nuevo el paciente y la visita para consultar su contexto actual; no se recuperaron fotografías ni borradores locales.");
-      if (!sameSession() || !isCurrent() || latest.current.visitId !== saved.visitId || !latest.current.patientId || latest.current.busy()) return;
+      message("La corrección está confirmada. Use Reanudar corrección pendiente para verificar si puede continuar; no se recuperaron fotografías ni borradores locales.");
+      if (!sameSession() || !isCurrent() || latest.current.busy()) return;
+      if (!resume && (latest.current.visitId !== saved.visitId || !latest.current.patientId)) return;
+      if (resume && latest.current.visitId && latest.current.visitId !== saved.visitId) {
+        throw new CorrectionRecoveryUnavailable("Hay otra visita seleccionada. No se reemplazará su evaluación; vuelva al Paso 1 sin fotografías ni resultados pendientes para reanudar esta corrección.");
+      }
       if (Object.keys(latest.current.results).length && target?.status !== "applied") return;
       const context = await getDiscardContext(saved.visitId, saved.operationId);
-      if (!sameSession() || !isCurrent()) return;
-      if (context.paciente_id !== latest.current.patientId || context.revision < result.revision || context.estado_visita !== "ACTIVA" ||
+      if (!sameSession() || !isCurrent() || !markerPresent()) return;
+      if (latest.current.patientId !== null && context.paciente_id !== latest.current.patientId) {
+        throw new CorrectionRecoveryUnavailable("La corrección corresponde a otro paciente. No se modificó la selección actual; cambie al paciente correspondiente o vuelva al Paso 1 sin selección.");
+      }
+      if (context.estado_visita !== "ACTIVA") {
+        throw new CorrectionRecoveryUnavailable("La visita ya no está ACTIVA. Puede consultar la operación, pero no reanudar modificaciones; se conserva el marcador.");
+      }
+      if (context.revision < result.revision ||
           context.detalles.some((d) => result.detalle_ids_descartados.includes(d.detalle_id)) ||
           (context.diagnostico_retinopatia_id === null) !== (context.detalles.length === 0) ||
           context.estado_diagnostico !== (!context.detalles.length ? null :
             context.detalles.some((d) => d.estado_validacion === "PENDIENTE") ? "PROCESADO" : "VALIDADO")) throw new Error("Contexto no verificable");
       const local = Object.entries(latest.current.results);
-      const alreadyApplied = target?.status === "applied" && local.length === context.detalles.length && local.every(([eye, r]) =>
+      const alreadyApplied = !resume && target?.status === "applied" && local.length === context.detalles.length && local.every(([eye, r]) =>
         context.detalles.some((d) => d.ojo === eye && d.detalle_id === r?.detalle_id && d.estado_validacion === (r.estado_validacion ?? "PENDIENTE")));
-      const adopted = alreadyApplied || await latest.current.recover?.(context, operation, () => sameSession() && isCurrent());
+      const adopted = alreadyApplied || await latest.current.recover?.(context, operation,
+        () => sameSession() && isCurrent() && markerPresent(), resume);
       if (adopted) {
         if (target) recordDiscard({ ...target, operation, status: "applied" });
         if (retireDiscardMarker(saved)) {
           message("Contexto actual verificado. Puede continuar en la misma visita.");
           if (sameSession()) setNotice(null);
         }
+      } else if (resume && sameSession() && isCurrent()) {
+        message("No se pudo reanudar de forma segura. Conserve el marcador y vuelva a consultar; no se reemplazan fotografías, resultados ni borradores de una evaluación en curso.");
       }
-    } catch {
-      message("No se pudo verificar la corrección o el contexto actual. La evaluación afectada sigue bloqueada; vuelva a consultar la misma operación.");
+    } catch (error) {
+      message(error instanceof CorrectionRecoveryUnavailable ? error.message
+        : "No se pudo verificar la corrección o el contexto actual. La evaluación afectada sigue bloqueada; vuelva a consultar la misma operación.");
     } finally {
+      if (resuming.current === request) resuming.current = null;
       checking.current.delete(saved.operationId);
       if (sameSession()) setCheckingIds([...checking.current]);
     }
@@ -278,6 +307,7 @@ export function useDiagnosisCorrection(options: Options) {
       operationId: m.operationId, loading: checkingIds.includes(m.operationId) || entries.some((e) => e.request.operacion_id === m.operationId && e.status === "sending"),
       notice: recoveryMessages[m.operationId] ?? "Existe una corrección pendiente de verificar en esta pestaña. Seleccione el paciente y la visita correspondientes antes de continuar con esa evaluación.",
       consult: () => consultMarker(m),
+      ...(authorizedLocally && !!options.recover && !storageError ? { resume: () => consultMarker(m, true) } : {}),
     })) : [],
     otherPending: enabled ? entries.filter((e) => pending(e) && e.actorId === user?.id && !matches(e)).length : 0,
     open: () => load(true), refresh: () => { if (storageError) hydrateDiscardMarkers(actorId); else return load(false); },

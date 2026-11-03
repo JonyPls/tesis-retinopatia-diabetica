@@ -3,9 +3,12 @@ from contextlib import ExitStack
 import json
 from pathlib import Path
 import sys
+import time
 
 
 def run(payload):
+    started = time.monotonic()
+    from discard_mysql77.process_identity import check_worker_pid
     from discard_mysql77.safety import (APPROVED_TEMP, inside, require, source_digest,
                                        proposal_statements)
     from discard_mysql77.runtime import listener_pid
@@ -16,8 +19,7 @@ def run(payload):
     marker = inside(root / 'owner.json', root)
     require(marker.stat().st_nlink == 1 and json.loads(marker.read_text(encoding='utf-8')) ==
             {'run_id': payload['run_id'], 'owner': payload['owner']}, 'MARCADOR_NO_PROPIO')
-    pidfile = inside(root / 'mysql.pid', root)
-    require(pidfile.read_text(encoding='ascii').strip() == str(payload['pid']), 'PID_NO_COINCIDE')
+    check_worker_pid(root / 'mysql.pid', root, payload['pid'], started)
     backend = inside(root / 'backend', root)
     require(Path.cwd() == backend and source_digest(backend) == payload['sources_sha256'],
             'COPIA_CAMBIO_O_CWD_AJENO')
@@ -160,9 +162,13 @@ def main():
             require(json.loads(marker.read_text(encoding='utf-8')) ==
                     {'run_id': payload['run_id'], 'owner': payload['owner']}, 'OWNER')
             code = getattr(getattr(error, 'orig', None), 'args', (None,))[0]
-            inside(root / 'evidence/failure.json', root).write_text(json.dumps({
+            failure = {
                 'error_class': type(error).__name__,
-                'mysql_code': code if isinstance(code, int) else None}), encoding='utf-8')
+                'mysql_code': code if isinstance(code, int) else None}
+            from discard_mysql77.process_identity import WorkerPidError
+            if isinstance(error, WorkerPidError):
+                failure['worker_pid'] = error.pid_evidence
+            inside(root / 'evidence/failure.json', root).write_text(json.dumps(failure), encoding='utf-8')
         except Exception:
             pass  # Sin propiedad acreditada NO escribir ni intentar limpieza.
         return 1

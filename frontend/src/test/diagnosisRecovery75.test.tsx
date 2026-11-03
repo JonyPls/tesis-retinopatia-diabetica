@@ -11,6 +11,7 @@ import { hydrateDiscardMarkers, recordDiscard, retainDiscardMarker, retireDiscar
 import type { PendingDiscard } from "../features/diagnosis/store/diagnosisDiscardStore";
 import type { DiscardContext, DiscardOperation } from "../features/diagnosis/api/diagnosisDiscardService";
 import type { DiagnosisResult, DetalleDiagnosticoExistente } from "../features/diagnosis/api/diagnosisService";
+import type { VisitaClinica } from "../features/patients/api/patientService";
 import { obtenerPacientesRecientes, obtenerVisitasPaciente } from "../features/patients/api/patientService";
 import { convertToPreviewUrl } from "../lib/imageUtils";
 import fixture from "./fixtures/diagnosisDiscardContract74.json";
@@ -66,6 +67,7 @@ beforeEach(() => {
     if (String(url).includes("/operaciones-descarte/")) return envelope({ conciliacion: operation ? "CONFIRMADA" : "NO_CONFIRMADA", operacion: operation });
     if (url === contextPath) return envelope(structuredClone(context));
     if (url === "/diagnosticar/visita/30/detalles") return envelope({ ojos: structuredClone(details) });
+    if (url === "/pacientes/7") return { data: { success: true, scope: "clinical", history_available: true, data: patient } };
     throw new Error(`GET no previsto: ${url}`);
   });
   post.mockReset(); vi.mocked(api.put).mockReset();
@@ -311,25 +313,293 @@ describe("identidad, sesión, pestaña y contenido inválido", () => {
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 const patient = { id: 7, nombres: "Paciente", apellidos: "Sintético", tipo_doc_abrev: "DNI", nro_documento: "00000000" };
-async function selectRecoveredVisit() {
-  const visit = { visita_id: 30, fecha_visita: "2020-01-01T10:00:00Z", fecha_visita_origen: "UTC_VERIFICADO" as const,
-    medico_tratante: "Profesional sintético", tiene_diagnostico_ia: 1, estado: "ACTIVA" };
+describe("consulta de recuperación independiente del selector estricto", () => {
+  it.each([
+    { name: "reciente con IA", state: "ACTIVA", diagnosis: 1, hours: 1 },
+    { name: "antigua con IA", state: "ACTIVA", diagnosis: 1, hours: 36 },
+    { name: "antigua sin IA", state: "ACTIVA", diagnosis: 0, hours: 36 },
+    { name: "cerrada reciente", state: "CERRADA", diagnosis: 0, hours: 1 },
+    { name: "anulada reciente", state: "ANULADA", diagnosis: 0, hours: 1 },
+  ])("el marcador no abre la visita $name, pero conserva la consulta autorizada del UUID", async ({ state, diagnosis, hours }) => {
+    persist(); resetMemory();
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValue([{
+      visita_id: 30, fecha_visita: new Date(Date.now() - hours * 3600_000).toISOString(),
+      fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético", estado: state,
+      tiene_diagnostico_ia: diagnosis,
+    }]);
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    act(() => hook.result.current.selectPatient(patient));
+    await waitFor(() => expect(hook.result.current.isLoadingVisitas).toBe(false));
+    await waitFor(() => expect(hook.result.current.correction.recoveries[0]?.notice).toContain("confirmada"));
+    expect(hook.result.current.visitasRecientes).toEqual([]);
+    expect(hook.result.current.selectedVisita).toBeUndefined();
+    expect(hook.result.current.step).toBe(1);
+    expect(hook.result.current.results).toEqual({});
+    expect(markers()[0].operationId).toBe(fixture.request.operacion_id);
+    expect(get).toHaveBeenCalledWith(operationPath);
+    expect(get.mock.calls.some(([url]) => String(url).includes("contexto-descarte"))).toBe(false);
+    await act(async () => { await hook.result.current.correction.recoveries[0].consult(); });
+    expect(markers()).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled(); expect(api.put).not.toHaveBeenCalled();
+  });
+});
+
+const recentRecoveryVisit = (): VisitaClinica => ({
+  visita_id: 30, fecha_visita: new Date(Date.now() - 3600_000).toISOString(),
+  fecha_visita_origen: "UTC_VERIFICADO", medico_tratante: "Sintético", estado: "ACTIVA",
+  diagnostico_retinopatia_id: context.diagnostico_retinopatia_id,
+  tiene_diagnostico_ia: context.detalles.length ? 1 : 0, tiene_informes: 0, total_informes: 0,
+});
+async function pendingReload(visit = recentRecoveryVisit(), confirmed = true) {
+  persist(); resetMemory();
+  if (!confirmed) operation = null;
+  vi.mocked(obtenerVisitasPaciente).mockResolvedValue([visit]);
+  const hook = renderHook(() => useDiagnosis(), { wrapper });
+  await waitFor(() => expect(hook.result.current.correction.recoveries[0]?.notice).toContain(confirmed ? "confirmada" : "aún no"));
+  return hook;
+}
+
+describe("82: reanudación explícita ligada al marcador, sin abrir el selector", () => {
+  it("recarga confirmada reconstruye paciente y visita actuales y conserva íntegro el otro ojo validado", async () => {
+    context.estado_diagnostico = "VALIDADO";
+    context.detalles[0] = { ...context.detalles[0], estado_validacion: "CORREGIDO", elegible: false, bloqueo: "RESULTADO_VALIDADO" };
+    details[0] = { ...details[0], estado_validacion: "CORREGIDO", diagnostico_final: 3,
+      comentario_medico: "Comentario actual", motivo_correccion: "Motivo actual" };
+    const hook = await pendingReload();
+    expect(hook.result.current.selectedPatient).toBeNull();
+    expect(hook.result.current.selectedVisita).toBeUndefined();
+    expect(hook.result.current.visitasRecientes).toEqual([]);
+    expect(hook.result.current.step).toBe(1); // Los GET automáticos nunca adoptan contexto.
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.selectedPatient).toEqual(patient);
+    expect(hook.result.current.selectedVisita?.visita_id).toBe(30);
+    expect(hook.result.current.confirmedVisitId).toBe(30);
+    expect(hook.result.current.step).toBe(2);
+    expect(hook.result.current.results.OD?.detalle_id).toBe(11);
+    expect(hook.result.current.results.OI).toBeUndefined();
+    expect(hook.result.current.validatedEyes.OD).toBe("CORREGIDO");
+    expect(hook.result.current.finalSelection.OD).toBe(3);
+    expect(hook.result.current.comments.OD).toBe("Comentario actual");
+    expect(hook.result.current.correctionReasons.OD).toBe("Motivo actual");
+    expect(hook.result.current.eyes).toMatchObject({ OD: { file: null, preview: null }, OI: { file: null, preview: null } });
+    expect(hook.result.current.activeEye).toBe("OI");
+    expect(hook.result.current.visitasRecientes).toEqual([]);
+    expect(get).toHaveBeenCalledWith("/pacientes/7");
+    expect(get).toHaveBeenCalledWith(contextPath, { params: { operacion_id: fixture.request.operacion_id } });
+    expect(obtenerVisitasPaciente).toHaveBeenCalledWith(7);
+    expect(markers()).toEqual([]);
+    expect(post).not.toHaveBeenCalled(); expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it("recupera una visita vacía tras descartar ambos ojos sin resucitar el padre ni otra visita", async () => {
+    const entry = makeEntry(); entry.request.operacion_id = fixture.lastDiscard.body.data.operacion_id;
+    persist(entry); resetMemory(); operation = fixture.lastDiscard.body.data as DiscardOperation;
+    context = fixture.emptyVisit.body.data as DiscardContext;
+    vi.mocked(obtenerVisitasPaciente).mockResolvedValue([recentRecoveryVisit()]);
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    await waitFor(() => expect(hook.result.current.correction.recoveries[0]?.notice).toContain("confirmada"));
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.step).toBe(2); expect(hook.result.current.confirmedVisitId).toBe(30);
+    expect(hook.result.current.results).toEqual({}); expect(markers()).toEqual([]);
+    expect(get).not.toHaveBeenCalledWith("/diagnosticar/visita/30/detalles");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("NO_CONFIRMADA conserva UUID y deja consultar/reanudar después, sin POST", async () => {
+    const hook = await pendingReload(recentRecoveryVisit(), false);
+    const resume = hook.result.current.correction.recoveries[0].resume!;
+    await act(async () => { await resume(); });
+    expect(hook.result.current.step).toBe(1); expect(hook.result.current.results).toEqual({});
+    expect(markers()[0].operationId).toBe(fixture.request.operacion_id);
+    expect(get).not.toHaveBeenCalledWith(contextPath, { params: { operacion_id: fixture.request.operacion_id } });
+    operation = structuredClone(fixture.operation.body.data.operacion) as DiscardOperation;
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.step).toBe(2); expect(markers()).toEqual([]);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 404, 500, 503])("GET de reanudación %s no libera ni repite el descarte", async (status) => {
+    const hook = await pendingReload();
+    get.mockRejectedValueOnce({ response: { status } });
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.step).toBe(1); expect(hook.result.current.selectedPatient).toBeNull();
+    expect(markers()).toHaveLength(1);
+    expect(hook.result.current.correction.recoveries[0].notice).toContain("No se pudo");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "fuera de 24 horas", change: { fecha_visita: "2020-01-01T10:00:00Z" }, message: "24 horas" },
+    { name: "CERRADA", change: { estado: "CERRADA" }, message: "ACTIVA" },
+    { name: "ANULADA", change: { estado: "ANULADA" }, message: "ACTIVA" },
+    { name: "fecha no verificada", change: { fecha_visita_origen: "NO_VERIFICADO" as const }, message: "fecha verificada" },
+    { name: "fecha futura", change: { fecha_visita: "2099-01-01T10:00:00Z" }, message: "24 horas" },
+    { name: "informe registrado", change: { tiene_informes: 1 }, message: "informes" },
+  ])("no reanuda visita $name", async ({ change, message }) => {
+    const hook = await pendingReload({ ...recentRecoveryVisit(), ...change });
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.correction.recoveries[0].notice).toContain(message);
+    expect(hook.result.current.selectedPatient).toBeNull(); expect(hook.result.current.selectedVisita).toBeUndefined();
+    expect(hook.result.current.results).toEqual({}); expect(markers()).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("acepta el límite exacto de 24 horas, pero no si vence mientras llegan los detalles", async () => {
+    const now = Date.parse("2030-01-02T10:00:00Z");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    const visit = { ...recentRecoveryVisit(), fecha_visita: new Date(now - 24 * 3600_000).toISOString() };
+    const hook = await pendingReload(visit);
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.step).toBe(2); expect(markers()).toEqual([]);
+    hook.unmount();
+    const second = await pendingReload(visit);
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url, config) => {
+      if (url === "/diagnosticar/visita/30/detalles") clock.mockReturnValue(now + 1);
+      return original(url, config);
+    });
+    await act(async () => { await second.result.current.correction.recoveries[0].resume!(); });
+    expect(second.result.current.step).toBe(1); expect(markers()).toHaveLength(1);
+    expect(second.result.current.correction.recoveries[0].notice).toContain("24 horas");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("sin marcador no ofrece recuperación ni consulta operaciones", () => {
+    const hook = renderHook(() => useDiagnosis(), { wrapper });
+    expect(hook.result.current.correction.recoveries).toEqual([]);
+    expect(get).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
+  });
+
+  it("doble clic produce una sola secuencia de GET y nunca un POST", async () => {
+    const hook = await pendingReload();
+    const before = get.mock.calls.filter(([url]) => url === operationPath).length;
+    const resume = hook.result.current.correction.recoveries[0].resume!;
+    await act(async () => { await Promise.all([resume(), resume()]); });
+    expect(get.mock.calls.filter(([url]) => url === operationPath)).toHaveLength(before + 1);
+    expect(hook.result.current.step).toBe(2); expect(post).not.toHaveBeenCalled();
+  });
+
+  it("reanudar consulta el estado fresco aunque haya una operación confirmada en memoria", async () => {
+    const entry = { ...makeEntry(), status: "confirmed" as const, operation: operation! };
+    persist(entry); recordDiscard(entry);
+    const recover = vi.fn(async () => true);
+    const hook = renderHook(() => useDiagnosisCorrection(options({ recover })));
+    await waitFor(() => expect(hook.result.current.recoveries[0]?.notice).toContain("confirmada"));
+    const reads = get.mock.calls.filter(([url]) => url === operationPath).length;
+    operation = null;
+    await act(async () => { await hook.result.current.recoveries[0].resume!(); });
+    expect(get.mock.calls.filter(([url]) => url === operationPath)).toHaveLength(reads + 1);
+    expect(hook.result.current.recoveries[0].notice).toContain("aún no");
+    expect(recover).not.toHaveBeenCalled(); expect(markers()).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("bloquea fotografías nuevas mientras verifica la reanudación", async () => {
+    const hook = await pendingReload();
+    const response = deferred<ReturnType<typeof envelope>>();
+    get.mockReturnValueOnce(response.promise);
+    let resume!: Promise<void>;
+    act(() => { resume = hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.correction.blocked()).toBe(true);
+    await act(async () => { await hook.result.current.handleFile("OI", new File(["local"], "blocked.jpg")); });
+    expect(convertToPreviewUrl).not.toHaveBeenCalled();
+    await act(async () => { response.resolve(envelope({ conciliacion: "CONFIRMADA", operacion: operation })); await resume; });
+    expect(hook.result.current.step).toBe(2);
+    expect(hook.result.current.eyes.OI.file).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it.each(["usuario", "paciente", "visita"])("respuesta tardía no altera otro contexto al cambiar %s", async (change) => {
+    const hook = await pendingReload();
+    const response = deferred<ReturnType<typeof envelope>>();
+    const original = get.getMockImplementation()!;
+    get.mockImplementation((url, config) => url === "/diagnosticar/visita/30/detalles" ? response.promise : original(url, config));
+    let resume!: Promise<void>;
+    act(() => { resume = hook.result.current.correction.recoveries[0].resume!(); });
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/diagnosticar/visita/30/detalles"));
+    act(() => {
+      if (change === "usuario") useAuthStore.getState().login("other", { id: 2, username: "other", nombres: "Otro", apellidos: "Sintético", roles: ["Oftalmologo"] });
+      if (change === "paciente") hook.result.current.selectPatient({ ...patient, id: 8 });
+      if (change === "visita") hook.result.current.selectVisita({ ...recentRecoveryVisit(), visita_id: 31 });
+    });
+    await act(async () => { response.resolve(envelope({ ojos: details })); await resume; });
+    expect(hook.result.current.step).toBe(1); expect(hook.result.current.results).toEqual({});
+    if (change === "usuario") expect(hook.result.current.correction.recoveries).toEqual([]);
+    if (change === "paciente") expect(hook.result.current.selectedPatient?.id).toBe(8);
+    if (change === "visita") expect(hook.result.current.selectedVisita?.visita_id).toBe(31);
+    expect(markers()).toHaveLength(1); expect(post).not.toHaveBeenCalled();
+  });
+
+  it.each(["revision", "detalles", "paciente", "uuid"])("rechaza identidad o contexto cambiado: %s", async (change) => {
+    const hook = await pendingReload();
+    const original = get.getMockImplementation()!;
+    let reads = 0;
+    get.mockImplementation(async (url, config) => {
+      if (change === "revision" && url === contextPath && ++reads === 2) return envelope({ ...context, revision: context.revision + 1 });
+      if (change === "detalles" && url === "/diagnosticar/visita/30/detalles") return envelope({ ojos: [{ ...details[0], detalle_id: 99 }] });
+      if (change === "paciente" && url === "/pacientes/7") return { data: { success: true, scope: "clinical", history_available: true, data: { ...patient, id: 8 } } };
+      if (change === "uuid" && url === operationPath) return envelope({ conciliacion: "CONFIRMADA", operacion: { ...operation, operacion_id: "22222222-2222-4222-8222-222222222222" } });
+      return original(url, config);
+    });
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.step).toBe(1); expect(hook.result.current.results).toEqual({});
+    expect(hook.result.current.selectedPatient).toBeNull(); expect(markers()).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("una fotografía local impide sustituir la evaluación durante la recuperación", async () => {
+    const hook = await pendingReload();
+    act(() => { hook.result.current.selectPatient(patient); hook.result.current.selectVisita(null); });
+    await act(async () => { await hook.result.current.handleFile("OI", new File(["local"], "OI-local.jpg")); });
+    const file = hook.result.current.eyes.OI.file;
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    expect(hook.result.current.eyes.OI.file).toBe(file); expect(hook.result.current.results).toEqual({});
+    expect(hook.result.current.confirmedVisitId).toBeNull(); expect(markers()).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("una vista previa manual aún pendiente impide reanudar sin perder la fotografía", async () => {
+    const hook = await pendingReload();
+    act(() => { hook.result.current.selectPatient(patient); hook.result.current.selectVisita(null); });
+    const preview = deferred<string>();
+    vi.mocked(convertToPreviewUrl).mockReturnValueOnce(preview.promise);
+    const file = new File(["local"], "OI-pending.jpg");
+    let selection!: Promise<void>;
+    act(() => { selection = hook.result.current.handleFile("OI", file); });
+    await waitFor(() => expect(hook.result.current.correction.recoveries[0].loading).toBe(false));
+    expect(convertToPreviewUrl).toHaveBeenCalledWith(file);
+    await act(async () => { await hook.result.current.correction.recoveries[0].resume!(); });
+    await act(async () => { preview.resolve("blob:pending-local"); await selection; });
+    expect(hook.result.current.eyes.OI.file).toBe(file);
+    expect(hook.result.current.eyes.OI.preview).toBe("blob:pending-local");
+    expect(hook.result.current.confirmedVisitId).toBeNull();
+    expect(hook.result.current.results).toEqual({}); expect(markers()).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+async function adoptKnownRecoverySelection() {
+  const visit = { visita_id: 30, fecha_visita: new Date(Date.now() - 3600_000).toISOString(), fecha_visita_origen: "UTC_VERIFICADO" as const,
+    medico_tratante: "Profesional sintético", tiene_diagnostico_ia: 1, estado: "ACTIVA",
+    diagnostico_retinopatia_id: context.diagnostico_retinopatia_id };
   vi.mocked(obtenerVisitasPaciente).mockResolvedValue([visit]);
   const hook = renderHook(() => useDiagnosis(), { wrapper });
   act(() => hook.result.current.selectPatient(patient));
   await waitFor(() => expect(hook.result.current.isLoadingVisitas).toBe(false));
-  expect(hook.result.current.visitasRecientes.map((v) => v.visita_id)).toContain(30);
+  expect(hook.result.current.visitasRecientes.map((v) => v.visita_id)).not.toContain(30);
+  // Prueba un contexto ya seleccionado, no una vía de acceso desde el selector.
+  // La limitación de reanudación tras recarga se comprueba y documenta aparte.
   act(() => hook.result.current.selectVisita(visit));
   return hook;
 }
-describe("adopción real de contexto en useDiagnosis tras recargar", () => {
+describe("adopción segura en useDiagnosis con contexto ya seleccionado, no desde el selector", () => {
   it("consulta estado actual, conserva OD validado y libera solo OI con la misma visita", async () => {
     persist(); resetMemory();
     context.estado_diagnostico = "VALIDADO";
     context.detalles[0].estado_validacion = "CORREGIDO";
     details[0] = { ...details[0], estado_validacion: "CORREGIDO", diagnostico_final: 3,
       comentario_medico: "Comentario persistido", motivo_correccion: "Motivo persistido" };
-    const hook = await selectRecoveredVisit();
+    const hook = await adoptKnownRecoverySelection();
     await waitFor(() => expect(hook.result.current.step).toBe(2));
     expect(hook.result.current.confirmedVisitId).toBe(30);
     expect(hook.result.current.results.OD?.detalle_id).toBe(11);
@@ -350,7 +620,7 @@ describe("adopción real de contexto en useDiagnosis tras recargar", () => {
     const entry = makeEntry(); entry.request.operacion_id = fixture.lastDiscard.body.data.operacion_id;
     persist(entry); resetMemory(); operation = fixture.lastDiscard.body.data as DiscardOperation;
     context = fixture.emptyVisit.body.data as DiscardContext;
-    const hook = await selectRecoveredVisit();
+    const hook = await adoptKnownRecoverySelection();
     await waitFor(() => expect(hook.result.current.step).toBe(2));
     expect(hook.result.current.results).toEqual({}); expect(hook.result.current.confirmedVisitId).toBe(30);
     expect(get).not.toHaveBeenCalledWith("/diagnosticar/visita/30/detalles");
@@ -360,7 +630,7 @@ describe("adopción real de contexto en useDiagnosis tras recargar", () => {
     persist(); resetMemory();
     context.detalles.push({ detalle_id: 13, ojo: "OI", estado_validacion: "PENDIENTE", elegible: true, bloqueo: null });
     details.push({ ...details[0], detalle_id: 13, ojo: "OI", imagen_url: "OI-new.jpg" });
-    const hook = await selectRecoveredVisit();
+    const hook = await adoptKnownRecoverySelection();
     await waitFor(() => expect(hook.result.current.step).toBe(2));
     expect(hook.result.current.results.OI?.detalle_id).toBe(13);
     expect(Object.values(hook.result.current.results).some((r) => r?.detalle_id === 12)).toBe(false);
@@ -374,15 +644,15 @@ describe("adopción real de contexto en useDiagnosis tras recargar", () => {
       if (url === contextPath && ++count === 2) return envelope({ ...context, revision: 2 });
       return original(url, config);
     });
-    const hook = await selectRecoveredVisit();
+    const hook = await adoptKnownRecoverySelection();
     await waitFor(() => expect(count).toBe(2));
     expect(hook.result.current.step).toBe(1); expect(hook.result.current.results).toEqual({});
     expect(hook.result.current.correction.blocked()).toBe(true); expect(markers()).toHaveLength(1);
   });
   it("contexto de otro paciente no se aplica", async () => {
     persist(); resetMemory(); context.paciente_id = 8;
-    const hook = await selectRecoveredVisit();
-    await waitFor(() => expect(hook.result.current.correction.notice).toContain("No se pudo"));
+    const hook = await adoptKnownRecoverySelection();
+    await waitFor(() => expect(hook.result.current.correction.notice).toContain("otro paciente"));
     expect(hook.result.current.selectedPatient?.id).toBe(7); expect(hook.result.current.results).toEqual({});
     expect(hook.result.current.correction.blocked()).toBe(true); expect(markers()).toHaveLength(1);
   });
@@ -391,7 +661,7 @@ describe("adopción real de contexto en useDiagnosis tras recargar", () => {
     const response = deferred<ReturnType<typeof envelope>>();
     const original = get.getMockImplementation()!;
     get.mockImplementation((url, config) => url === "/diagnosticar/visita/30/detalles" ? response.promise : original(url, config));
-    const hook = await selectRecoveredVisit();
+    const hook = await adoptKnownRecoverySelection();
     await waitFor(() => expect(get).toHaveBeenCalledWith("/diagnosticar/visita/30/detalles"));
     act(() => { hook.result.current.selectPatient({ ...patient, id: 8 }); });
     await act(async () => { response.resolve(envelope({ ojos: details })); await response.promise; });

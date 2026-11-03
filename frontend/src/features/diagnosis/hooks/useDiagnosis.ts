@@ -4,6 +4,7 @@ import { useAuthStore } from "@/features/auth/store/authStore";
 import { toast } from "@/hooks/use-toast";
 import { convertToPreviewUrl, revokePreviewUrl } from "@/lib/imageUtils";
 import { clinicalInstant, compareVisitGroups } from "@/lib/clinicalDates";
+import api from "@/lib/api";
 import {
   buscarPacientesPaginado,
   DiagnosticoVisita,
@@ -28,7 +29,7 @@ import {
 import type { RetinographAutoImage } from "@/features/diagnosis/api/diagnosisService";
 import { patientRequestError, PatientRequestError } from "@/features/patients/patientAccess";
 import { EyeKey, EyeState, EyeProcessingStatus, DiagnosisHook, AutoPreview, ManualImageReview } from "../types";
-import { useDiagnosisCorrection } from "./useDiagnosisCorrection";
+import { CorrectionRecoveryUnavailable, useDiagnosisCorrection } from "./useDiagnosisCorrection";
 import { getDiscardContext } from "../api/diagnosisDiscardService";
 import { useDiagnosisDiscardStore } from "../store/diagnosisDiscardStore";
 import { diagnosisDiscardEnabled } from "@/lib/clinicalFeatures";
@@ -40,7 +41,7 @@ const statusCode = (error: unknown) => (error as { response?: { status?: number 
 const EMPTY_EYE: EyeState = { file: null, preview: null, isExistingImage: false };
 const EMPTY_PROCESSING: Record<EyeKey, EyeProcessingStatus> = { OD: "sin_procesar", OI: "sin_procesar" };
 
-function processingFailure(status?: number): string {
+function processingFailure(status?: number, code?: unknown): string {
   switch (status) {
     case 400: return "Revise los datos o el formato de la imagen.";
     case 401: return "Su sesión ya no es válida. Inicie sesión nuevamente.";
@@ -49,7 +50,10 @@ function processingFailure(status?: number): string {
     case 409: return "Ya existe un resultado o la visita no admite el procesamiento. Se consultará el estado registrado.";
     case 413: return "La imagen supera el tamaño permitido.";
     case 422: return "La imagen fue rechazada por la validación semántica.";
-    case 503: return "La validación de imagen no está disponible. No se confirmó un resultado nuevo.";
+    case 503:
+      if (code === "DESCARTE_NO_INSTALADO") return "La corrección de fotografías no está disponible: su configuración de base de datos está incompleta. No se confirmó un resultado nuevo.";
+      if (code === "VALIDADOR_IMAGEN_NO_DISPONIBLE") return "La validación de imagen no está disponible. No se confirmó un resultado nuevo.";
+      return "El procesamiento no está disponible temporalmente. No se confirmó un resultado nuevo.";
     case 500: return "No se pudo confirmar el guardado. No vuelva a enviar esta imagen sin consultar su estado.";
     default: return "No se pudo confirmar la respuesta del servidor. No vuelva a enviar esta imagen sin consultar su estado.";
   }
@@ -121,6 +125,7 @@ export function useDiagnosis(): DiagnosisHook {
     OI: { ...EMPTY_EYE },
   });
   const eyesRef = useRef<Record<EyeKey, EyeState>>(eyes);
+  const pendingManualPreviews = useRef(0);
   const confirmationsRef = useRef<Partial<Record<EyeKey, BoundConfirmation>>>({});
   const eyeGeneration = useRef<Record<EyeKey, number>>({ OD: 0, OI: 0 });
   const statusRequest = useRef<Record<EyeKey, number>>({ OD: 0, OI: 0 });
@@ -289,14 +294,53 @@ export function useDiagnosis(): DiagnosisHook {
   const correction = useDiagnosisCorrection({
     step, patientId: selectedPatient?.id ?? null, visitId: confirmedVisitId ?? selectedVisita?.visita_id ?? null,
     results, version: () => contextVersion.current,
-    busy: () => savingRef.current || !!validationRequestRef.current || hasPendingAssociation() ||
+    busy: () => savingRef.current || !!validationRequestRef.current || pendingManualPreviews.current > 0 || hasPendingAssociation() ||
       autoSelectingRef.current || autoPreviewLoading || Object.values(eyeProcessing).some((s) => s === "incierto" || s === "procesando"),
-    recover: async (context, operation, current) => {
+    recover: async (context, operation, current, resume = false) => {
       // Solo una selección limpia: no sustituir resultados ni borradores que
       // continúen en memoria. Tras recarga/reselección se consulta el servidor.
       const empty = () => !Object.keys(resultsRef.current).length && !Object.values(eyesRef.current).some((e) => e.file) &&
-        !autoPreviewRef.current && !savingRef.current && !validationRequestRef.current;
-      if (!current() || !empty() || context.visita_id !== confirmedVisitRef.current || context.paciente_id !== selectedPatient?.id) return false;
+        !autoPreviewRef.current && !savingRef.current && !validationRequestRef.current && !manualReviewRef.current &&
+        !Object.keys(confirmationsRef.current).length && pendingManualPreviews.current === 0;
+      if (!current() || !empty()) return false;
+      if (!resume && (context.visita_id !== confirmedVisitRef.current || context.paciente_id !== selectedPatient?.id)) return false;
+      const visits = await obtenerVisitasPaciente(context.paciente_id);
+      if (!current() || !empty()) return false;
+      const matching = visits.filter((v) => v.visita_id === context.visita_id);
+      if (matching.length !== 1) throw new CorrectionRecoveryUnavailable("La visita de la corrección no pudo verificarse para ese paciente. Se conserva el marcador.");
+      const visit = matching[0];
+      const requireEligible = (state: typeof context) => {
+        if (visit.estado !== "ACTIVA" || state.estado_visita !== "ACTIVA") {
+          throw new CorrectionRecoveryUnavailable("La visita ya no está ACTIVA. Puede consultar la operación, pero no reanudar modificaciones; se conserva el marcador.");
+        }
+        const instant = visit.fecha_visita_origen === "UTC_VERIFICADO"
+          ? clinicalInstant(visit.fecha_visita, visit.fecha_visita_origen)?.getTime() : null;
+        const age = instant == null ? null : Date.now() - instant;
+        if (age === null || age < 0 || age > RECENT_VISIT_HOURS * 3600_000) {
+          throw new CorrectionRecoveryUnavailable("La visita no tiene una fecha verificada dentro de las últimas 24 horas. Puede consultar la operación, pero no reanudar esta evaluación; se conserva el marcador.");
+        }
+        if (Number(visit.tiene_informes) > 0 || Number(visit.total_informes) > 0 ||
+            state.detalles.some((d) => d.bloqueo === "INFORMES_EXISTENTES" || d.bloqueo === "DIAGNOSTICO_NO_COMPATIBLE")) {
+          throw new CorrectionRecoveryUnavailable("La visita tiene informes o un contexto clínico incompatible. No se habilitan modificaciones y se conserva el marcador.");
+        }
+        if (visit.diagnostico_retinopatia_id !== state.diagnostico_retinopatia_id) throw new Error("Diagnóstico cambiado");
+      };
+      requireEligible(context);
+      let recoveredPatient = selectedPatient;
+      if (resume) {
+        const response = await api.get(`/pacientes/${context.paciente_id}`);
+        if (!current() || !empty()) return false;
+        const body = response.data;
+        const patient = body?.data;
+        if (body?.success !== true || body.scope !== "clinical" || body.history_available !== true ||
+            patient?.id !== context.paciente_id ||
+            [patient.nombres, patient.apellidos, patient.nro_documento, patient.tipo_doc_abrev].some((v) => typeof v !== "string")) {
+          throw new Error("Paciente no verificable");
+        }
+        recoveredPatient = { id: patient.id, nombres: patient.nombres, apellidos: patient.apellidos,
+          nro_documento: patient.nro_documento, tipo_doc_abrev: patient.tipo_doc_abrev };
+      }
+      if (!recoveredPatient || recoveredPatient.id !== context.paciente_id) return false;
       const details = context.detalles.length ? await obtenerDetallesVisita(context.visita_id) : [];
       if (!Array.isArray(details) || details.length !== context.detalles.length || details.some((d) =>
           !context.detalles.some((expected) => expected.ojo === d.ojo && expected.detalle_id === d.detalle_id &&
@@ -308,16 +352,29 @@ export function useDiagnosis(): DiagnosisHook {
         c.estado_visita, c.diagnostico_retinopatia_id, c.estado_diagnostico,
         c.detalles.map((d) => [d.detalle_id, d.ojo, d.estado_validacion]).sort()]);
       if (!current() || !empty() || identity(fresh) !== identity(context)) return false;
+      requireEligible(fresh); // Comprobar de nuevo plazo/estado antes de adoptar.
       const persisted: Partial<Record<EyeKey, DiagnosisResult>> = {};
       details.forEach((d) => { persisted[d.ojo] = resultadoPersistido(context.visita_id, d); });
       contextVersion.current++;
       cancelManualReview();
+      if (resume) {
+        searchRequest.current++;
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        setIsSearching(false);
+        setIsLoadingMorePatients(false);
+        setIsLoadingVisitas(false);
+        setSelectedPatient(recoveredPatient);
+        setQuery(`${recoveredPatient.nombres} ${recoveredPatient.apellidos}`);
+        setSelectedVisita(visit);
+        rememberVisit(context.visita_id);
+      }
       operation.resultado.detalle_ids_descartados.forEach((id) => discardedIdsRef.current.add(id));
       keepResults(persisted); // Solo datos persistidos actuales; nunca del marcador.
       setComments({ OD: details.find((d) => d.ojo === "OD")?.comentario_medico ?? "",
         OI: details.find((d) => d.ojo === "OI")?.comentario_medico ?? "" });
       setCorrectionReasons({ OD: details.find((d) => d.ojo === "OD")?.motivo_correccion ?? "",
         OI: details.find((d) => d.ojo === "OI")?.motivo_correccion ?? "" });
+      setActiveEye(persisted.OD && !persisted.OI ? "OI" : "OD");
       setProcessingNotice("Corrección conciliada con el estado actual del servidor. Se conserva la misma visita; no se recuperaron archivos ni borradores locales. Cargue fotografías solo en los ojos disponibles.");
       setStep(2);
       return true;
@@ -475,11 +532,7 @@ export function useDiagnosis(): DiagnosisHook {
       const now = Date.now();
       const recent = (data || [])
         .filter((visit) => {
-          if (visit.estado === "ANULADA") return false;
-          // La recuperación permite RESELECCIONAR su visita real, incluso si
-          // conserva otro ojo o dejó de pertenecer a la ventana de recientes.
-          if (diagnosisDiscardEnabled() && useDiagnosisDiscardStore.getState().markers.some((m) =>
-              m.actorId === useAuthStore.getState().user?.id && m.visitId === visit.visita_id)) return true;
+          if (visit.estado !== "ACTIVA") return false;
           if (Number(visit.tiene_diagnostico_ia) === 1) return false;
           const visitTime = visit.fecha_visita_origen === "UTC_VERIFICADO"
             ? clinicalInstant(visit.fecha_visita, visit.fecha_visita_origen)?.getTime() ?? null
@@ -746,6 +799,7 @@ export function useDiagnosis(): DiagnosisHook {
     }
     const version = contextVersion.current;
     const generation = eyeGeneration.current[eye];
+    pendingManualPreviews.current++;
     try {
       const preview = await convertToPreviewUrl(file);
       if (version !== contextVersion.current || generation !== eyeGeneration.current[eye] || resultsRef.current[eye]) { revokePreviewUrl(preview); return; }
@@ -763,6 +817,8 @@ export function useDiagnosis(): DiagnosisHook {
         title: "Vista previa no disponible",
         description: "Vuelva a seleccionar la fotografía para revisarla antes de analizar.",
       });
+    } finally {
+      pendingManualPreviews.current--;
     }
   };
 
@@ -1133,7 +1189,7 @@ export function useDiagnosis(): DiagnosisHook {
         setEyeProcessing((prev) => ({ ...prev, [eye]: uncertain ? "incierto" : "error" }));
         let message = !postStarted && eyes[eye].isExistingImage
           ? "La confirmación no está vigente o no pudo comprobarse; no se inició inferencia. Consulte su estado."
-          : processingFailure(status);
+          : processingFailure(status, err.response?.data?.code);
         if (eyes[eye].isExistingImage && postStarted) {
           if (status === 409) message = "La confirmación o la exportación cambió, o existe un conflicto clínico. Consulte su estado; no reenvíe automáticamente.";
           const current = await checkConfirmation(eye);

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Diagnosis from "../features/diagnosis/pages/Diagnosis";
@@ -59,6 +59,7 @@ describe("presentación y acciones del Paso 3", () => {
     configureCorrection(false);
     render(<Diagnosis />);
     expect(screen.queryByRole("button", { name: "Corregir fotografías" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reanudar corrección pendiente" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Guardar diagnóstico" })).toBeInTheDocument();
     expect(state.correction.open).not.toHaveBeenCalled();
   });
@@ -79,6 +80,23 @@ describe("presentación y acciones del Paso 3", () => {
     render(<Diagnosis />);
     expect(screen.getByRole("button", { name: "Consultar corrección pendiente" })).toBeDisabled();
   });
+  it("conecta la reanudación excepcional al marcador, sin navegar ni guardar", () => {
+    configureCorrection(false);
+    const resume = vi.fn(async () => {});
+    state.correction.recoveries = [{ operationId: "technical-only", loading: false,
+      notice: "Corrección confirmada pendiente de reanudar.", consult: vi.fn(async () => {}), resume }];
+    render(<Diagnosis />);
+    fireEvent.click(screen.getByRole("button", { name: "Reanudar corrección pendiente" }));
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(state.goNext).not.toHaveBeenCalled(); expect(state.validateAll).not.toHaveBeenCalled();
+  });
+  it("deshabilita reanudar mientras se está verificando el marcador", () => {
+    configureCorrection(false);
+    state.correction.recoveries = [{ operationId: "technical-only", loading: true,
+      notice: "Verificando corrección.", consult: vi.fn(async () => {}), resume: vi.fn(async () => {}) }];
+    render(<Diagnosis />);
+    expect(screen.getByRole("button", { name: "Reanudar corrección pendiente" })).toBeDisabled();
+  });
   it("ofrece corrección contextual sin recuperar Anterior ni ejecutar la inferencia", () => {
     configureCorrection(true);
     render(<Diagnosis />);
@@ -87,6 +105,15 @@ describe("presentación y acciones del Paso 3", () => {
     expect(state.goBack).not.toHaveBeenCalled();
     expect(state.goNext).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Anterior" })).not.toBeInTheDocument();
+  });
+  it("alinea la corrección con las pestañas de ambos ojos en la misma barra", () => {
+    configureCorrection(true);
+    render(<Diagnosis />);
+    const tabs = screen.getByRole("group", { name: "Ojo evaluado" });
+    const toolbar = tabs.parentElement!;
+    expect(toolbar).toHaveClass("flex", "flex-wrap", "items-center", "justify-between");
+    expect(within(toolbar).getByRole("button", { name: "Corregir fotografías" })).toBeInTheDocument();
+    expect(within(tabs).getAllByRole("button")).toHaveLength(2);
   });
   it("conecta selección y aceptación al contrato de corrección sin guardar diagnóstico", () => {
     configureCorrection(true);
@@ -138,7 +165,7 @@ describe("presentación y acciones del Paso 3", () => {
   it("con ambos ojos registrados retira Anterior y conserva el guardado con confirmación previa", () => {
     render(<Diagnosis />);
     expect(screen.queryByRole("button", { name: "Anterior" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Añadir ojo pendiente" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Añadir ojo pendiente/ })).not.toBeInTheDocument();
     expect(state.goBack).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Guardar diagnóstico" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
@@ -152,10 +179,36 @@ describe("presentación y acciones del Paso 3", () => {
     state.activeEye = eye;
     render(<Diagnosis />);
     expect(screen.queryByRole("button", { name: "Anterior" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Añadir ojo pendiente" }));
+    const tabs = screen.getByRole("group", { name: "Ojo evaluado" });
+    expect(within(tabs).getAllByRole("button")).toHaveLength(2);
+    const pending = within(tabs).getByRole("button", { name: /Añadir ojo pendiente/ });
+    expect(pending).toHaveAccessibleName(`${eye === "OD" ? "Ojo izquierdo (OI)" : "Ojo derecho (OD)"}: Añadir ojo pendiente`);
+    expect(pending).toHaveTextContent("No cargada");
+    expect(pending).not.toHaveAttribute("aria-pressed");
+    expect(screen.queryByText(/No procesado/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Añadir ojo pendiente/ })).toHaveLength(1);
+    fireEvent.click(pending);
     expect(state.goBack).toHaveBeenCalledTimes(1);
+    expect(state.setActiveEye).not.toHaveBeenCalled();
     expect(state.goNext).not.toHaveBeenCalled();
     expect(state.validateAll).not.toHaveBeenCalled();
+  });
+
+  it("destaca añadir con borde de guiones y atenúa el estado al pasar el cursor o enfocar", () => {
+    state.results = { OD: result };
+    render(<Diagnosis />);
+    const pending = screen.getByRole("button", { name: /Añadir ojo pendiente/ });
+    expect(pending).toHaveClass("enabled:hover:border-dashed", "enabled:hover:border-primary", "focus-visible:border-dashed");
+    expect(within(pending).getByText("No cargada").parentElement).toHaveClass("group-[:enabled:hover]:opacity-20", "group-focus-visible:opacity-20");
+    expect(within(pending).getByText("Añadir ojo pendiente")).toHaveClass("opacity-0", "group-[:enabled:hover]:opacity-100", "group-focus-visible:opacity-100", "text-primary");
+  });
+
+  it("no presenta como no cargada una fotografía que ya existe sin resultado", () => {
+    state.results = { OD: result };
+    state.eyes.OI.file = new File(["synthetic"], "oi.jpg");
+    render(<Diagnosis />);
+    expect(screen.getByRole("button", { name: /Añadir ojo pendiente/ })).toHaveTextContent("Sin resultado");
+    expect(screen.queryByText("No cargada")).not.toBeInTheDocument();
   });
 
   it.each(["error", "incierto"] as const)("conserva el aviso de procesamiento parcial y el estado %s de OI", (status) => {
@@ -197,7 +250,7 @@ describe("presentación y acciones del Paso 3", () => {
     state.isSaving = operation === "inferencia";
     state.isValidating = operation === "validación";
     render(<Diagnosis />);
-    const add = screen.getByRole("button", { name: "Añadir ojo pendiente" });
+    const add = screen.getByRole("button", { name: /Añadir ojo pendiente/ });
     expect(add).toBeDisabled();
     fireEvent.click(add);
     expect(state.goBack).not.toHaveBeenCalled();

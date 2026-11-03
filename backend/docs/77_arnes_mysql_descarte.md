@@ -1,5 +1,10 @@
 # 77 — Arnés focalizado preparado; MySQL NO ejecutado
 
+**Actualización 78B:** el cargador exige manifiesto v2 con estado explícito,
+fecha/versión y recursos verificados. El formato anterior de seis campos ya no
+se acepta. Ver [78b_manifiesto_mysql.md](78b_manifiesto_mysql.md) y el manifiesto
+NOT_AUTHORIZED enlazado allí. La CLI conserva sus mismos tres argumentos.
+
 **Actualización 78A:** se subsanaron las cuatro brechas estáticas señaladas en 78.
 Consultar [78a_subsanacion_arnes_mysql.md](78a_subsanacion_arnes_mysql.md) para las
 barreras de inventario, retirada completa, casos nuevos y verificación offline.
@@ -76,24 +81,16 @@ La autorización humana del Prompt 78 debe identificar UUID, binario/hash, diges
 raíz/datadir/esquema derivados, cuentas y alcance de escritura/retirada.
 El manifiesto no demuestra por sí solo consentimiento humano.
 
-Formato de referencia, **no es un archivo habilitado ni contiene valores utilizables**:
-
-```json
-{
-  "run_id": "<UUID canónico nuevo aprobado>",
-  "mysql_server": "<ruta absoluta aprobada a mysqld.exe>",
-  "mysql_sha256": "<SHA-256 del binario aprobado>",
-  "sources_sha256": "<digest final informado por fase A>",
-  "authorization": "PROMPT78_DISPOSABLE_ONLY:<mismo UUID>",
-  "scopes": [
-    "start_owned_mysql", "create_synthetic_schema", "synthetic_sql_writes",
-    "synthetic_files", "stop_owned_process", "retire_owned_resources"
-  ]
-}
-```
+El formato vigente está materializado en
+[`../trial_manifests/78b_bde4e98a-0eaa-43dd-a1dc-5f8aae670ec4.json`](../trial_manifests/78b_bde4e98a-0eaa-43dd-a1dc-5f8aae670ec4.json).
+Es un documento de revisión, **NOT_AUTHORIZED**, sin cadena de autorización ni
+credenciales. Incluye fecha UTC, versión v2, versión del arnés, hashes, alcances y
+recursos derivados. Esos recursos se comparan con el runtime; no son overrides.
 
 Solo después de aprobarlo, B requerirá simultáneamente `--execute --config RUTA
 --authorize-run UUID`. No ejecutar ese comando en 77.
+También requiere estado AUTHORIZED y autorización concordante: un UUID coincidente
+por sí solo no desbloquea la fase B. Preparar o inspeccionar el JSON no autoriza nada.
 No acepta instancias preexistentes o destinos SQL alternativos.
 
 ## D. Esquema sintético

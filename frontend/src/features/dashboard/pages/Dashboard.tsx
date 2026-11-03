@@ -46,13 +46,13 @@ export default function Dashboard() {
           : error ? <p role="alert" className="rounded-md border border-border bg-card p-6 text-sm text-destructive">{error}</p>
             : summary ? <div className="space-y-6">
               <KpiGrid kpis={kpis} />
+              <QuickAccess actions={actions} />
               <div role="group" aria-label="Actividad clínica y gravedad"
                 className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
                 <RecentPatientsTable patients={summary.recent_patients}
                   canViewPatients={canViewPatients && summary.actions.patients} />
                 <RDLevelDistribution rows={summary.severity} />
               </div>
-              <QuickAccess actions={actions} />
             </div> : null
       ) : (
         <div className="max-w-2xl space-y-6">

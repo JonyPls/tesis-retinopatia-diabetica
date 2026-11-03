@@ -65,7 +65,11 @@ describe("Dashboard clínico", () => {
     expect(middle.querySelector("table")).toBeInTheDocument();
     expect(middle.querySelectorAll("thead th")).toHaveLength(3);
     expect(middle).toHaveTextContent("Distribución de gravedad por ojo validado");
-    expect(screen.getByRole("heading", { name: "Accesos rápidos" }).parentElement).toHaveClass("space-y-3");
+    const quickAccess = screen.getByRole("heading", { name: "Accesos rápidos" }).parentElement!;
+    expect(quickAccess).toHaveClass("space-y-3");
+    expect(quickAccess.previousElementSibling).toContainElement(screen.getByText("Evaluaciones IA"));
+    expect(quickAccess.nextElementSibling).toBe(middle);
+    expect(quickAccess.parentElement).toBe(middle.parentElement);
     expect(screen.getAllByText(/Grado catálogo/)).toHaveLength(5);
     const level = screen.getByText(/N4 · Grado catálogo 4/).closest("div")?.nextElementSibling?.firstElementChild;
     expect(level).toHaveStyle({ width: "100%", backgroundColor: "hsl(var(--rd-4))" });

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -5,6 +6,7 @@ import {
   ChevronDown,
   Eye,
   Info,
+  Plus,
   Stethoscope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,9 @@ interface DiagnosisResultsProps {
   eyes: Record<EyeKey, EyeState>;
   activeEye: EyeKey;
   setActiveEye: (eye: EyeKey) => void;
+  onAddPendingEye?: () => void;
+  isNavigationBusy?: boolean;
+  toolbarActions?: ReactNode;
 }
 
 const EYE_FULL: Record<EyeKey, string> = {
@@ -74,22 +79,48 @@ function persistedValidation(result?: DiagnosisResult): "APROBADO" | "CORREGIDO"
 }
 
 function EyeTabs({
-  available,
+  eyes,
   active,
   results,
   validatedEyes,
   onSelect,
+  onAddPendingEye,
+  isNavigationBusy,
 }: {
-  available: EyeKey[];
+  eyes: Record<EyeKey, EyeState>;
   active: EyeKey;
   results: Partial<Record<EyeKey, DiagnosisResult>>;
   validatedEyes?: Partial<Record<EyeKey, "APROBADO" | "CORREGIDO">>;
   onSelect: (eye: EyeKey) => void;
+  onAddPendingEye?: () => void;
+  isNavigationBusy?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Ojo evaluado">
-      {available.map((eye) => {
-        const result = results[eye]!;
+      {(["OD", "OI"] as const).map((eye) => {
+        const result = results[eye];
+        if (!result) {
+          return (
+            <button
+              key={eye}
+              type="button"
+              aria-label={`${EYE_FULL[eye]} (${eye}): Añadir ojo pendiente`}
+              onClick={onAddPendingEye}
+              disabled={isNavigationBusy || !onAddPendingEye}
+              className="group relative flex min-h-11 items-center justify-center rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground transition-colors enabled:hover:border-dashed enabled:hover:border-primary enabled:hover:bg-primary/5 focus-visible:border-dashed focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="flex flex-wrap items-center justify-center gap-2 transition-opacity group-[:enabled:hover]:opacity-20 group-focus-visible:opacity-20">
+                <Eye className="h-4 w-4" />
+                <span className="font-medium">{EYE_FULL[eye]} ({eye})</span>
+                <span className="text-[11px]">{eyes[eye].file ? "Sin resultado" : "No cargada"}</span>
+              </span>
+              <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 font-semibold text-primary opacity-0 transition-opacity group-[:enabled:hover]:opacity-100 group-focus-visible:opacity-100">
+                <Plus className="h-4 w-4" />
+                Añadir ojo pendiente
+              </span>
+            </button>
+          );
+        }
         const isActive = active === eye;
         const isValidated = !!(validatedEyes?.[eye] ?? persistedValidation(result));
 
@@ -100,7 +131,7 @@ function EyeTabs({
             aria-pressed={isActive}
             onClick={() => onSelect(eye)}
             className={cn(
-              "flex min-h-10 flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "flex min-h-11 flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               isActive
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border bg-muted/35 text-muted-foreground hover:bg-muted",
@@ -360,6 +391,9 @@ export function DiagnosisResults(
     setCorrectionReason,
     validatedEyes,
     isValidating,
+    onAddPendingEye,
+    isNavigationBusy,
+    toolbarActions,
   } = props;
 
   const available = eyesWithResults(results);
@@ -386,13 +420,18 @@ export function DiagnosisResults(
 
   return (
     <div className="space-y-5">
-      <EyeTabs
-        available={available}
-        active={activeEye}
-        results={results}
-        validatedEyes={validatedEyes}
-        onSelect={setActiveEye}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <EyeTabs
+          eyes={eyes}
+          active={activeEye}
+          results={results}
+          validatedEyes={validatedEyes}
+          onSelect={setActiveEye}
+          onAddPendingEye={onAddPendingEye}
+          isNavigationBusy={isNavigationBusy}
+        />
+        {toolbarActions && <div className="ml-auto shrink-0">{toolbarActions}</div>}
+      </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <div className="min-w-0 space-y-4">

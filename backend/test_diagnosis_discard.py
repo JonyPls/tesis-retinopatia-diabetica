@@ -167,6 +167,35 @@ class DiscardTest(TestCase):
         data.seek(0)
         return FileStorage(stream=data, filename='synthetic.jpg', content_type='image/jpeg')
 
+    def test_validator_unavailable_has_specific_code_and_never_predicts_or_persists(self):
+        db.session.execute(DiagnosticoDetalle.__table__.delete().where(DiagnosticoDetalle.id == 12))
+        db.session.commit()
+        inference = self.inference_service()
+        inference.validar_contenido_semantico.return_value = {
+            'valido': False, 'status': 503, 'error': 'Validación de imagen no disponible.'}
+        response, status = inference.procesar_diagnostico(
+            self.synthetic_upload(), 7, 1, 'Izquierdo', 30)
+        self.assertEqual(status, 503)
+        self.assertEqual(response['code'], 'VALIDADOR_IMAGEN_NO_DISPONIBLE')
+        inference.predecir_imagen_bytes.assert_not_called()
+        self.assertEqual(self.ids(), [11])
+
+    def test_missing_extension_stops_before_clip_and_reports_schema_not_validator(self):
+        # Solo el esquema SQLite :memory: de este test; nunca MySQL habitual.
+        db.session.execute(text('DROP TABLE diagnostico_ia_descarte_operaciones'))
+        db.session.execute(text('DROP TABLE diagnostico_ia_revision_visita'))
+        db.session.execute(DiagnosticoDetalle.__table__.delete().where(DiagnosticoDetalle.id == 12))
+        db.session.commit()
+        inference = self.inference_service()
+        response, status = inference.procesar_diagnostico(
+            self.synthetic_upload(), 7, 1, 'Izquierdo', 30)
+        self.assertEqual(status, 503)
+        self.assertEqual(response['code'], 'DESCARTE_NO_INSTALADO')
+        inference.validar_formato_y_dimensiones.assert_not_called()
+        inference.validar_contenido_semantico.assert_not_called()
+        inference.predecir_imagen_bytes.assert_not_called()
+        self.assertEqual(self.ids(), [11])
+
     def test_single_eye_preserves_other_and_visit(self):
         before = db.session.get(DiagnosticoDetalle, 11).imagen_original_url
         response, status = self.discard()
