@@ -72,12 +72,12 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
             max_pixels=current_app.config.get('DIAGNOSIS_MAX_IMAGE_PIXELS', MAX_IMAGE_PIXELS),
         )
         if not check["valido"]:
-            return {"success": False, "message": check["error"]}, 400
+            return {"success": False, "code": "IMAGEN_INVALIDA", "message": check["error"]}, 400
         
         # Capa 2 de Validación
         check = validar_region_circular(image_bytes)
         if not check["valido"]:
-            return {"success": False, "message": check["error"]}, 400
+            return {"success": False, "code": "IMAGEN_INVALIDA", "message": check["error"]}, 400
         
         # Capa 3 de Validación
         check = validar_contenido_semantico(image_bytes)
@@ -87,7 +87,7 @@ def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_
                         "message": "Validación de imagen no disponible."}, 503
             if check.get("status") == 500:
                 return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
-            return {"success": False, "message": check["error"]}, 422
+            return {"success": False, "code": "IMAGEN_INVALIDA", "message": check["error"]}, 422
         
         
         # Proceso normal al ser una retinografía

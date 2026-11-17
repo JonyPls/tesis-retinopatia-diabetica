@@ -1,0 +1,36 @@
+{
+  "observed_utc": "2026-11-03T17:35:32.0569299Z",
+  "mysql_processes": [
+    {
+      "ProcessId": 19808,
+      "ExecutablePath": null
+    },
+    {
+      "ProcessId": 20248,
+      "ExecutablePath": null
+    },
+    {
+      "ProcessId": 18768,
+      "ExecutablePath": "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe"
+    }
+  ],
+  "habitual_listeners": [
+    {
+      "LocalAddress": "::",
+      "LocalPort": 33060,
+      "OwningProcess": 20248
+    },
+    {
+      "LocalAddress": "::",
+      "LocalPort": 3306,
+      "OwningProcess": 20248
+    }
+  ],
+  "target_listeners": [
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 33363,
+      "OwningProcess": 18768
+    }
+  ]
+}

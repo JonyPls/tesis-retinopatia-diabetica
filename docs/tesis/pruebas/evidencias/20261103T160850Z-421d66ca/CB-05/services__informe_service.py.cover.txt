@@ -1,0 +1,440 @@
+Real CPython trace counts; function-body scope; lines, NOT branches.
+Functions: _extraer_conclusion, _positive_id, _validar_datos_estructurados, _is_duplicate_report, _rollback_informe, crear_nuevo_informe
+           1: import json
+           2: import math
+           3: from flask import current_app, has_app_context
+           4: from sqlalchemy.exc import DBAPIError, IntegrityError
+           5: from database import db
+           6: from src.repositories.informe_repository import InformeRepository
+           7: from utils.clinical_dates import clinical_instant
+           8: from utils.diagnosis_discard_gate import DiscardError, enabled as discard_enabled, require_ready
+           9: from src.repositories.diagnosis_discard_repository import DiagnosisDiscardRepository
+          10: 
+          11: 
+          12: def _extraer_conclusion(datos_estructurados):
+     13   13:     if not isinstance(datos_estructurados, dict):
+ >>>>>>   14:         return None
+          15: 
+     13   16:     conclusion = datos_estructurados.get("conclusion")
+     13   17:     if isinstance(conclusion, list):
+     39   18:         items = [str(item).strip() for item in conclusion if str(item).strip()]
+     13   19:         return "\n".join(items) if items else None
+ >>>>>>   20:     if conclusion is None:
+ >>>>>>   21:         return None
+          22: 
+ >>>>>>   23:     texto = str(conclusion).strip()
+ >>>>>>   24:     return texto or None
+          25: 
+          26: 
+          27: def obtener_tipos():
+          28:     tipos = InformeRepository.listar_tipos_informe_activos()
+          29:     return {"success": True, "data": tipos}, 200
+          30: 
+          31: 
+          32: _FIELDS = {'paciente_id', 'tipo_informe_id', 'datos_estructurados', 'visita_id', 'diagnostico_id',
+          33:            'revision_inferencia_esperada'}
+          34: _RESERVED = {'id', 'usuario_id', 'user_id', 'creador', 'estado', 'fecha_creado', 'fecha_actualizado',
+          35:              'paciente_id', 'tipo_informe_id', 'visita_id', 'diagnostico_id', 'schema_version',
+          36:               'revision_actual', 'numero_version', 'editor_id', 'autor_operacion_id', 'fecha_operacion',
+          37:               'fecha_visita_origen', 'fecha_creado_origen', 'fecha_actualizado_origen',
+          38:                'fecha_operacion_origen', 'fecha_validacion_origen'}
+          39: 
+          40: 
+          41: class InvalidReportData(Exception):
+          42:     pass
+          43: 
+          44: 
+          45: def _positive_id(value, maximum):
+     55   46:     return type(value) is int and 0 < value <= maximum
+          47: 
+          48: 
+          49: def _validar_datos_estructurados(value):
+          50:     """Contrato estructural, sin decidir rangos ni diagnósticos clínicos."""
+     20   51:     if type(value) is not dict or not value:
+      1   52:         raise InvalidReportData()
+          53:     # Con descarte apagado conservar exactamente las claves del contrato previo.
+          54:     # La revisión técnica pertenece al envelope solo cuando opera esa capacidad.
+     19   55:     reserved = _RESERVED
+     19   56:     if has_app_context() and discard_enabled():
+ >>>>>>   57:         reserved = reserved | {'revision_inferencia_esperada'}
+          58: 
+     19   59:     def visit(node, depth):
+    145   60:         if depth > 8:
+ >>>>>>   61:             raise InvalidReportData()
+    145   62:         if type(node) is dict:
+     37   63:             if len(node) > 128:
+ >>>>>>   64:                 raise InvalidReportData()
+    109   65:             for key, item in node.items():
+     73   66:                 if (type(key) is not str or not key or len(key) > 100 or
+     73   67:                         key.lower() in reserved):
+      1   68:                     raise InvalidReportData()
+     72   69:                 visit(item, depth + 1)
+    108   70:         elif type(node) is list:
+     36   71:             if len(node) > 128:
+ >>>>>>   72:                 raise InvalidReportData()
+     90   73:             for item in node:
+     54   74:                 visit(item, depth + 1)
+     72   75:         elif type(node) is str:
+     54   76:             if len(node) > 8192:
+ >>>>>>   77:                 raise InvalidReportData()
+     18   78:         elif node is None or type(node) is bool or type(node) is int:
+     18   79:             pass
+ >>>>>>   80:         elif type(node) is float:
+ >>>>>>   81:             if not math.isfinite(node):
+ >>>>>>   82:                 raise InvalidReportData()
+          83:         else:
+ >>>>>>   84:             raise InvalidReportData()
+          85: 
+     19   86:     visit(value, 0)
+     18   87:     if len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode('utf-8')) > 65536:
+ >>>>>>   88:         raise InvalidReportData()
+     18   89:     if 'conclusion' in value:
+     18   90:         conclusion = value['conclusion']
+     18   91:         if (conclusion is not None and type(conclusion) is not str and
+     18   92:                 (type(conclusion) is not list or
+     72   93:                  any(type(item) is not str for item in conclusion))):
+ >>>>>>   94:             raise InvalidReportData()
+     18   95:     if 'ojos' in value:
+     18   96:         eyes = value['ojos']
+     18   97:         if (type(eyes) is not list or not 1 <= len(eyes) <= 2 or
+     54   98:                 any(eye not in ('OD', 'OI') for eye in eyes) or len(set(eyes)) != len(eyes)):
+ >>>>>>   99:             raise InvalidReportData()
+     72  100:     for key in ('valores', 'campos', 'grados'):
+     54  101:         if key in value:
+     18  102:             entries = value[key]
+     18  103:             if (type(entries) is not dict or
+     54  104:                     any(eye not in ('od', 'oi') for eye in entries)):
+ >>>>>>  105:                 raise InvalidReportData()
+     36  106:             for item in entries.values():
+     18  107:                 if key == 'valores':
+     18  108:                     if type(item) not in (int, float) or not math.isfinite(item):
+ >>>>>>  109:                         raise InvalidReportData()
+ >>>>>>  110:                 elif (type(item) is not dict or
+ >>>>>>  111:                       any(type(field) is not str for field in item.values())):
+ >>>>>>  112:                     raise InvalidReportData()
+         113: 
+         114: 
+         115: def _is_duplicate_report(error):
+      8  116:     original = getattr(error, 'orig', None)
+      8  117:     args = getattr(original, 'args', ())
+     13  118:     return (bool(args) and args[0] == 1062 and
+      5  119:             'uq_informes_visita_tipo' in str(args[1] if len(args) > 1 else ''))
+         120: 
+         121: 
+         122: def _rollback_informe():
+     16  123:     try:
+     16  124:         db.session.rollback()
+      1  125:     except Exception:
+      1  126:         current_app.logger.error("No se pudo completar rollback de informe")
+         127: 
+         128: 
+         129: def crear_nuevo_informe(datos, usuario_id):
+     23  130:     if type(datos) is not dict or not {'paciente_id', 'tipo_informe_id', 'datos_estructurados'} <= datos.keys() or set(datos) - _FIELDS:
+ >>>>>>  131:         return {"success": False, "message": "Solicitud de informe inválida."}, 400
+     23  132:     paciente_id, tipo_id = datos['paciente_id'], datos['tipo_informe_id']
+     23  133:     if not _positive_id(paciente_id, 4294967295) or not _positive_id(tipo_id, 65535):
+      1  134:         return {"success": False, "message": "Identificador inválido."}, 400
+     22  135:     has_visit, has_alias = 'visita_id' in datos, 'diagnostico_id' in datos
+     22  136:     if (has_visit and not _positive_id(datos['visita_id'], 18446744073709551615) or
+     21  137:             has_alias and not _positive_id(datos['diagnostico_id'], 18446744073709551615) or
+     21  138:             has_visit and has_alias and datos['visita_id'] != datos['diagnostico_id']):
+      2  139:         return {"success": False, "message": "Identificador de visita inválido."}, 400
+     20  140:     visita_id = datos['visita_id'] if has_visit else datos.get('diagnostico_id')
+     20  141:     try:
+     20  142:         _validar_datos_estructurados(datos['datos_estructurados'])
+      2  143:     except (InvalidReportData, ValueError, OverflowError, TypeError):
+      2  144:         return {"success": False, "message": "Datos estructurados inválidos."}, 422
+         145: 
+     18  146:     commit_started = False
+     18  147:     try:
+     18  148:         if discard_enabled():
+ >>>>>>  149:             require_ready()
+         150:             # Liberar snapshot de autenticación antes de la lectura bloqueante.
+ >>>>>>  151:             db.session.rollback()
+ >>>>>>  152:             if visita_id:
+ >>>>>>  153:                 DiagnosisDiscardRepository.check_report(visita_id, datos.get('revision_inferencia_esperada'))
+     18  154:         InformeRepository.validar_paciente(paciente_id)
+     17  155:         tipo = InformeRepository.obtener_tipo_informe_por_id(tipo_id)
+     17  156:         if not tipo:
+      1  157:             raise InformeRepository.NotFound()
+     16  158:         if visita_id:
+      5  159:             InformeRepository.validar_visita(visita_id, paciente_id)
+         160:         else:
+     11  161:             visita_id = InformeRepository.crear_visita(paciente_id, usuario_id)
+         162: 
+     26  163:         informe_id = InformeRepository.crear_informe(
+     13  164:             visita_id=visita_id,
+     13  165:             tipo_informe_id=tipo_id,
+     13  166:             usuario_id=usuario_id,
+     13  167:             datos_estructurados=datos['datos_estructurados'],
+     13  168:             conclusion=_extraer_conclusion(datos['datos_estructurados']),
+     13  169:             schema_version=tipo.get("schema_version_actual") or 1,
+         170:         )
+      7  171:         InformeRepository.crear_version_inicial(informe_id, usuario_id)
+      5  172:         commit_started = True
+      5  173:         db.session.commit()
+     16  174:     except DiscardError as error:
+ >>>>>>  175:         _rollback_informe()
+ >>>>>>  176:         return {"success": False, "code": error.code, "message": "El contexto de visita cambió o no está disponible."}, error.status
+     16  177:     except InformeRepository.NotFound:
+      4  178:         _rollback_informe()
+      4  179:         return {"success": False, "message": "Recurso no encontrado."}, 404
+     12  180:     except InformeRepository.Conflict:
+      1  181:         _rollback_informe()
+      1  182:         return {"success": False, "message": "Ya existe un informe de este tipo para la visita."}, 409
+     11  183:     except IntegrityError as error:
+      4  184:         _rollback_informe()
+      4  185:         if not commit_started and _is_duplicate_report(error):
+      1  186:             return {"success": False, "message": "Ya existe un informe de este tipo para la visita."}, 409
+      3  187:         if commit_started:
+      1  188:             current_app.logger.warning("Resultado de commit de informe incierto; no reintentar automáticamente")
+         189:         else:
+      2  190:             current_app.logger.error("Error de integridad al crear informe")
+      3  191:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+      7  192:     except DBAPIError:
+         193:         # El rollback limpia la sesión; si falló commit NO prueba que MySQL no persistiera.
+      2  194:         _rollback_informe()
+      2  195:         if commit_started:
+      1  196:             current_app.logger.warning("Resultado de commit de informe incierto; no reintentar automáticamente")
+         197:         else:
+      1  198:             current_app.logger.error("Error de persistencia al crear informe")
+      2  199:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+      5  200:     except Exception:
+      5  201:         _rollback_informe()
+      5  202:         if commit_started:
+      1  203:             current_app.logger.warning("Resultado de commit de informe incierto; no reintentar automáticamente")
+         204:         else:
+      4  205:             current_app.logger.error("Error al crear informe")
+      5  206:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         207: 
+      2  208:     return {"success": True, "data": {"id": informe_id, "visita_id": visita_id, "diagnostico_id": visita_id}}, 201
+         209: 
+         210: def _parsear_datos(informe: dict) -> dict:
+         211:     if isinstance(informe.get("datos_estructurados"), str):
+         212:         try:
+         213:             informe["datos_estructurados"] = json.loads(informe["datos_estructurados"])
+         214:         except (json.JSONDecodeError, TypeError):
+         215:             pass
+         216:     if not informe.get("conclusion"):
+         217:         informe["conclusion"] = _extraer_conclusion(informe.get("datos_estructurados"))
+         218:     return informe
+         219: 
+         220: def obtener_informe(informe_id):
+         221:     informe = InformeRepository.obtener_informe_por_id(informe_id)
+         222:     if not informe:
+         223:         return {"success": False, "message": "Informe no encontrado."}, 404
+         224:     return {"success": True, "data": _parsear_datos(informe)}, 200
+         225: 
+         226: 
+         227: def _paginacion(total, page, per_page):
+         228:     return {"page": page, "per_page": per_page, "total": total,
+         229:             "has_more": page * per_page < total}
+         230: 
+         231: 
+         232: def obtener_versiones_informe(informe_id, page, per_page):
+         233:     try:
+         234:         row = InformeRepository.obtener_contexto_historico(informe_id)
+         235:         if row is None:
+         236:             return {"success": False, "message": "Informe no encontrado."}, 404
+         237:         informe, tipo, visita, paciente, creador = row
+         238:         total, inicial, ultima, versiones = InformeRepository.versiones_historicas(
+         239:             informe_id, page, per_page)
+         240:         if (inicial is None or inicial.operacion not in ('CREACION', 'MIGRACION_INICIAL') or
+         241:                 ultima is None or total != informe.revision_actual or
+         242:                 ultima.numero_version != informe.revision_actual or
+         243:                 ultima.datos_estructurados != informe.datos_estructurados or
+         244:                 ultima.conclusion != informe.conclusion or ultima.estado != informe.estado or
+         245:                 ultima.schema_version != informe.schema_version):
+         246:             current_app.logger.error("Historial inconsistente en consulta de informe")
+         247:             return {"success": False, "message": "Historial no disponible por inconsistencia."}, 409
+         248:         return {"success": True, "data": {
+         249:             "informe": {"id": informe.id, "paciente_id": paciente.id,
+         250:                          "visita_id": visita.id,
+         251:                          "fecha_visita": clinical_instant(visita.fecha_visita, visita.fecha_visita_origen),
+         252:                          "fecha_visita_origen": visita.fecha_visita_origen,
+         253:                         "estado_visita": visita.estado, "tipo_informe_id": tipo.id,
+         254:                         "tipo_informe_nombre": tipo.nombre, "usuario_id": creador.id,
+         255:                         "estado": informe.estado, "revision_actual": informe.revision_actual},
+         256:             "versiones": [
+         257:                 {"numero_version": version.numero_version, "operacion": version.operacion,
+         258:                  "schema_version": version.schema_version,
+         259:                  "datos_estructurados": version.datos_estructurados,
+         260:                  "conclusion": version.conclusion, "estado": version.estado,
+         261:                  "autor_operacion_id": version.autor_operacion_id,
+         262:                  "autor_operacion": ({"id": autor.id, "nombres": autor.nombres,
+         263:                                        "apellidos": autor.apellidos} if autor else None),
+         264:                   "fecha_operacion": clinical_instant(version.fecha_operacion, version.fecha_operacion_origen),
+         265:                   "fecha_operacion_origen": version.fecha_operacion_origen, "motivo": version.motivo,
+         266:                  "es_actual": version.numero_version == informe.revision_actual}
+         267:                 for version, autor in versiones],
+         268:         }, "pagination": _paginacion(total, page, per_page)}, 200
+         269:     except Exception:
+         270:         current_app.logger.error("Error al consultar versiones de informe")
+         271:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         272: 
+         273: 
+         274: def obtener_historial_paciente(paciente_id, page, per_page):
+         275:     try:
+         276:         total, rows = InformeRepository.listar_historial_paciente(paciente_id, page, per_page)
+         277:         return {"success": True, "data": [
+         278:             {"id": informe.id, "tipo_informe_id": tipo.id,
+         279:              "tipo_informe_nombre": tipo.nombre, "visita_id": visita.id,
+         280:               "fecha_visita": clinical_instant(visita.fecha_visita, visita.fecha_visita_origen),
+         281:               "fecha_visita_origen": visita.fecha_visita_origen, "estado_visita": visita.estado,
+         282:              "usuario_id": creador.id,
+         283:              "autor_original": {"id": creador.id, "nombres": creador.nombres,
+         284:                                 "apellidos": creador.apellidos},
+         285:              "estado": informe.estado, "revision_actual": informe.revision_actual,
+         286:               "fecha_creado": clinical_instant(informe.fecha_creado, informe.fecha_creado_origen),
+         287:               "fecha_creado_origen": informe.fecha_creado_origen,
+         288:               "fecha_actualizado": clinical_instant(informe.fecha_actualizado, informe.fecha_actualizado_origen),
+         289:               "fecha_actualizado_origen": informe.fecha_actualizado_origen}
+         290:             for informe, tipo, visita, creador in rows],
+         291:             "pagination": _paginacion(total, page, per_page)}, 200
+         292:     except InformeRepository.NotFound:
+         293:         return {"success": False, "message": "Paciente no encontrado."}, 404
+         294:     except Exception:
+         295:         current_app.logger.error("Error al consultar catálogo histórico de informes")
+         296:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         297: 
+         298: 
+         299: def bloquear_informe_para_edicion(informe_id):
+         300:     return InformeRepository.bloquear_informe(informe_id)
+         301: 
+         302: 
+         303: def cancelar_edicion():
+         304:     _rollback_informe()
+         305: 
+         306: 
+         307: def actualizar_informe_existente(informe_id, datos, usuario_id, informe_bloqueado):
+         308:     """El recurso llega bloqueado por la guardia B1 y conserva esa transacción."""
+         309:     informe = informe_bloqueado
+         310:     if informe is None or informe.id != informe_id or informe.usuario_id != usuario_id:
+         311:         _rollback_informe()
+         312:         return {"success": False, "message": "No autorizado."}, 403
+         313:     if (type(datos) is not dict or set(datos) !=
+         314:             {'datos_estructurados', 'motivo', 'revision_esperada'}):
+         315:         _rollback_informe()
+         316:         return {"success": False, "message": "Solicitud de informe inválida."}, 400
+         317:     revision = datos['revision_esperada']
+         318:     motivo = datos['motivo']
+         319:     if not _positive_id(revision, 18446744073709551615) or type(motivo) is not str or not motivo.strip() or len(motivo) > 1000:
+         320:         _rollback_informe()
+         321:         return {"success": False, "message": "Revisión o motivo inválido."}, 400
+         322:     motivo = motivo.strip()
+         323: 
+         324:     commit_started = False
+         325:     try:
+         326:         visita = InformeRepository.bloquear_visita_de_informe(informe)
+         327:         if (visita is None or visita.estado not in ('ACTIVA', 'CERRADA') or
+         328:                 informe.estado != 'ACTIVO' or revision != informe.revision_actual or
+         329:                 revision == 18446744073709551615):
+         330:             raise InformeRepository.Conflict()
+         331:         if not InformeRepository.version_actual_consistente(informe):
+         332:             current_app.logger.error("Historial inconsistente; corrección de informe rechazada")
+         333:             raise InformeRepository.Conflict()
+         334:         try:
+         335:             _validar_datos_estructurados(datos['datos_estructurados'])
+         336:         except (InvalidReportData, ValueError, OverflowError, TypeError):
+         337:             _rollback_informe()
+         338:             return {"success": False, "message": "Datos estructurados inválidos."}, 422
+         339:         InformeRepository.corregir_informe(
+         340:             informe, datos['datos_estructurados'],
+         341:             _extraer_conclusion(datos['datos_estructurados']), usuario_id, motivo,
+         342:         )
+         343:         nueva_revision = informe.revision_actual
+         344:         commit_started = True
+         345:         db.session.commit()
+         346:     except InformeRepository.Conflict:
+         347:         _rollback_informe()
+         348:         return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+         349:     except IntegrityError as error:
+         350:         _rollback_informe()
+         351:         if not commit_started and _is_duplicate_version(error):
+         352:             return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+         353:         current_app.logger.warning("Resultado de commit de corrección incierto" if commit_started
+         354:                                    else "Error de integridad al corregir informe")
+         355:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         356:     except Exception:
+         357:         _rollback_informe()
+         358:         current_app.logger.warning("Resultado de commit de corrección incierto" if commit_started
+         359:                                    else "Error de persistencia al corregir informe")
+         360:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         361:     return {"success": True, "message": "Informe actualizado correctamente.",
+         362:             "data": {"id": informe_id, "revision_actual": nueva_revision}}, 200
+         363: 
+         364: 
+         365: def _is_duplicate_version(error):
+         366:     original = getattr(error, 'orig', None)
+         367:     args = getattr(original, 'args', ())
+         368:     return (len(args) > 1 and args[0] == 1062 and
+         369:             'uq_informes_versiones_informe_numero' in str(args[1]))
+         370: 
+         371: 
+         372: def anular_informe_existente(informe_id, datos, usuario_id, informe_bloqueado):
+         373:     """El informe se bloqueó y verificó como propio antes de entrar aquí."""
+         374:     informe = informe_bloqueado
+         375:     if informe is None or informe.id != informe_id or informe.usuario_id != usuario_id:
+         376:         _rollback_informe()
+         377:         return {"success": False, "message": "No autorizado."}, 403
+         378:     if type(datos) is not dict or set(datos) != {'motivo', 'revision_esperada'}:
+         379:         _rollback_informe()
+         380:         return {"success": False, "message": "Solicitud de informe inválida."}, 400
+         381:     revision, motivo = datos['revision_esperada'], datos['motivo']
+         382:     if (not _positive_id(revision, 18446744073709551615) or type(motivo) is not str or
+         383:             not motivo.strip() or len(motivo) > 1000):
+         384:         _rollback_informe()
+         385:         return {"success": False, "message": "Revisión o motivo inválido."}, 400
+         386:     motivo = motivo.strip()
+         387: 
+         388:     commit_started = False
+         389:     try:
+         390:         visita = InformeRepository.bloquear_visita_de_informe(informe)
+         391:         if (visita is None or visita.estado not in ('ACTIVA', 'CERRADA') or
+         392:                 informe.estado != 'ACTIVO' or revision != informe.revision_actual or
+         393:                 revision == 18446744073709551615):
+         394:             raise InformeRepository.Conflict()
+         395:         if not InformeRepository.version_actual_consistente(informe):
+         396:             current_app.logger.error("Historial inconsistente; anulación de informe rechazada")
+         397:             raise InformeRepository.Conflict()
+         398:         InformeRepository.anular_informe(informe, usuario_id, motivo)
+         399:         nueva_revision = informe.revision_actual
+         400:         commit_started = True
+         401:         db.session.commit()
+         402:     except InformeRepository.Conflict:
+         403:         _rollback_informe()
+         404:         return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+         405:     except IntegrityError as error:
+         406:         _rollback_informe()
+         407:         if not commit_started and _is_duplicate_version(error):
+         408:             return {"success": False, "message": "Conflicto de revisión o estado."}, 409
+         409:         current_app.logger.warning("Resultado de commit de anulación incierto" if commit_started
+         410:                                    else "Error de integridad al anular informe")
+         411:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         412:     except Exception:
+         413:         _rollback_informe()
+         414:         current_app.logger.warning("Resultado de commit de anulación incierto" if commit_started
+         415:                                    else "Error de persistencia al anular informe")
+         416:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         417:     return {"success": True, "message": "Informe anulado correctamente.",
+         418:             "data": {"id": informe_id, "estado": "ANULADO", "revision_actual": nueva_revision}}, 200
+         419: 
+         420: def eliminar_informe_existente(informe_id):
+         421:     filas = InformeRepository.eliminar_informe(informe_id)
+         422:     if filas == 0:
+         423:         return {"success": False, "message": "Informe no encontrado o inactivo."}, 404
+         424:     return {"success": True, "message": "Informe eliminado correctamente."}, 200
+         425: 
+         426: def obtener_informes_paciente(paciente_id):
+         427:     informes = InformeRepository.listar_informes_por_paciente(paciente_id)
+         428:     return {"success": True, "data": [_parsear_datos(inf) for inf in informes]}, 200
+         429: 
+         430: def obtener_informes_por_paciente(paciente_id):
+         431:     return obtener_informes_paciente(paciente_id)
+         432: 
+         433: def consultar_informes_por_visita(visita_id):
+         434:     informes = InformeRepository.obtener_informes_por_visita(visita_id)
+         435:     return {"success": True, "data": [_parsear_datos(inf) for inf in informes]}, 200
+         436: 
+         437: def consultar_informes_por_diagnostico(diagnostico_id):
+         438:     return consultar_informes_por_visita(diagnostico_id)

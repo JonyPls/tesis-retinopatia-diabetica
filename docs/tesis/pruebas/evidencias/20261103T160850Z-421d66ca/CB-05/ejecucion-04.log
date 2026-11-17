@@ -1,0 +1,52 @@
+CODN WHITE-BOX | test_codn_cb05_report_transaction
+UTC: 2026-11-03T16:13:40.298229+00:00 | Python: 3.12.10
+Isolation: explicit stubs; network, env/model reads and external writes guarded.
+test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried (test_codn_cb05_report_transaction.ReportTransactionTests.test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried) ...   SUBCASO OK test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried (test_codn_cb05_report_transaction.ReportTransactionTests.test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried) (error='IntegrityError')
+  SUBCASO OK test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried (test_codn_cb05_report_transaction.ReportTransactionTests.test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried) (error='DBAPIError')
+  SUBCASO OK test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried (test_codn_cb05_report_transaction.ReportTransactionTests.test_commit_errors_are_uncertain_even_known_duplicate_and_never_retried) (error='RuntimeError')
+ok
+test_duplicate_classifier_requires_exact_mysql_code_and_named_index (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_classifier_requires_exact_mysql_code_and_named_index) ...   SUBCASO OK test_duplicate_classifier_requires_exact_mysql_code_and_named_index (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_classifier_requires_exact_mysql_code_and_named_index) (original="(1062, 'uq_informes_visita_tipo')")
+  SUBCASO OK test_duplicate_classifier_requires_exact_mysql_code_and_named_index (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_classifier_requires_exact_mysql_code_and_named_index) (original="(9999, 'uq_informes_visita_tipo')")
+  SUBCASO OK test_duplicate_classifier_requires_exact_mysql_code_and_named_index (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_classifier_requires_exact_mysql_code_and_named_index) (original="(1062, 'other_index')")
+  SUBCASO OK test_duplicate_classifier_requires_exact_mysql_code_and_named_index (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_classifier_requires_exact_mysql_code_and_named_index) (original='no original')
+  SUBCASO OK test_duplicate_classifier_requires_exact_mysql_code_and_named_index (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_classifier_requires_exact_mysql_code_and_named_index) (original='1062')
+ok
+test_duplicate_conflict_and_known_integrity_never_retry_or_commit (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_conflict_and_known_integrity_never_retry_or_commit) ...   SUBCASO OK test_duplicate_conflict_and_known_integrity_never_retry_or_commit (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_conflict_and_known_integrity_never_retry_or_commit) (error='Conflict')
+  SUBCASO OK test_duplicate_conflict_and_known_integrity_never_retry_or_commit (test_codn_cb05_report_transaction.ReportTransactionTests.test_duplicate_conflict_and_known_integrity_never_retry_or_commit) (error='IntegrityError')
+ok
+test_existing_visit_does_not_create_visit (test_codn_cb05_report_transaction.ReportTransactionTests.test_existing_visit_does_not_create_visit) ... ok
+test_failed_rollback_preserves_public_error_and_no_retry (test_codn_cb05_report_transaction.ReportTransactionTests.test_failed_rollback_preserves_public_error_and_no_retry) ... ok
+test_invalid_envelope_ids_and_structured_data_stop_before_repository (test_codn_cb05_report_transaction.ReportTransactionTests.test_invalid_envelope_ids_and_structured_data_stop_before_repository) ...   SUBCASO OK test_invalid_envelope_ids_and_structured_data_stop_before_repository (test_codn_cb05_report_transaction.ReportTransactionTests.test_invalid_envelope_ids_and_structured_data_stop_before_repository) (changes={'paciente_id': True})
+  SUBCASO OK test_invalid_envelope_ids_and_structured_data_stop_before_repository (test_codn_cb05_report_transaction.ReportTransactionTests.test_invalid_envelope_ids_and_structured_data_stop_before_repository) (changes={'visita_id': 0})
+  SUBCASO OK test_invalid_envelope_ids_and_structured_data_stop_before_repository (test_codn_cb05_report_transaction.ReportTransactionTests.test_invalid_envelope_ids_and_structured_data_stop_before_repository) (changes={'visita_id': 902, 'diagnostico_id': 903})
+  SUBCASO OK test_invalid_envelope_ids_and_structured_data_stop_before_repository (test_codn_cb05_report_transaction.ReportTransactionTests.test_invalid_envelope_ids_and_structured_data_stop_before_repository) (changes={'datos_estructurados': {}})
+  SUBCASO OK test_invalid_envelope_ids_and_structured_data_stop_before_repository (test_codn_cb05_report_transaction.ReportTransactionTests.test_invalid_envelope_ids_and_structured_data_stop_before_repository) (changes={'datos_estructurados': {'usuario_id': 99}})
+ok
+test_missing_resources_and_foreign_visit_stop_subsequent_operations (test_codn_cb05_report_transaction.ReportTransactionTests.test_missing_resources_and_foreign_visit_stop_subsequent_operations) ...   SUBCASO OK test_missing_resources_and_foreign_visit_stop_subsequent_operations (test_codn_cb05_report_transaction.ReportTransactionTests.test_missing_resources_and_foreign_visit_stop_subsequent_operations) (resource='patient')
+  SUBCASO OK test_missing_resources_and_foreign_visit_stop_subsequent_operations (test_codn_cb05_report_transaction.ReportTransactionTests.test_missing_resources_and_foreign_visit_stop_subsequent_operations) (resource='type')
+  SUBCASO OK test_missing_resources_and_foreign_visit_stop_subsequent_operations (test_codn_cb05_report_transaction.ReportTransactionTests.test_missing_resources_and_foreign_visit_stop_subsequent_operations) (resource='visit_missing')
+  SUBCASO OK test_missing_resources_and_foreign_visit_stop_subsequent_operations (test_codn_cb05_report_transaction.ReportTransactionTests.test_missing_resources_and_foreign_visit_stop_subsequent_operations) (resource='visit_foreign')
+ok
+test_new_visit_exact_order_identifiers_and_single_commit (test_codn_cb05_report_transaction.ReportTransactionTests.test_new_visit_exact_order_identifiers_and_single_commit) ... ok
+test_precommit_failure_at_each_write_rolls_back_without_retry (test_codn_cb05_report_transaction.ReportTransactionTests.test_precommit_failure_at_each_write_rolls_back_without_retry) ... [2026-11-03 11:13:42,329] ERROR in informe_service: Error al crear informe
+  SUBCASO OK test_precommit_failure_at_each_write_rolls_back_without_retry (test_codn_cb05_report_transaction.ReportTransactionTests.test_precommit_failure_at_each_write_rolls_back_without_retry) (stage='crear_visita')
+[2026-11-03 11:13:42,337] ERROR in informe_service: Error al crear informe
+  SUBCASO OK test_precommit_failure_at_each_write_rolls_back_without_retry (test_codn_cb05_report_transaction.ReportTransactionTests.test_precommit_failure_at_each_write_rolls_back_without_retry) (stage='crear_informe')
+[2026-11-03 11:13:42,343] ERROR in informe_service: Error al crear informe
+  SUBCASO OK test_precommit_failure_at_each_write_rolls_back_without_retry (test_codn_cb05_report_transaction.ReportTransactionTests.test_precommit_failure_at_each_write_rolls_back_without_retry) (stage='crear_version_inicial')
+ok
+test_unrecognized_integrity_and_dbapi_before_commit_are_generic (test_codn_cb05_report_transaction.ReportTransactionTests.test_unrecognized_integrity_and_dbapi_before_commit_are_generic) ... [2026-11-03 11:13:42,377] ERROR in informe_service: Error de integridad al crear informe
+  SUBCASO OK test_unrecognized_integrity_and_dbapi_before_commit_are_generic (test_codn_cb05_report_transaction.ReportTransactionTests.test_unrecognized_integrity_and_dbapi_before_commit_are_generic) (error='IntegrityError', original="(1062, 'other_index')")
+[2026-11-03 11:13:42,385] ERROR in informe_service: Error de integridad al crear informe
+  SUBCASO OK test_unrecognized_integrity_and_dbapi_before_commit_are_generic (test_codn_cb05_report_transaction.ReportTransactionTests.test_unrecognized_integrity_and_dbapi_before_commit_are_generic) (error='IntegrityError', original="(9999, 'uq_informes_visita_tipo')")
+[2026-11-03 11:13:42,392] ERROR in informe_service: Error de persistencia al crear informe
+  SUBCASO OK test_unrecognized_integrity_and_dbapi_before_commit_are_generic (test_codn_cb05_report_transaction.ReportTransactionTests.test_unrecognized_integrity_and_dbapi_before_commit_are_generic) (error='DBAPIError', original='synthetic-private-detail')
+ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.225s
+
+OK
+LINES services/informe_service.py: 116/145 = 80.0%
+RESULTADO APROBADO: 10 methods; 25 subcases; exit 0
+Guard attempts: 0

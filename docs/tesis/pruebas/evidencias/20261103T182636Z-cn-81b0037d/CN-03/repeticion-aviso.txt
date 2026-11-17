@@ -1,0 +1,54 @@
+- region "Notifications (F8)":
+  - list:
+    - generic: Informes guardados
+    - generic: 1 informe(s) registrado(s) correctamente.
+    - button:
+- region "Notifications alt+T"
+- img "Logo Centro Oftalmológico del Norte"
+- generic: Sistema Clínico
+- generic: Centro Oftalmológico del Norte
+- generic: Principal
+- list:
+  - link "Dashboard":
+    - /url: /dashboard
+    - generic: Dashboard
+  - link "Pacientes":
+    - /url: /pacientes
+    - generic: Pacientes
+  - link "Diagnóstico IA":
+    - /url: /diagnostico
+    - generic: Diagnóstico IA
+  - link "Informes":
+    - /url: /informes
+    - generic: Informes
+- generic: AS
+- generic: Actor Sintético
+- text: En línea
+- button "Cerrar sesión":
+- banner:
+  - button "Contraer menú" [expanded]:
+  - combobox "Buscar paciente o documento"
+- main:
+  - heading "Informes Clínicos" [level=2]
+  - paragraph: Selecciona uno o más tipos de examen clínico
+  - generic: Paso 1
+  - generic: Tipo de Informe
+  - generic: Paso 2
+  - generic: Paciente
+  - generic: Paso 3
+  - generic: Informe
+  - heading "Seleccionar tipo de informe" [level=3]
+  - paragraph: Selecciona uno o más tipos de examen clínico
+  - button "Paquimetría Medición de grosor corneal":
+    - heading "Paquimetría" [level=3]
+    - paragraph: Medición de grosor corneal
+  - button "Gonioscopía Evaluación de ángulo":
+    - heading "Gonioscopía" [level=3]
+    - paragraph: Evaluación de ángulo
+  - button "Campo visual Campo visual":
+    - heading "Campo visual" [level=3]
+    - paragraph: Campo visual
+  - button "Continuar" [disabled]:
+    - text: Continuar
+- generic: CODN · ENTORNO DE PRUEBAS · API SIMULADA · DATOS SINTÉTICOS · 20261103T182636Z-cn-81b0037d
+- status

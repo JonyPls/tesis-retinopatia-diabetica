@@ -1,0 +1,89 @@
+CODN WHITE-BOX | test_codn_cb02_patient_validation
+UTC: 2026-11-03T16:12:59.755453+00:00 | Python: 3.12.10
+Isolation: explicit stubs; network, env/model reads and external writes guarded.
+test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) ...   SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth=None)
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-2-01')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-02-31')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-11-04')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1899-12-31')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1906-11-03')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1905-11-04')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1905-11-03')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-11-03')
+  SUBCASO OK test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2000-02-29')
+ok
+test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) ...   SUBCASO OK test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) (document=True, email=False)
+  SUBCASO OK test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) (document=False, email=True)
+  SUBCASO OK test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) (document=True, email=True)
+ok
+test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) ...   SUBCASO OK test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='NoneType', data='None')
+  SUBCASO OK test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='list', data='[]')
+  SUBCASO OK test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\'tipo_doc\': \'DNI\', \'nro_documento\': \'90000001\', \'nombres\': \'Ana\', \'apellidos\': "O\'Connor", \'sexo\': \'Femenino\', \'fecha_nacimiento\': \'2000-01-01\', \'consentimiento_informado\': True, \'correo\': None, \'extra\': \'x\'}')
+  SUBCASO OK test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\'tipo_doc\': \'DNI\', \'nro_documento\': \'90000001\', \'nombres\': \'Ana\', \'apellidos\': "O\'Connor", \'sexo\': \'Femenino\', \'fecha_nacimiento\': \'2000-01-01\', \'consentimiento_informado\': \'true\', \'correo\': None}')
+  SUBCASO OK test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\'tipo_doc\': \'DNI\', \'nro_documento\': \'90000001\', \'nombres\': \'Ana\\x00\', \'apellidos\': "O\'Connor", \'sexo\': \'Femenino\', \'fecha_nacimiento\': \'2000-01-01\', \'consentimiento_informado\': True, \'correo\': None}')
+  SUBCASO OK test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\'tipo_doc\': \'DNI\', \'nro_documento\': \'90000001\', \'nombres\': 42, \'apellidos\': "O\'Connor", \'sexo\': \'Femenino\', \'fecha_nacimiento\': \'2000-01-01\', \'consentimiento_informado\': True, \'correo\': None}')
+ok
+test_invalid_formats_are_accumulated_and_never_persisted (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_formats_are_accumulated_and_never_persisted) ... ok
+test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) ...   SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=1)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=2)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=80)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=81)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=1)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=2)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=100)
+  SUBCASO OK test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=101)
+ok
+test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) ...   SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='direccion', length=255)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='direccion', length=256)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='antecedentes_clinicos', length=2000)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='antecedentes_clinicos', length=2001)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='alergias', length=1000)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='alergias', length=1001)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email=None)
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='')
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='cb02@example.com')
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='bad@')
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='a..b@example.com')
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='a b@example.com')
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='a@-example.com')
+  SUBCASO OK test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com')
+ok
+test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) ...   SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='María José')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name="O'Connor")
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana-María')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana3')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana\x00')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana\u200b')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='张伟')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (document_type='DNI')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (document_type='CE')
+  SUBCASO OK test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (document_type='PAS')
+ok
+test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) ...   SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='tipo_doc')
+  SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='nro_documento')
+  SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='nombres')
+  SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='apellidos')
+  SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='sexo')
+  SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='fecha_nacimiento')
+  SUBCASO OK test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='consentimiento_informado')
+ok
+test_unknown_catalog_document_does_not_insert (test_codn_cb02_patient_validation.PatientValidationTests.test_unknown_catalog_document_does_not_insert) ... ok
+test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) ...   SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='nombres')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='apellidos')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='nro_documento')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='correo')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='telefono')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='direccion')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='fecha_nacimiento')
+  SUBCASO OK test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='tipo_doc_id')
+ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.225s
+
+OK
+LINES services/patient_service.py: 152/171 = 88.89%
+LINES utils/identity_validation.py: 13/13 = 100.0%
+RESULTADO APROBADO: 10 methods; 67 subcases; exit 0
+Guard attempts: 0

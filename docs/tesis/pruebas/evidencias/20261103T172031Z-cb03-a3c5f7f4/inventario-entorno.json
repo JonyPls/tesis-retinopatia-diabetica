@@ -1,0 +1,36 @@
+{
+  "server_file": [
+    {
+      "FullName": "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+      "Version": "8.0.46.0"
+    }
+  ],
+  "mysql_connections_made": 0,
+  "method": "Get-CimInstance Win32_Process (only ProcessId, ExecutablePath); Get-NetTCPConnection listeners; file version metadata",
+  "listeners": [
+    {
+      "LocalAddress": "::",
+      "LocalPort": 33060,
+      "OwningProcess": 20248
+    },
+    {
+      "LocalAddress": "::",
+      "LocalPort": 3306,
+      "OwningProcess": 20248
+    }
+  ],
+  "historical_temp_candidates": [],
+  "proposed_port_listeners": [],
+  "limitations": "ExecutablePath may be null due OS permissions. No SQL connections, server variables, schema or clinical rows inspected. Local listeners do not prove database identity.",
+  "processes": [
+    {
+      "ProcessId": 19808,
+      "ExecutablePath": null
+    },
+    {
+      "ProcessId": 20248,
+      "ExecutablePath": null
+    }
+  ],
+  "observed_utc": "2026-11-03T17:22:01.3923603Z"
+}

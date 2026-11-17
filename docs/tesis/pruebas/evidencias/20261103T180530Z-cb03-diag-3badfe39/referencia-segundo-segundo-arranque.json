@@ -1,0 +1,46 @@
+{
+  "started_utc": "2026-11-03T17:55:42.401541+00:00",
+  "state": "STOPPED_ON_ERROR",
+  "start_command": [
+    "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+    "--defaults-file=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\my-cb03.ini",
+    "--skip-name-resolve=OFF",
+    "--no-monitor",
+    "--log-error=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\logs\\20261103T175540Z-cb03-start2-06e60db0.err",
+    "--pid-file=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\logs\\20261103T175540Z-cb03-start2-06e60db0.pid"
+  ],
+  "validation_command": [
+    "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+    "--defaults-file=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\my-cb03.ini",
+    "--skip-name-resolve=OFF",
+    "--no-monitor",
+    "--log-error=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\logs\\20261103T175540Z-cb03-start2-06e60db0.err",
+    "--pid-file=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\logs\\20261103T175540Z-cb03-start2-06e60db0.pid",
+    "--validate-config"
+  ],
+  "initialization_executed": false,
+  "cb03_status": "BLOQUEADO",
+  "functional_sql_executed": false,
+  "queries": [],
+  "network_events": [
+    {
+      "event": "socket.getaddrinfo",
+      "host": "127.0.0.1",
+      "port": 33363
+    },
+    {
+      "event": "socket.connect",
+      "host": "127.0.0.1",
+      "port": 33363
+    }
+  ],
+  "credential_storage": "Windows DPAPI current-user + private ACL, outside repository; not included in evidence",
+  "configuration_validation_exit_code": 0,
+  "server_pid": 9380,
+  "initial_connection_error_number": 1130,
+  "exception_type": "OperationalError",
+  "client_error_number": 1130,
+  "ended_utc": "2026-11-03T17:55:44.348468+00:00",
+  "exit_code": 1,
+  "config_sha256": "6dee5fa065178c2971d8271d9d6a11302306db9f4a6e06deb5ebcfe0078834e6"
+}

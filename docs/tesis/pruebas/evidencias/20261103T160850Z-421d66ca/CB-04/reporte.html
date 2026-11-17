@@ -1,0 +1,93 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><title>CODN CB-04 — evidencia real</title>
+<style>body{font:16px system-ui;margin:28px;max-width:1200px;color:#18202a}h1{font-size:25px}h2{font-size:19px;margin-top:20px}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #ddd;padding:5px 10px;font-size:14px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f6;padding:14px;font:12px Consolas,monospace}.result{font-size:20px;font-weight:700}</style>
+<h1>CODN · CB-04 · Validación y compensación del procesamiento fotográfico</h1><p>Reporte de ejecución real · RUN 20261103T160850Z-421d66ca<br>2026-11-03T11:13:15.583158-05:00 · Python 3.12.10</p>
+<p class="result">APROBADO · 9 métodos · 37 subcasos · salida 0</p>
+<p>Fallos 0 · errores 0 · omitidos 0 · intentos prohibidos 0</p>
+<h2>Cobertura real de líneas (trace; funciones seleccionadas)</h2><table><tr><th>Fuente</th><th>Ejecutadas/elegibles</th><th>Líneas %</th></tr><tr><td>dl_model/validator.py</td><td>90/90</td><td>100.00%</td></tr><tr><td>services/diagnosis_service.py</td><td>115/138</td><td>83.33%</td></tr><tr><td>utils/diagnosis_storage.py</td><td>55/70</td><td>78.57%</td></tr></table>
+<p>Sin medición de ramas. Mocks declarados en el informe. No prueba MySQL físico ni inferencia real.</p>
+<h2>Métodos ejecutados</h2><table><tr><td>test_real_format_dimension_and_declared_type_boundaries</td><td>APROBADO</td></tr><tr><td>test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt</td><td>APROBADO</td></tr><tr><td>test_real_semantic_decisions_and_dependency_errors_are_controlled</td><td>APROBADO</td></tr><tr><td>test_pipeline_preflight_bytes_format_and_region_stop_following_stages</td><td>APROBADO</td></tr><tr><td>test_semantic_rejection_and_unavailable_service_prevent_inference</td><td>APROBADO</td></tr><tr><td>test_success_uses_real_validators_and_jpeg_storage_with_simulated_prediction</td><td>APROBADO</td></tr><tr><td>test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files</td><td>APROBADO</td></tr><tr><td>test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely</td><td>APROBADO</td></tr><tr><td>test_storage_never_overwrites_or_removes_foreign_file</td><td>APROBADO</td></tr></table>
+<h2>Log íntegro preservado</h2><p>Transcripción del archivo ejecucion-04.log; no es una consola simulada.</p><pre>CODN WHITE-BOX | test_codn_cb04_diagnosis_logic
+UTC: 2026-11-03T16:13:15.583158+00:00 | Python: 3.12.10
+Isolation: explicit stubs; network, env/model reads and external writes guarded.
+test_pipeline_preflight_bytes_format_and_region_stop_following_stages (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_pipeline_preflight_bytes_format_and_region_stop_following_stages) ...   SUBCASO OK test_pipeline_preflight_bytes_format_and_region_stop_following_stages (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_pipeline_preflight_bytes_format_and_region_stop_following_stages) (mode=&#x27;preflight&#x27;)
+  SUBCASO OK test_pipeline_preflight_bytes_format_and_region_stop_following_stages (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_pipeline_preflight_bytes_format_and_region_stop_following_stages) (mode=&#x27;oversize&#x27;)
+  SUBCASO OK test_pipeline_preflight_bytes_format_and_region_stop_following_stages (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_pipeline_preflight_bytes_format_and_region_stop_following_stages) (mode=&#x27;corrupt&#x27;)
+  SUBCASO OK test_pipeline_preflight_bytes_format_and_region_stop_following_stages (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_pipeline_preflight_bytes_format_and_region_stop_following_stages) (mode=&#x27;too_small&#x27;)
+  SUBCASO OK test_pipeline_preflight_bytes_format_and_region_stop_following_stages (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_pipeline_preflight_bytes_format_and_region_stop_following_stages) (mode=&#x27;black&#x27;)
+ok
+test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files) ... [2026-11-03 11:13:19,334] ERROR in diagnosis_service: Error al procesar diagnostico
+  SUBCASO OK test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files) (stage=&#x27;prepare_second&#x27;)
+[2026-11-03 11:13:19,399] ERROR in diagnosis_service: Error al procesar diagnostico
+  SUBCASO OK test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files) (stage=&#x27;insert&#x27;)
+[2026-11-03 11:13:19,464] ERROR in diagnosis_service: Error al procesar diagnostico
+  SUBCASO OK test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_precommit_insert_prepare_or_publication_failure_compensates_only_owned_files) (stage=&#x27;publish_second&#x27;)
+ok
+test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) ...   SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;jpeg&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;png350&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;tiff&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;empty&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;corrupt&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;gif&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;349px&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;wrong_mime&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (case=&#x27;path&#x27;)
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (limits={&#x27;max_side&#x27;: 399})
+  SUBCASO OK test_real_format_dimension_and_declared_type_boundaries (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_format_dimension_and_declared_type_boundaries) (limits={&#x27;max_pixels&#x27;: 159999})
+ok
+test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt) ...   SUBCASO OK test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt) (case=&#x27;dominant&#x27;)
+  SUBCASO OK test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt) (case=&#x27;black&#x27;)
+  SUBCASO OK test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt) (case=&#x27;small&#x27;)
+  SUBCASO OK test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_region_accepts_dominant_and_rejects_empty_small_or_corrupt) (case=&#x27;corrupt&#x27;)
+ok
+test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) ...   SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;accepted&#x27;)
+  SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;rejected&#x27;)
+WARNING:root:CLIP no disponible para validar la imagen
+  SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;load_error&#x27;)
+WARNING:root:CLIP no disponible para validar la imagen
+  SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;processor_error&#x27;)
+WARNING:root:CLIP no disponible para validar la imagen
+  SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;model_error&#x27;)
+ERROR:root:CLIP devolvió un resultado inválido
+  SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;invalid_argmax&#x27;)
+ERROR:root:Error interno al preparar imagen para CLIP
+  SUBCASO OK test_real_semantic_decisions_and_dependency_errors_are_controlled (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_real_semantic_decisions_and_dependency_errors_are_controlled) (mode=&#x27;corrupt&#x27;)
+ok
+test_semantic_rejection_and_unavailable_service_prevent_inference (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_semantic_rejection_and_unavailable_service_prevent_inference) ...   SUBCASO OK test_semantic_rejection_and_unavailable_service_prevent_inference (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_semantic_rejection_and_unavailable_service_prevent_inference) (mode=&#x27;rejected&#x27;)
+WARNING:root:CLIP no disponible para validar la imagen
+  SUBCASO OK test_semantic_rejection_and_unavailable_service_prevent_inference (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_semantic_rejection_and_unavailable_service_prevent_inference) (mode=&#x27;unavailable&#x27;)
+ERROR:root:CLIP devolvió un resultado inválido
+  SUBCASO OK test_semantic_rejection_and_unavailable_service_prevent_inference (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_semantic_rejection_and_unavailable_service_prevent_inference) (mode=&#x27;internal&#x27;)
+ok
+test_storage_never_overwrites_or_removes_foreign_file (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_storage_never_overwrites_or_removes_foreign_file) ... ok
+test_success_uses_real_validators_and_jpeg_storage_with_simulated_prediction (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_success_uses_real_validators_and_jpeg_storage_with_simulated_prediction) ... ok
+test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely) ... [2026-11-03 11:13:20,327] WARNING in diagnosis_service: Commit de diagnóstico confirmado o ambiguo; conservar archivos
+WARNING:test_codn_cb04_diagnosis_logic:Commit de diagnóstico confirmado o ambiguo; conservar archivos
+[2026-11-03 11:13:20,332] ERROR in diagnosis_service: Error al procesar diagnostico
+ERROR:test_codn_cb04_diagnosis_logic:Error al procesar diagnostico
+  SUBCASO OK test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely) (mode=&#x27;row_exists&#x27;)
+[2026-11-03 11:13:20,463] ERROR in diagnosis_service: Error al procesar diagnostico
+ERROR:test_codn_cb04_diagnosis_logic:Error al procesar diagnostico
+  SUBCASO OK test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely) (mode=&#x27;row_absent&#x27;)
+[2026-11-03 11:13:20,542] ERROR in diagnosis_service: Estado del commit no verificable; conservar archivos
+ERROR:test_codn_cb04_diagnosis_logic:Estado del commit no verificable; conservar archivos
+[2026-11-03 11:13:20,545] ERROR in diagnosis_service: Error al procesar diagnostico
+ERROR:test_codn_cb04_diagnosis_logic:Error al procesar diagnostico
+  SUBCASO OK test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely) (mode=&#x27;lookup_error&#x27;)
+[2026-11-03 11:13:20,628] ERROR in diagnosis_service: Rollback de diagnóstico no confirmado; requiere conciliación
+ERROR:test_codn_cb04_diagnosis_logic:Rollback de diagnóstico no confirmado; requiere conciliación
+[2026-11-03 11:13:20,634] ERROR in diagnosis_service: Error al procesar diagnostico
+ERROR:test_codn_cb04_diagnosis_logic:Error al procesar diagnostico
+  SUBCASO OK test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely (test_codn_cb04_diagnosis_logic.DiagnosisLogicTests.test_uncertain_commit_consults_independent_mock_connection_and_conserves_safely) (mode=&#x27;rollback_error&#x27;)
+ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 1.944s
+
+OK
+LINES dl_model/validator.py: 90/90 = 100.0%
+LINES services/diagnosis_service.py: 115/138 = 83.33%
+LINES utils/diagnosis_storage.py: 55/70 = 78.57%
+RESULTADO APROBADO: 9 methods; 37 subcases; exit 0
+Guard attempts: 0
+</pre>
+<h2>Comando exacto desde backend</h2><pre>.\venv\Scripts\python.exe -B -u codn_run_whitebox.py test_codn_cb04_diagnosis_logic &quot;D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\docs\tesis\pruebas\evidencias\20261103T160850Z-421d66ca\CB-04&quot;</pre></html>

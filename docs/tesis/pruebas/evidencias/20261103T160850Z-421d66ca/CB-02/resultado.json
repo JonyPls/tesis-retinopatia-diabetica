@@ -1,0 +1,624 @@
+{
+  "suite": "test_codn_cb02_patient_validation",
+  "started_utc": "2026-11-03T16:12:59.755453+00:00",
+  "ended_utc": "2026-11-03T16:13:15.104213+00:00",
+  "duration_seconds": 15.349,
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "versions": {
+    "Flask": "3.1.3",
+    "SQLAlchemy": "2.0.30",
+    "PyJWT": "2.12.1",
+    "Pillow": "10.3.0",
+    "numpy": "1.26.4",
+    "opencv-python": "4.11.0.86",
+    "coverage": "not installed",
+    "pytest": "not installed"
+  },
+  "methods": 10,
+  "subcases": 67,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "exit_code": 0,
+  "status": "APROBADO",
+  "guard_attempts": [],
+  "events": [
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth=None)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-2-01')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-02-31')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-11-04')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1899-12-31')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1906-11-03')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1905-11-04')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='1905-11-03')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2026-11-03')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "subcase": "test_birth_dates_fixed_clock_and_age_boundaries (test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries) (birth='2000-02-29')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_birth_dates_fixed_clock_and_age_boundaries",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit",
+      "subcase": "test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) (document=True, email=False)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit",
+      "subcase": "test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) (document=False, email=True)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit",
+      "subcase": "test_duplicate_document_or_email_prevents_insert_and_commit (test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit) (document=True, email=True)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_duplicate_document_or_email_prevents_insert_and_commit",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "subcase": "test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='NoneType', data='None')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "subcase": "test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='list', data='[]')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "subcase": "test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\\'tipo_doc\\': \\'DNI\\', \\'nro_documento\\': \\'90000001\\', \\'nombres\\': \\'Ana\\', \\'apellidos\\': \"O\\'Connor\", \\'sexo\\': \\'Femenino\\', \\'fecha_nacimiento\\': \\'2000-01-01\\', \\'consentimiento_informado\\': True, \\'correo\\': None, \\'extra\\': \\'x\\'}')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "subcase": "test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\\'tipo_doc\\': \\'DNI\\', \\'nro_documento\\': \\'90000001\\', \\'nombres\\': \\'Ana\\', \\'apellidos\\': \"O\\'Connor\", \\'sexo\\': \\'Femenino\\', \\'fecha_nacimiento\\': \\'2000-01-01\\', \\'consentimiento_informado\\': \\'true\\', \\'correo\\': None}')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "subcase": "test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\\'tipo_doc\\': \\'DNI\\', \\'nro_documento\\': \\'90000001\\', \\'nombres\\': \\'Ana\\\\x00\\', \\'apellidos\\': \"O\\'Connor\", \\'sexo\\': \\'Femenino\\', \\'fecha_nacimiento\\': \\'2000-01-01\\', \\'consentimiento_informado\\': True, \\'correo\\': None}')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "subcase": "test_invalid_envelope_types_controls_and_scope_do_not_persist (test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist) (payload_type='dict', data='{\\'tipo_doc\\': \\'DNI\\', \\'nro_documento\\': \\'90000001\\', \\'nombres\\': 42, \\'apellidos\\': \"O\\'Connor\", \\'sexo\\': \\'Femenino\\', \\'fecha_nacimiento\\': \\'2000-01-01\\', \\'consentimiento_informado\\': True, \\'correo\\': None}')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_envelope_types_controls_and_scope_do_not_persist",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_invalid_formats_are_accumulated_and_never_persisted",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=1)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=2)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=80)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='nombres', length=81)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=1)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=2)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=100)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "subcase": "test_name_length_boundaries_direct_validator (test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator) (field='apellidos', length=101)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_name_length_boundaries_direct_validator",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='direccion', length=255)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='direccion', length=256)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='antecedentes_clinicos', length=2000)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='antecedentes_clinicos', length=2001)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='alergias', length=1000)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (field='alergias', length=1001)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email=None)",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='cb02@example.com')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='bad@')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='a..b@example.com')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='a b@example.com')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='a@-example.com')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "subcase": "test_optional_field_lengths_and_email_variants (test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants) (email='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_optional_field_lengths_and_email_variants",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='María José')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name=\"O'Connor\")",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana-María')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana3')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana\\x00')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='Ana\\u200b')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='张伟')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (name='')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (document_type='DNI')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (document_type='CE')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "subcase": "test_person_names_and_document_helpers (test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers) (document_type='PAS')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_person_names_and_document_helpers",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='tipo_doc')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='nro_documento')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='nombres')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='apellidos')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='sexo')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='fecha_nacimiento')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "subcase": "test_required_fields_reported_without_repository_access (test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access) (missing='consentimiento_informado')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_required_fields_reported_without_repository_access",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_unknown_catalog_document_does_not_insert",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='nombres')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='apellidos')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='nro_documento')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='correo')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='telefono')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='direccion')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='fecha_nacimiento')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "subcase": "test_valid_normalized_input_reaches_repository_once (test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once) (field='tipo_doc_id')",
+      "status": "APROBADO"
+    },
+    {
+      "method": "test_codn_cb02_patient_validation.PatientValidationTests.test_valid_normalized_input_reaches_repository_once",
+      "status": "APROBADO"
+    }
+  ],
+  "coverage": [
+    {
+      "file": "services/patient_service.py",
+      "functions": [
+        "_clean_text",
+        "_clean_multiline_text",
+        "_valid_person_name",
+        "_normalize_document",
+        "_parse_birth_date",
+        "_validate_patient_data",
+        "registrar_nuevo_paciente"
+      ],
+      "executed": 152,
+      "executable": 171,
+      "percent": 88.89,
+      "missing_lines": [
+        159,
+        240,
+        241,
+        243,
+        250,
+        251,
+        253,
+        254,
+        255,
+        256,
+        257,
+        258,
+        259,
+        260,
+        261,
+        262,
+        263,
+        265,
+        266
+      ],
+      "executed_lines": [
+        35,
+        36,
+        37,
+        38,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        52,
+        53,
+        54,
+        55,
+        59,
+        60,
+        61,
+        62,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        73,
+        74,
+        75,
+        76,
+        77,
+        79,
+        80,
+        82,
+        83,
+        85,
+        99,
+        101,
+        102,
+        103,
+        104,
+        105,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        120,
+        121,
+        123,
+        124,
+        126,
+        127,
+        129,
+        130,
+        132,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169,
+        170,
+        171,
+        172,
+        173,
+        174,
+        175,
+        176,
+        177,
+        178,
+        179,
+        180,
+        181,
+        183,
+        184,
+        185,
+        186,
+        187,
+        188,
+        189,
+        190,
+        191,
+        192,
+        194,
+        195,
+        196,
+        198,
+        199,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        209,
+        210,
+        211,
+        212,
+        214,
+        215,
+        216,
+        217,
+        218,
+        219,
+        220,
+        221,
+        223,
+        224,
+        225,
+        226,
+        227,
+        228,
+        229,
+        230,
+        231,
+        232,
+        233,
+        234,
+        235,
+        236,
+        238,
+        239,
+        242,
+        244,
+        245,
+        246,
+        247,
+        248,
+        249
+      ],
+      "source_sha256": "23c6d53c82aac91b7f1c4d9edcd3423c92f9643d2c208abf7ef97c903cc49481"
+    },
+    {
+      "file": "utils/identity_validation.py",
+      "functions": [
+        "valid_email"
+      ],
+      "executed": 13,
+      "executable": 13,
+      "percent": 100.0,
+      "missing_lines": [],
+      "executed_lines": [
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "source_sha256": "4989914c9b44af9e5e6a6695253ae246f1cbdc23a04a41c2705e126ef0c9b35c"
+    }
+  ],
+  "temporary_root": "codn-whitebox-2ofnfaq7",
+  "assertion_count": null,
+  "assertion_count_note": "Not instrumented; nested unittest/mock assertions are not a reliable static count."
+}

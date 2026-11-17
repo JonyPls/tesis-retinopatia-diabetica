@@ -484,9 +484,9 @@ export default function Diagnosis() {
                       <p className="mb-0.5 font-medium">Formatos aceptados:</p>
                       <ul className="list-inside list-disc space-y-0.5">
                         <li>JPG, PNG o TIFF</li>
-                        <li>Mín. 300×300 píxeles</li>
-                        <li>Región ocular visible</li>
-                        <li>Máx. 30 MB por imagen</li>
+                        <li>Mín. 350×350 píxeles</li>
+                        <li>Retinografía original de un solo ojo, sin capturas</li>
+                        <li>Máx. 20 MB por imagen</li>
                       </ul>
                     </div>
                   </div>

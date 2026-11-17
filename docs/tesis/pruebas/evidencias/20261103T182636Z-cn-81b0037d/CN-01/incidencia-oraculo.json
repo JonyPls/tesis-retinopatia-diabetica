@@ -1,0 +1,8 @@
+{
+  "scenario": "S01-campos-vacios",
+  "originalStatus": "FALLIDO",
+  "cause": "La comprobación automática dependió de validationMessage, vacío en el DOM leído, aunque la UI nativa mostró Completa este campo.",
+  "retest": "S06-repeticion-validacion-nativa",
+  "retestStatus": "APROBADO",
+  "productDefectConfirmed": false
+}

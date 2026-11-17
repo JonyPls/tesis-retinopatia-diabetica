@@ -1,0 +1,32 @@
+{
+  "case": "CB-03",
+  "mode": "run",
+  "started_utc": "2026-11-03T17:22:25.016148+00:00",
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "versions": {
+    "Flask": "3.1.3",
+    "Flask-SQLAlchemy": "3.1.1",
+    "SQLAlchemy": "2.0.30",
+    "PyMySQL": "1.1.2"
+  },
+  "status": "BLOQUEADO",
+  "methods_implemented": 10,
+  "methods_executed": 0,
+  "subcases_executed": 0,
+  "failures": 0,
+  "errors": 0,
+  "coverage": null,
+  "database_connections": 0,
+  "fixture_writes": false,
+  "png": "PENDIENTE",
+  "reason": "Falta --config con destino autorizado; no se abrió ninguna conexión.",
+  "ended_utc": "2026-11-03T17:22:25.016148+00:00",
+  "exit_code": 3,
+  "activity": {
+    "verified_checkouts": 0,
+    "insert_attempts": 0,
+    "commit_attempts_blocked": 0
+  },
+  "network_events": 0,
+  "guard_blocks": []
+}

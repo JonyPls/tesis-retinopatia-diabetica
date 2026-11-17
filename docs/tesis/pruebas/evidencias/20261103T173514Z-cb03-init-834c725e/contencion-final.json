@@ -1,0 +1,22 @@
+{
+  "habitual_listeners": [
+    {
+      "LocalAddress": "::",
+      "LocalPort": 33060,
+      "OwningProcess": 20248
+    },
+    {
+      "LocalAddress": "::",
+      "LocalPort": 3306,
+      "OwningProcess": 20248
+    }
+  ],
+  "remaining_target_listeners": [
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 33363,
+      "OwningProcess": 18768
+    }
+  ],
+  "checked_utc": "2026-11-03T17:36:48.5626231Z"
+}

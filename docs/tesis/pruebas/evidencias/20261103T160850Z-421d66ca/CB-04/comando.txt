@@ -1,0 +1,4 @@
+Working directory: D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\backend
+.\venv\Scripts\python.exe -B -u codn_run_whitebox.py test_codn_cb04_diagnosis_logic "D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\docs\tesis\pruebas\evidencias\20261103T160850Z-421d66ca\CB-04"
+PowerShell: > "D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\docs\tesis\pruebas\evidencias\20261103T160850Z-421d66ca\CB-04\ejecucion-04.log" 2>&1
+$LASTEXITCODE=0

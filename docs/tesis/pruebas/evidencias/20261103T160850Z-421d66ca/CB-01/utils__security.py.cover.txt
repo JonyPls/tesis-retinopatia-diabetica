@@ -1,0 +1,224 @@
+Real CPython trace counts; function-body scope; lines, NOT branches.
+Functions: token_required
+           1: from functools import wraps
+           2: from flask import current_app, request, jsonify
+           3: import jwt
+           4: import os
+           5: import re
+           6: from src.repositories.auth_repository import AuthRepository
+           7: 
+           8: ADMIN_ROLES = {
+           9:     "Admin",
+          10:     "Administrador",
+          11:     "Administrador del sistema",
+          12:     "Gerente General",
+          13: }
+          14: 
+          15: CLINICAL_ROLES = {
+          16:     "Medico",
+          17:     "Médico",
+          18:     "Medico especialista",
+          19:     "Médico especialista",
+          20:     "Medico Especialista",
+          21:     "Médico Especialista",
+          22:     "Oftalmologo",
+          23:     "Oftalmólogo",
+          24:     "Especialista",
+          25: }
+          26: 
+          27: CLINICAL_BASE_PERMISSIONS = {
+          28:     "clinico.ver",
+          29:     "clinico.leer",
+          30:     "clinico.acceder",
+          31:     "clinico.gestionar",
+          32:     "clinico.*",
+          33: }
+          34: 
+          35: GENERIC_UNAUTHORIZED_MESSAGE = "No autorizado."
+          36: GENERIC_NOT_FOUND_MESSAGE = "Recurso no encontrado."
+          37: JWT_URL_PATTERN = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+          38: 
+          39: 
+          40: def token_required(f, *, eager_permissions=False):
+          41:     @wraps(f)
+     30   42:     def decorated(*args, **kwargs):
+          43:         # Rechazar credenciales en URL aun cuando llegue un Bearer valido.
+     46   44:         if any(key.lower() in ('token', 'access_token', 'jwt', 'id_token') or
+ >>>>>>   45:                any(JWT_URL_PATTERN.fullmatch(value) for value in values)
+     30   46:                for key, values in request.args.lists()):
+      1   47:             return jsonify({"success": False, "message": GENERIC_UNAUTHORIZED_MESSAGE}), 401
+     14   48:         token = None
+          49:         
+          50:         # 1. Buscamos el token en los encabezados (Headers) de la petición HTTP
+     14   51:         if 'Authorization' in request.headers:
+     13   52:             auth_header = request.headers['Authorization']
+     13   53:             if auth_header.startswith('Bearer '):
+     13   54:                 token = auth_header.split(" ")[1]
+          55:         
+          56:         # 2. Sin Bearer, bloquear inmediatamente (nunca leer JWT de la URL).
+     14   57:         if not token:
+      3   58:             return jsonify({
+      1   59:                 "success": False, 
+      1   60:                 "message": "Falta el token de autorización. Acceso denegado."
+      1   61:             }), 401
+          62: 
+          63:         # 3. Validamos que el token sea auténtico y no haya expirado
+     13   64:         try:
+     26   65:             data = jwt.decode(
+     13   66:                 token,
+     13   67:                 os.getenv('SECRET_KEY'),
+     13   68:                 algorithms=["HS256"],
+     13   69:                 options={"require": ["exp", "user_id"]},
+          70:             )
+          71:             
+      4   72:         except jwt.ExpiredSignatureError:
+      3   73:             return jsonify({
+      1   74:                 "success": False, 
+      1   75:                 "message": "Token expirado."
+      1   76:             }), 401
+      3   77:         except jwt.InvalidTokenError:
+      9   78:             return jsonify({
+      3   79:                 "success": False, 
+      3   80:                 "message": "Token inválido."
+      3   81:             }), 401
+          82: 
+      9   83:         try:
+      9   84:             if eager_permissions:
+      9   85:                 user = AuthRepository.get_active_user_with_permissions_by_id(data['user_id'])
+          86:             else:
+ >>>>>>   87:                 user = AuthRepository.get_active_user_by_id(data['user_id'])
+      8   88:             if not user:
+      1   89:                 return jsonify({"success": False, "message": GENERIC_UNAUTHORIZED_MESSAGE}), 401
+          90: 
+          91:             # Los roles y permisos del token pueden haber cambiado desde su emisión.
+      7   92:             data.pop('permissions', None)
+      7   93:             request.current_user = {**data, 'roles': user.roles, 'permisos': user.permisos}
+      7   94:             if eager_permissions:
+      7   95:                 request.authenticated_user = user  # Solo durante esta petición.
+      1   96:         except Exception:
+      1   97:             current_app.logger.exception("Error al verificar la cuenta autenticada")
+      1   98:             return safe_json_error(status=500)
+          99: 
+         100:         # 4. Si todo está perfecto, dejamos que la petición continúe hacia la ruta original
+      7  101:         return f(*args, **kwargs)
+         102:         
+     15  103:     return decorated
+         104: 
+         105: 
+         106: def _current_user():
+         107:     return getattr(request, "current_user", {}) or {}
+         108: 
+         109: 
+         110: def _as_set(values):
+         111:     if not values:
+         112:         return set()
+         113:     if isinstance(values, str):
+         114:         return {values}
+         115:     return {str(value) for value in values if value}
+         116: 
+         117: 
+         118: def current_user_roles():
+         119:     return _as_set(_current_user().get("roles"))
+         120: 
+         121: 
+         122: def _load_permissions_from_db():
+         123:     user_id = _current_user().get("user_id")
+         124:     if not user_id:
+         125:         return set()
+         126: 
+         127:     try:
+         128:         from src.models.auth_entities import Usuario
+         129: 
+         130:         user = Usuario.query.filter_by(id=user_id, estado='ACTIVO').first()
+         131:         return _as_set(user.permisos if user else [])
+         132:     except Exception:
+         133:         current_app.logger.exception("Error al cargar permisos del usuario autenticado")
+         134:         return set()
+         135: 
+         136: 
+         137: def current_user_permissions():
+         138:     token_permissions = _as_set(
+         139:         _current_user().get("permisos")
+         140:         or _current_user().get("permissions")
+         141:         or []
+         142:     )
+         143:     return token_permissions or _load_permissions_from_db()
+         144: 
+         145: 
+         146: def _permission_matches(user_permission, required_permission):
+         147:     if user_permission == required_permission:
+         148:         return True
+         149:     if user_permission.endswith(".*"):
+         150:         return required_permission.startswith(user_permission[:-1])
+         151:     if required_permission.endswith(".*"):
+         152:         return user_permission.startswith(required_permission[:-1])
+         153:     return False
+         154: 
+         155: 
+         156: def user_has_role(*roles):
+         157:     expected_roles = _as_set(roles)
+         158:     user_roles = current_user_roles()
+         159:     return bool(user_roles & expected_roles)
+         160: 
+         161: 
+         162: def user_has_permission(*permissions):
+         163:     expected_permissions = _as_set(permissions)
+         164:     user_permissions = current_user_permissions()
+         165:     return any(
+         166:         _permission_matches(user_permission, expected_permission)
+         167:         for user_permission in user_permissions
+         168:         for expected_permission in expected_permissions
+         169:     )
+         170: 
+         171: 
+         172: def user_is_authorized(roles=None, permissions=None):
+         173:     expected_roles = _as_set(roles)
+         174:     expected_permissions = _as_set(permissions)
+         175: 
+         176:     if current_user_roles() & ADMIN_ROLES:
+         177:         return True
+         178:     if expected_roles and user_has_role(*expected_roles):
+         179:         return True
+         180:     if expected_permissions and user_has_permission(*expected_permissions):
+         181:         return True
+         182:     return False
+         183: 
+         184: 
+         185: def authorization_required(roles=None, permissions=None):
+         186:     def decorator(f):
+         187:         @wraps(f)
+         188:         def wrapped(*args, **kwargs):
+         189:             if not user_is_authorized(roles=roles, permissions=permissions):
+         190:                 return jsonify({
+         191:                     "success": False,
+         192:                     "message": GENERIC_UNAUTHORIZED_MESSAGE,
+         193:                 }), 403
+         194:             return f(*args, **kwargs)
+         195: 
+         196:         return wrapped
+         197: 
+         198:     return decorator
+         199: 
+         200: 
+         201: def role_required(*roles):
+         202:     return authorization_required(roles=roles)
+         203: 
+         204: 
+         205: def permission_required(*permissions):
+         206:     return authorization_required(permissions=permissions)
+         207: 
+         208: 
+         209: def clinical_access_required(*permissions):
+         210:     allowed_permissions = set(permissions) | CLINICAL_BASE_PERMISSIONS
+         211:     return authorization_required(
+         212:         roles=CLINICAL_ROLES,
+         213:         permissions=allowed_permissions,
+         214:     )
+         215: 
+         216: 
+         217: def safe_json_error(message="No se pudo procesar la solicitud.", status=500):
+         218:     return jsonify({"success": False, "message": message}), status
+         219: 
+         220: 
+         221: def log_exception(message):
+         222:     current_app.logger.exception(message)

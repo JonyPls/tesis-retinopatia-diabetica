@@ -93,7 +93,7 @@ export function useDiagnosis(): DiagnosisHook {
   const [modalPhase, setModalPhase] = useState<"idle" | "validating" | "analyzing" | "error">("idle");
   const [modalProgress, setModalProgress] = useState(0);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [failedEye, setFailedEye] = useState<EyeKey | null>(null);
+  const failedImageRef = useRef<{ eye: EyeKey; file: File | null; generation: number; version: number } | null>(null);
 
   // Paso 1
   const [query, setQuery] = useState("");
@@ -258,6 +258,8 @@ export function useDiagnosis(): DiagnosisHook {
     savingRef.current = false;
     setIsSaving(false);
     setModalPhase("idle");
+    failedImageRef.current = null;
+    setValidationError(null);
     setProcessingEye(null);
     confirmationsRef.current = {};
     eyeGeneration.current.OD++;
@@ -1128,9 +1130,11 @@ export function useDiagnosis(): DiagnosisHook {
     const N = eyesToProcess.length;
     let completedSegments = 0;
     let hasError = false;
+    let rejectedEye: EyeKey | null = null;
 
     setIsSaving(true);
     setModalPhase("validating");
+    failedImageRef.current = null;
     setValidationError(null);
     setModalProgress(0);
 
@@ -1190,6 +1194,17 @@ export function useDiagnosis(): DiagnosisHook {
         let message = !postStarted && eyes[eye].isExistingImage
           ? "La confirmación no está vigente o no pudo comprobarse; no se inició inferencia. Consulte su estado."
           : processingFailure(status, err.response?.data?.code);
+        // Un 400 de datos/autorización no significa que el archivo sea inválido.
+        const imageRejected = postStarted && (status === 422 ||
+          (status === 400 && err.response?.data?.code === "IMAGEN_INVALIDA"));
+        if (imageRejected) {
+          rejectedEye = eye;
+          const detail = err.response?.data?.message;
+          if (typeof detail === "string" && detail) message = detail;
+          failedImageRef.current = { eye, file: eyesRef.current[eye].file,
+            generation: eyeGeneration.current[eye], version };
+          setValidationError(message);
+        }
         if (eyes[eye].isExistingImage && postStarted) {
           if (status === 409) message = "La confirmación o la exportación cambió, o existe un conflicto clínico. Consulte su estado; no reenvíe automáticamente.";
           const current = await checkConfirmation(eye);
@@ -1217,10 +1232,10 @@ export function useDiagnosis(): DiagnosisHook {
 
     if (version !== contextVersion.current) { savingRef.current = false; return; }
     if (hasError) {
-      setProcessingEye(null);
+      setProcessingEye(rejectedEye);
       setIsSaving(false);
       savingRef.current = false;
-      setModalPhase("idle");
+      setModalPhase(rejectedEye ? "error" : "idle");
       if (Object.keys(resultsRef.current).length) setStep(3);
       return;
     }
@@ -1266,8 +1281,12 @@ export function useDiagnosis(): DiagnosisHook {
   };
 
   const dismissError = () => {
-    if (failedEye) clearEye(failedEye);
-    setFailedEye(null);
+    const failed = failedImageRef.current;
+    failedImageRef.current = null;
+    // Una respuesta antigua nunca retira un reemplazo ni la imagen de otra visita.
+    if (failed && failed.version === contextVersion.current &&
+        failed.generation === eyeGeneration.current[failed.eye] &&
+        failed.file === eyesRef.current[failed.eye].file) void clearEye(failed.eye);
     setModalPhase("idle");
     setModalProgress(0);
     setValidationError(null);

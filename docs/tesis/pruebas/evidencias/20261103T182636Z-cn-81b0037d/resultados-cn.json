@@ -1,0 +1,282 @@
+[
+  {
+    "case": "CN-01",
+    "variant": "S01-campos-vacios",
+    "utc": "2026-11-03T18:28:37.735Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "El formulario impide ingreso sin usuario y contraseña",
+    "obtained": "",
+    "status": "FALLIDO",
+    "image": "CN-01/CN-01-S01-campos-vacios.jpg"
+  },
+  {
+    "case": "CN-01",
+    "variant": "S02-credenciales-invalidas",
+    "utc": "2026-11-03T18:28:50.266Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Mostrar rechazo de API simulada sin navegar",
+    "obtained": "Usuario o contraseña incorrectos.; permanece en /",
+    "status": "APROBADO",
+    "image": "CN-01/CN-01-S02-credenciales-invalidas.jpg"
+  },
+  {
+    "case": "CN-01",
+    "variant": "S03-ingreso-valido",
+    "utc": "2026-11-03T18:29:03.302Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Acceso a dashboard con actor sintético",
+    "obtained": "Dashboard y Actor Sintético visibles",
+    "status": "APROBADO",
+    "image": "CN-01/CN-01-S03-ingreso-valido.jpg"
+  },
+  {
+    "case": "CN-01",
+    "variant": "S04-modulo-restringido",
+    "utc": "2026-11-03T18:29:14.343Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Configuración no accesible para actor clínico; redirigir",
+    "obtained": "URL final http://127.0.0.1:4187/dashboard",
+    "status": "APROBADO",
+    "image": "CN-01/CN-01-S04-modulo-restringido.jpg"
+  },
+  {
+    "case": "CN-01",
+    "variant": "S05-cierre-sesion",
+    "utc": "2026-11-03T18:29:16.406Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Ruta protegida vuelve al login después de cerrar sesión",
+    "obtained": "Login visible al abrir /pacientes sin sesión",
+    "status": "APROBADO",
+    "image": "CN-01/CN-01-S05-cierre-sesion.jpg"
+  },
+  {
+    "case": "CN-02",
+    "variant": "S01-obligatorios",
+    "utc": "2026-11-03T18:29:38.918Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Errores por campos vacíos; no alta",
+    "obtained": "Mensajes de DNI, nombres, apellidos, sexo, fecha y consentimiento",
+    "status": "APROBADO",
+    "image": "CN-02/CN-02-S01-obligatorios.jpg"
+  },
+  {
+    "case": "CN-02",
+    "variant": "S02-alta-simulada",
+    "utc": "2026-11-03T18:30:36.319Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Mensaje de alta y fila Celia en listado",
+    "obtained": "Tres pacientes; Celia Prueba Sintética 90000003 visible",
+    "status": "APROBADO",
+    "image": "CN-02/CN-02-S02-alta-simulada.jpg"
+  },
+  {
+    "case": "CN-02",
+    "variant": "S03-duplicado-simulado",
+    "utc": "2026-11-03T18:31:01.212Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Mostrar conflicto sin segunda alta",
+    "obtained": "Mensaje de documento duplicado de API simulada",
+    "status": "APROBADO",
+    "image": "CN-02/CN-02-S03-duplicado-simulado.jpg"
+  },
+  {
+    "case": "CN-02",
+    "variant": "S04-fecha-futura",
+    "utc": "2026-11-03T18:31:17.547Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Rechazar fecha futura en frontend",
+    "obtained": "La fecha de nacimiento no puede ser futura.",
+    "status": "APROBADO",
+    "image": "CN-02/CN-02-S04-fecha-futura.jpg"
+  },
+  {
+    "case": "CN-03",
+    "variant": "S01-nueva-visita",
+    "utc": "2026-11-03T18:31:40.413Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Paciente A y Nueva Visita seleccionados",
+    "obtained": "Ana Prueba Sintética; Nueva Visita elegida",
+    "status": "APROBADO",
+    "image": "CN-03/CN-03-S01-nueva-visita.jpg"
+  },
+  {
+    "case": "CN-03",
+    "variant": "S02-informe-incompleto",
+    "utc": "2026-11-03T18:31:51.620Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Guardar Todo permanece deshabilitado sin valores",
+    "obtained": "Guardar Todo deshabilitado",
+    "status": "APROBADO",
+    "image": "CN-03/CN-03-S02-informe-incompleto.jpg"
+  },
+  {
+    "case": "CN-03",
+    "variant": "S03-guardado-simulado",
+    "utc": "2026-11-03T18:32:03.302Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Confirmación de 1 informe registrado",
+    "obtained": "Informes guardados; 1 informe(s) registrado(s) correctamente.",
+    "status": "FALLIDO",
+    "image": "CN-03/CN-03-S03-guardado-simulado.jpg"
+  },
+  {
+    "case": "CN-03",
+    "variant": "S04-reconsulta-historial",
+    "utc": "2026-11-03T18:34:04.174Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Historial A incluye nueva visita del informe",
+    "obtained": "Cuatro visitas; enlace a visita 905 visible",
+    "status": "APROBADO",
+    "image": "CN-03/CN-03-S04-reconsulta-historial.jpg"
+  },
+  {
+    "case": "CN-03",
+    "variant": "S05-paciente-control",
+    "utc": "2026-11-03T18:34:06.208Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "B conserva solo VB",
+    "obtained": "Enlaces de visita de B: 1",
+    "status": "APROBADO",
+    "image": "CN-03/CN-03-S05-paciente-control.jpg"
+  },
+  {
+    "case": "CN-04",
+    "variant": "S01-listado-V1",
+    "utc": "2026-11-03T18:34:16.319Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "V1 muestra su informe CN04-V1",
+    "obtained": "CN04-V1 visible; CN04-V2 ausente",
+    "status": "APROBADO",
+    "image": "CN-04/CN-04-S01-listado-V1.jpg"
+  },
+  {
+    "case": "CN-04",
+    "variant": "S02-detalle-V1",
+    "utc": "2026-11-03T18:34:24.074Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Detalle conserva paciente, visita y valores 540/542",
+    "obtained": "Ana Prueba Sintética; 540 y 542 µm; CN04-V1",
+    "status": "FALLIDO",
+    "image": "CN-04/CN-04-S02-detalle-V1.jpg"
+  },
+  {
+    "case": "CN-04",
+    "variant": "S03-cambio-V2",
+    "utc": "2026-11-03T18:34:26.098Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Cambio a V2 presenta exclusivamente CN04-V2",
+    "obtained": "CN04-V2 visible; CN04-V1 ausente",
+    "status": "APROBADO",
+    "image": "CN-04/CN-04-S03-cambio-V2.jpg"
+  },
+  {
+    "case": "CN-04",
+    "variant": "S04-visita-vacia",
+    "utc": "2026-11-03T18:34:34.028Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Estado vacío explícito para V0",
+    "obtained": "Sin informes clínicos",
+    "status": "APROBADO",
+    "image": "CN-04/CN-04-S04-visita-vacia.jpg"
+  },
+  {
+    "case": "CN-04",
+    "variant": "S05-visita-ajena",
+    "utc": "2026-11-03T18:34:51.097Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "No mostrar informes de VB bajo paciente A",
+    "obtained": "No se encontró la visita solicitada para este paciente.",
+    "status": "APROBADO",
+    "image": "CN-04/CN-04-S05-visita-ajena.jpg"
+  },
+  {
+    "case": "CN-05",
+    "variant": "S01-sin-archivo",
+    "utc": "2026-11-03T18:35:24.475Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "No permitir análisis sin imágenes",
+    "obtained": "Guardar y analizar deshabilitado",
+    "status": "APROBADO",
+    "image": "CN-05/CN-05-S01-sin-archivo.jpg"
+  },
+  {
+    "case": "CN-05",
+    "variant": "S02-formato-invalido",
+    "utc": "2026-11-03T18:35:45.518Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Rechazar archivo TXT en cliente",
+    "obtained": "Formato no admitido. Use JPG, PNG o TIFF.",
+    "status": "APROBADO",
+    "image": "CN-05/CN-05-S02-formato-invalido.jpg"
+  },
+  {
+    "case": "CN-05",
+    "variant": "S03-previsualizacion",
+    "utc": "2026-11-03T18:35:52.103Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Previsualizar fixture en OD y habilitar envío",
+    "obtained": "OD: Imagen lista para analizar; vista previa sintética",
+    "status": "APROBADO",
+    "image": "CN-05/CN-05-S03-previsualizacion.jpg"
+  },
+  {
+    "case": "CN-05",
+    "variant": "S04-confirmacion-ojo",
+    "utc": "2026-11-03T18:35:57.269Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Exigir confirmación de paciente y ojo antes de enviar",
+    "obtained": "Confirmar y analizar deshabilitado hasta marcar revisión",
+    "status": "APROBADO",
+    "image": "CN-05/CN-05-S04-confirmacion-ojo.jpg"
+  },
+  {
+    "case": "CN-05",
+    "variant": "S05-rechazo-api-simulada",
+    "utc": "2026-11-03T18:36:43.469Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Mostrar rechazo del análisis sin resultado nuevo de éxito",
+    "obtained": "Validación fallida OD; API SIMULADA; no se ejecutó inferencia",
+    "status": "APROBADO",
+    "image": "CN-05/CN-05-S05-rechazo-api-simulada.jpg"
+  },
+  {
+    "case": "CN-05",
+    "variant": "S06-resultado-api-simulada",
+    "utc": "2026-11-03T18:41:29.684Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Mostrar la respuesta artificial de contrato y mantener la validación médica pendiente",
+    "obtained": "La interfaz mostró nivel 2 y 87.5 % definidos por el simulador; imagen abstracta, sin inferencia ni Grad-CAM real",
+    "status": "APROBADO",
+    "image": "CN-05/CN-05-S06-resultado-api-simulada.jpg"
+  },
+  {
+    "case": "CN-01",
+    "variant": "S06-repeticion-validacion-nativa",
+    "utc": "2026-11-03T18:43:45.512Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Bloquear envío sin credenciales mediante validación nativa HTML",
+    "obtained": "El navegador mostró Completa este campo, los dos inputs required tienen valueMissing=true y permanece en /",
+    "status": "APROBADO",
+    "image": "CN-01/CN-01-S06-repeticion-validacion-nativa.jpg"
+  },
+  {
+    "case": "CN-04",
+    "variant": "S06-repeticion-detalle",
+    "utc": "2026-11-03T18:50:34.919Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Verificar en el diálogo cargado paciente, valores OD/OI y marcador V1",
+    "obtained": "Diálogo cargado: Ana, 540 µm, 542 µm y CN04-V1; comprobación del contenido completa",
+    "status": "APROBADO",
+    "image": "CN-04/CN-04-S06-repeticion-detalle.jpg"
+  },
+  {
+    "case": "CN-03",
+    "variant": "S06-repeticion-guardado",
+    "utc": "2026-11-03T18:51:25.976Z",
+    "scope": "INTERFAZ_REACT_API_SIMULADA",
+    "expected": "Con valores OD 541 y OI 543, mostrar aviso de un informe guardado en nueva visita simulada",
+    "obtained": "Aviso visible Informes guardados; 1 informe(s) registrado(s) correctamente. Captura inmediata y texto del aviso conservados.",
+    "status": "APROBADO",
+    "image": "CN-03/CN-03-S06-repeticion-guardado.jpg"
+  }
+]

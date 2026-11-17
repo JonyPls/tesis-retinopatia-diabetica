@@ -1,0 +1,65 @@
+{
+  "login_file_override_absent": true,
+  "operations": [
+    {
+      "purpose": "help/version only; never connect",
+      "exit_code": 0,
+      "name": "version-compatible",
+      "args": [
+        "--no-defaults",
+        "--version"
+      ]
+    },
+    {
+      "purpose": "help/version only; never connect",
+      "exit_code": 0,
+      "name": "ayuda-compatible",
+      "args": [
+        "--no-defaults",
+        "--help"
+      ]
+    },
+    {
+      "purpose": "help/version only; never connect",
+      "exit_code": 0,
+      "name": "memory-opciones-compatible",
+      "args": [
+        "--no-defaults",
+        "--protocol=MEMORY",
+        "--shared-memory-base-name=CODN_CB03_eee45878_d7ac_11f1_bc4f_107c616721bd",
+        "--connect-timeout=5",
+        "--skip-password",
+        "--no-auto-rehash",
+        "--batch",
+        "--raw",
+        "--skip-column-names",
+        "--default-character-set=utf8mb4",
+        "--local-infile=0",
+        "--help"
+      ]
+    },
+    {
+      "purpose": "help/version only; never connect",
+      "exit_code": 0,
+      "name": "tcp-opciones-compatible",
+      "args": [
+        "--no-defaults",
+        "--protocol=TCP",
+        "--host=127.0.0.1",
+        "--port=33363",
+        "--connect-timeout=5",
+        "--skip-password",
+        "--no-auto-rehash",
+        "--batch",
+        "--raw",
+        "--skip-column-names",
+        "--default-character-set=utf8mb4",
+        "--local-infile=0",
+        "--help"
+      ]
+    }
+  ],
+  "connections_executed": 0,
+  "server_started": false,
+  "inherited_mysql_credentials_removed": true
+}

@@ -79,6 +79,46 @@ beforeEach(() => {
 });
 
 describe("28C.5 revisión profesional separada de IA", () => {
+  it.each([400, 422])("la confirmación no evita un rechazo %i y solo se revoca al reconocerlo", async (httpStatus) => {
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    confirmedPost.mockRejectedValueOnce({ response: { status: httpStatus, data: {
+      code: "IMAGEN_INVALIDA", message: "Se detectó una captura de pantalla con imágenes retinianas.",
+    } } });
+    act(() => hook.result.current.closeAutoSelection());
+    act(() => hook.result.current.goNext());
+    await waitFor(() => expect(hook.result.current.isSaving).toBe(false));
+    expect(hook.result.current.modalPhase).toBe("error");
+    expect(hook.result.current.validationError).toContain("captura de pantalla");
+    expect(hook.result.current.results.OD).toBeUndefined();
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONFIRMADA");
+    expect(revoke).not.toHaveBeenCalled();
+    act(() => hook.result.current.dismissError());
+    await waitFor(() => expect(hook.result.current.eyes.OD.file).toBeNull());
+    expect(revoke).toHaveBeenCalledExactlyOnceWith(token);
+    expect(confirmedPost).toHaveBeenCalledTimes(1);
+    expect(manualPost).not.toHaveBeenCalled();
+    hook.unmount();
+  });
+
+  it("un rechazo no elimina una exportación que otra solicitud ya consumió", async () => {
+    const hook = await setup();
+    await act(async () => hook.result.current.confirmEye("OD"));
+    confirmedPost.mockImplementationOnce(async () => {
+      status.mockResolvedValue({ paciente_id: 7, ojo_confirmado: "Derecho", estado: "CONSUMIDA", fecha_expiracion: expires });
+      throw { response: { status: 422, data: { code: "IMAGEN_INVALIDA" } } };
+    });
+    act(() => hook.result.current.closeAutoSelection());
+    act(() => hook.result.current.goNext());
+    await waitFor(() => expect(hook.result.current.isSaving).toBe(false));
+    act(() => hook.result.current.dismissError());
+    expect(hook.result.current.eyes.OD.confirmation).toBe("CONSUMIDA");
+    expect(hook.result.current.eyes.OD.file).not.toBeNull();
+    expect(revoke).not.toHaveBeenCalled();
+    expect(confirmedPost).toHaveBeenCalledTimes(1);
+    hook.unmount();
+  });
+
   it("ofrece varias fotografías Color de OD y no incorpora ninguna hasta confirmar la elegida", async () => {
     const first = candidate("OD");
     const second = { ...first, filename: "synthetic_Color_R_2.png", secuencia: 2 };

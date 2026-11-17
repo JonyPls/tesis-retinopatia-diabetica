@@ -1,0 +1,2 @@
+git diff --exit-code -- .gitignore backend/src backend/services backend/utils backend/dl_model frontend
+exit=0

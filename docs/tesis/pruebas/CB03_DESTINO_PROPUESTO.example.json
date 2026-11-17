@@ -1,0 +1,13 @@
+{
+  "exclusive_test_instance": false,
+  "read_only_inspection_authorized": false,
+  "fixture_writes_authorized": false,
+  "approval_reference": null,
+  "host": "127.0.0.1",
+  "port": 33363,
+  "database": "codn_cb03_20261103_a3c5f7f4",
+  "username": "codn_cb03",
+  "server_uuid": null,
+  "instance_root": "D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql",
+  "datadir": "D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\data"
+}

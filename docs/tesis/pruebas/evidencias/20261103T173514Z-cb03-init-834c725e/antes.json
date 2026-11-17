@@ -1,0 +1,28 @@
+{
+  "root_exists": false,
+  "observed_utc": "2026-11-03T17:35:14.5557651Z",
+  "datadir_exists": false,
+  "habitual_listeners": [
+    {
+      "LocalAddress": "::",
+      "LocalPort": 33060,
+      "OwningProcess": 20248
+    },
+    {
+      "LocalAddress": "::",
+      "LocalPort": 3306,
+      "OwningProcess": 20248
+    }
+  ],
+  "target_listeners": [],
+  "mysql_processes": [
+    {
+      "ProcessId": 19808,
+      "ExecutablePath": null
+    },
+    {
+      "ProcessId": 20248,
+      "ExecutablePath": null
+    }
+  ]
+}

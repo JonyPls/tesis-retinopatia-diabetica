@@ -1,0 +1,413 @@
+   1: from database import db
+   2: from sqlalchemy import func, text
+   3: from src.models.patient_entities import Paciente
+   4: import json
+   5: 
+   6: 
+   7: def _extract_report_conclusion(datos_estructurados):
+   8:     datos = datos_estructurados
+   9:     if isinstance(datos, str):
+  10:         try:
+  11:             datos = json.loads(datos)
+  12:         except (TypeError, json.JSONDecodeError):
+  13:             return None
+  14:     if not isinstance(datos, dict):
+  15:         return None
+  16: 
+  17:     conclusion = datos.get("conclusion")
+  18:     if isinstance(conclusion, list):
+  19:         items = [str(item).strip() for item in conclusion if str(item).strip()]
+  20:         return "\n".join(items) if items else None
+  21:     if conclusion is None:
+  22:         return None
+  23:     texto = str(conclusion).strip()
+  24:     return texto or None
+  25: 
+  26: class PatientRepository:
+  27:     @staticmethod
+  28:     def obtener_pacientes(*, scope='clinical', include_severity=True):
+  29:         if scope not in ('clinical', 'assistance', 'administrative'):
+  30:             raise ValueError('Invalid patient scope')
+  31:         if include_severity and scope != 'clinical':
+  32:             raise ValueError('Severity requires clinical scope')
+  33:         visit_column = (", MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' "
+  34:                         "THEN v.fecha_visita END) AS ultima_visita, "
+  35:                         "CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' "
+  36:                         "THEN 1 END) > 0 THEN 'UTC_VERIFICADO' ELSE 'NO_VERIFICADO' "
+  37:                         "END AS ultima_visita_origen, "
+  38:                         "CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'NO_VERIFICADO' "
+  39:                         "THEN 1 END) > 0 THEN 1 ELSE 0 END AS visitas_sin_fecha_verificada"
+  40:                         if scope != 'administrative' else '')
+  41:         consent_columns = (', p.consentimiento_informado, p.fecha_consentimiento'
+  42:                            if scope != 'administrative' else '')
+  43:         consent_group = (', p.consentimiento_informado, p.fecha_consentimiento'
+  44:                          if scope != 'administrative' else '')
+  45:         severity_column = (', MAX(COALESCE(drd.resultado_final_id, drd.resultado_ia_id)) '
+  46:                            'AS maxima_gravedad') if include_severity else ''
+  47:         visit_join = ("LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id "
+  48:                       "AND v.estado <> 'ANULADA'") if scope != 'administrative' else ''
+  49:         diagnosis_join = ("LEFT JOIN diagnosticos_retinopatia dr ON v.id = dr.visita_id "
+  50:                           "AND dr.estado <> 'ANULADO' "
+  51:                           "LEFT JOIN diagnosticos_retinopatia_detalle drd "
+  52:                           "ON dr.id = drd.diagnostico_retinopatia_id") if include_severity else ''
+  53:         query = text(f"""
+  54:             SELECT
+  55:                 p.id,
+  56:                 td.codigo AS tipo_doc_abrev,
+  57:                 p.tipo_doc_id,
+  58:                 p.nro_documento,
+  59:                 p.nombres,
+  60:                 p.apellidos,
+  61:                 p.sexo,
+  62:                 p.fecha_nacimiento,
+  63:                 p.telefono,
+  64:                 p.correo,
+  65:                 p.direccion
+  66:                 {consent_columns}
+  67:                 {visit_column} {severity_column}
+  68:             FROM pacientes p
+  69:             JOIN tipos_documento td ON p.tipo_doc_id = td.id
+  70:             {visit_join}
+  71:             {diagnosis_join}
+  72:             WHERE p.estado = 'ACTIVO'
+  73:             GROUP BY
+  74:                 p.id,
+  75:                 td.codigo,
+  76:                 p.tipo_doc_id,
+  77:                 p.nro_documento,
+  78:                 p.nombres,
+  79:                 p.apellidos,
+  80:                 p.sexo,
+  81:                 p.fecha_nacimiento,
+  82:                 p.telefono,
+  83:                 p.correo,
+  84:                 p.direccion
+  85:                 {consent_group}
+  86:             ORDER BY p.id DESC
+  87:         """)
+  88:         result = db.session.execute(query)
+  89:         return [dict(row._mapping) for row in result]
+  90: 
+  91:     @staticmethod
+  92:     def obtener_paciente_por_documento(tipo_doc_id: int, nro_documento: str) -> int | None:
+  93:         # La comprobación de duplicados no necesita cargar información clínica.
+  94:         return db.session.query(Paciente.id).filter_by(
+  95:             tipo_doc_id=tipo_doc_id,
+  96:             nro_documento=nro_documento
+  97:         ).scalar()
+  98: 
+  99:     @staticmethod
+ 100:     def obtener_paciente_por_correo(correo: str) -> int | None:
+ 101:         # Se consulta solo la identidad interna, sin cargar datos de otros pacientes.
+ 102:         return db.session.query(Paciente.id).filter(
+ 103:             func.lower(func.trim(Paciente.correo)) == correo
+ 104:         ).limit(1).scalar()
+ 105: 
+ 106:     @staticmethod
+ 107:     def insertar_paciente(paciente: Paciente):
+ 108:         db.session.add(paciente)
+ 109:         db.session.flush()
+ 110:         return paciente.id
+ 111: 
+ 112:     @staticmethod
+ 113:     def obtener_paciente_por_id(paciente_id: int, *, scope='clinical'):
+ 114:         if scope not in ('clinical', 'assistance', 'administrative'):
+ 115:             raise ValueError('Invalid patient scope')
+ 116:         sensitive_columns = {
+ 117:             'clinical': ', p.consentimiento_informado, p.fecha_consentimiento, p.antecedentes_clinicos, p.alergias',
+ 118:             'assistance': ', p.consentimiento_informado, p.fecha_consentimiento, p.alergias',
+ 119:             'administrative': '',
+ 120:         }[scope]
+ 121:         query = text(f"""
+ 122:             SELECT 
+ 123:                 p.id, 
+ 124:                 td.codigo AS tipo_doc_abrev,
+ 125:                 p.tipo_doc_id,
+ 126:                 td.codigo AS tipo_doc,
+ 127:                 p.nro_documento, 
+ 128:                 p.nombres, 
+ 129:                 p.apellidos, 
+ 130:                 p.sexo, 
+ 131:                 p.fecha_nacimiento, 
+ 132:                 p.telefono,
+ 133:                 p.correo,
+ 134:                 p.direccion
+ 135:                 {sensitive_columns}
+ 136:             FROM pacientes p
+ 137:             LEFT JOIN tipos_documento td ON p.tipo_doc_id = td.id
+ 138:             WHERE p.id = :paciente_id
+ 139:               AND p.estado = 'ACTIVO'
+ 140:         """)
+ 141:         result = db.session.execute(query, {"paciente_id": paciente_id}).first()
+ 142:         return dict(result._mapping) if result else None
+ 143: 
+ 144:     @staticmethod
+ 145:     def existe_paciente_activo(paciente_id: int) -> bool:
+ 146:         return db.session.query(Paciente.id).filter_by(
+ 147:             id=paciente_id, estado='ACTIVO').scalar() is not None
+ 148: 
+ 149:     @staticmethod
+ 150:     def obtener_diagnosticos_paciente(paciente_id: int):
+ 151:         visitas_query = text("""
+ 152:             SELECT
+ 153:                 v.id AS visita_id,
+ 154:                 v.id AS diagnostico_id,
+ 155:                 dr.id AS diagnostico_retinopatia_id,
+ 156:                 dr.estado AS diagnostico_ia_estado,
+ 157:                 dr.modelo_nombre,
+ 158:                 dr.modelo_version,
+ 159:                 v.fecha_visita AS fecha_visita,
+ 160:                 v.fecha_visita_origen AS fecha_visita_origen,
+ 161:                 CONCAT(u.nombres, ' ', u.apellidos) AS medico_tratante,
+ 162:                 v.motivo_consulta,
+ 163:                 v.observaciones,
+ 164:                 v.estado,
+ 165:                 CASE WHEN COUNT(DISTINCT drd.id) > 0 THEN 1 ELSE 0 END AS tiene_diagnostico_ia,
+ 166:                 CASE WHEN COUNT(DISTINCT i.id) > 0 THEN 1 ELSE 0 END AS tiene_informes,
+ 167:                 COUNT(DISTINCT drd.id) AS total_ojos_diagnosticados,
+ 168:                 COUNT(DISTINCT i.id) AS total_informes,
+ 169:                 MAX(COALESCE(drd.resultado_final_id, drd.resultado_ia_id)) AS maxima_gravedad
+ 170:             FROM visitas_clinicas v
+ 171:             JOIN usuarios u ON v.usuario_id = u.id
+ 172:             LEFT JOIN diagnosticos_retinopatia dr ON dr.visita_id = v.id AND dr.estado <> 'ANULADO'
+ 173:             LEFT JOIN diagnosticos_retinopatia_detalle drd ON drd.diagnostico_retinopatia_id = dr.id
+ 174:             LEFT JOIN informes i ON i.visita_id = v.id AND i.estado = 'ACTIVO'
+ 175:             WHERE v.paciente_id = :paciente_id
+ 176:               AND v.estado <> 'ANULADA'
+ 177:             GROUP BY
+ 178:                 v.id,
+ 179:                 dr.id,
+ 180:                 dr.estado,
+ 181:                 dr.modelo_nombre,
+ 182:                 dr.modelo_version,
+ 183:                 v.fecha_visita,
+ 184:                 v.fecha_visita_origen,
+ 185:                 u.nombres,
+ 186:                 u.apellidos,
+ 187:                 v.motivo_consulta,
+ 188:                 v.observaciones,
+ 189:                 v.estado
+ 190:             ORDER BY CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 0 ELSE 1 END,
+ 191:                      CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END DESC,
+ 192:                      v.id DESC
+ 193:         """)
+ 194:         visitas_result = db.session.execute(visitas_query, {"paciente_id": paciente_id})
+ 195:         visitas = [dict(row._mapping) for row in visitas_result]
+ 196: 
+ 197:         if not visitas:
+ 198:             return []
+ 199: 
+ 200:         detalles_query = text("""
+ 201:             SELECT
+ 202:                 dr.visita_id,
+ 203:                 drd.id AS detalle_id,
+ 204:                 drd.ojo_evaluado,
+ 205:                 drd.resultado_ia_id,
+ 206:                 gia.nombre AS resultado_ia_nombre,
+ 207:                 drd.resultado_final_id,
+ 208:                 gfinal.nombre AS resultado_final_nombre,
+ 209:                 drd.probabilidad_ia,
+ 210:                 drd.estado_validacion,
+ 211:                 drd.comentario_medico,
+ 212:                 drd.motivo_correccion,
+ 213:                 drd.imagen_original_url,
+ 214:                 drd.imagen_gradcam_url,
+ 215:                 drd.nombre_archivo_original,
+ 216:                 drd.fecha_validacion
+ 217:                 , drd.fecha_validacion_origen
+ 218:             FROM diagnosticos_retinopatia dr
+ 219:             JOIN visitas_clinicas v ON v.id = dr.visita_id
+ 220:             JOIN diagnosticos_retinopatia_detalle drd ON drd.diagnostico_retinopatia_id = dr.id
+ 221:             LEFT JOIN grados_retinopatia gia ON gia.id = drd.resultado_ia_id
+ 222:             LEFT JOIN grados_retinopatia gfinal ON gfinal.id = drd.resultado_final_id
+ 223:             WHERE v.paciente_id = :paciente_id
+ 224:               AND v.estado <> 'ANULADA'
+ 225:               AND dr.estado <> 'ANULADO'
+ 226:             ORDER BY dr.visita_id DESC, FIELD(drd.ojo_evaluado, 'Derecho', 'Izquierdo')
+ 227:         """)
+ 228:         detalles_result = db.session.execute(detalles_query, {"paciente_id": paciente_id})
+ 229:         detalles_por_visita = {}
+ 230:         for row in detalles_result:
+ 231:             detalle = dict(row._mapping)
+ 232:             visita_id = detalle.pop("visita_id")
+ 233:             if detalle.get("probabilidad_ia") is not None:
+ 234:                 detalle["probabilidad_ia"] = float(detalle["probabilidad_ia"])
+ 235:             detalles_por_visita.setdefault(visita_id, []).append(detalle)
+ 236: 
+ 237:         informes_query = text("""
+ 238:             SELECT
+ 239:                 i.visita_id,
+ 240:                 i.id,
+ 241:                 i.tipo_informe_id,
+ 242:                 ti.nombre AS tipo_informe_nombre,
+ 243:                 i.conclusion,
+ 244:                 i.datos_estructurados,
+ 245:                 i.estado,
+ 246:                 i.fecha_creado,
+ 247:                 i.fecha_creado_origen,
+ 248:                 i.fecha_actualizado,
+ 249:                 i.fecha_actualizado_origen
+ 250:             FROM informes i
+ 251:             JOIN tipos_informe ti ON ti.id = i.tipo_informe_id
+ 252:             JOIN visitas_clinicas v ON v.id = i.visita_id
+ 253:             WHERE v.paciente_id = :paciente_id
+ 254:               AND v.estado <> 'ANULADA'
+ 255:               AND i.estado = 'ACTIVO'
+ 256:             ORDER BY i.visita_id DESC, ti.nombre ASC
+ 257:         """)
+ 258:         informes_result = db.session.execute(informes_query, {"paciente_id": paciente_id})
+ 259:         informes_por_visita = {}
+ 260:         for row in informes_result:
+ 261:             informe = dict(row._mapping)
+ 262:             visita_id = informe.pop("visita_id")
+ 263:             if not informe.get("conclusion"):
+ 264:                 informe["conclusion"] = _extract_report_conclusion(
+ 265:                     informe.get("datos_estructurados")
+ 266:                 )
+ 267:             informes_por_visita.setdefault(visita_id, []).append(informe)
+ 268: 
+ 269:         for visita in visitas:
+ 270:             visita_id = visita["visita_id"]
+ 271:             detalles = detalles_por_visita.get(visita_id, [])
+ 272:             visita["informes"] = informes_por_visita.get(visita_id, [])
+ 273:             visita["diagnostico_ia"] = None
+ 274: 
+ 275:             if visita.get("diagnostico_retinopatia_id"):
+ 276:                 visita["diagnostico_ia"] = {
+ 277:                     "id": visita["diagnostico_retinopatia_id"],
+ 278:                     "estado": visita.get("diagnostico_ia_estado"),
+ 279:                     "modelo_nombre": visita.get("modelo_nombre"),
+ 280:                     "modelo_version": visita.get("modelo_version"),
+ 281:                     "detalles": detalles,
+ 282:                 }
+ 283: 
+ 284:         return visitas
+ 285: 
+ 286:     @staticmethod
+ 287:     def buscar_paciente(query_text: str, page: int = 1, per_page: int = 5,
+ 288:                         *, include_last_visit: bool = True):
+ 289:         search_pattern = f"%{query_text}%"
+ 290:         prefix_pattern = f"{query_text}%"
+ 291:         offset = (page - 1) * per_page
+ 292: 
+ 293:         count_query = text("""
+ 294:             SELECT COUNT(*) AS total
+ 295:             FROM pacientes p
+ 296:             WHERE p.estado = 'ACTIVO' AND (
+ 297:                 p.nro_documento LIKE :search_pattern
+ 298:                 OR CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :search_pattern
+ 299:                 OR CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :search_pattern
+ 300:             )
+ 301:         """)
+ 302: 
+ 303:         query = text("""
+ 304:             SELECT
+ 305:                 p.id,
+ 306:                 td.codigo AS tipo_doc_abrev,
+ 307:                 p.tipo_doc_id,
+ 308:                 td.codigo AS tipo_doc,
+ 309:                 p.nro_documento,
+ 310:                 p.nombres,
+ 311:                 p.apellidos,
+ 312:                 MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) AS ultima_visita,
+ 313:                 CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 'UTC_VERIFICADO' ELSE 'NO_VERIFICADO' END AS ultima_visita_origen,
+ 314:                 CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'NO_VERIFICADO' THEN 1 END) > 0 THEN 1 ELSE 0 END AS visitas_sin_fecha_verificada
+ 315:             FROM pacientes p
+ 316:             LEFT JOIN tipos_documento td ON p.tipo_doc_id = td.id
+ 317:             LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id AND v.estado <> 'ANULADA'
+ 318:             WHERE p.estado = 'ACTIVO' AND (
+ 319:                 p.nro_documento LIKE :search_pattern 
+ 320:                 OR CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :search_pattern 
+ 321:                 OR CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :search_pattern
+ 322:             )
+ 323:             GROUP BY
+ 324:                 p.id,
+ 325:                 td.codigo,
+ 326:                 p.tipo_doc_id,
+ 327:                 p.nro_documento,
+ 328:                 p.nombres,
+ 329:                 p.apellidos
+ 330:             ORDER BY
+ 331:                 CASE
+ 332:                     WHEN p.nro_documento LIKE :prefix_pattern THEN 0
+ 333:                     WHEN CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :prefix_pattern THEN 1
+ 334:                     WHEN CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :prefix_pattern THEN 2
+ 335:                     ELSE 3
+ 336:                 END,
+ 337:                  CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 0 ELSE 1 END,
+ 338:                  MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) DESC,
+ 339:                  p.id DESC
+ 340:             LIMIT :per_page OFFSET :offset
+ 341:         """) if include_last_visit else text("""
+ 342:             SELECT
+ 343:                 p.id,
+ 344:                 td.codigo AS tipo_doc_abrev,
+ 345:                 p.tipo_doc_id,
+ 346:                 td.codigo AS tipo_doc,
+ 347:                 p.nro_documento,
+ 348:                 p.nombres,
+ 349:                 p.apellidos
+ 350:             FROM pacientes p
+ 351:             LEFT JOIN tipos_documento td ON p.tipo_doc_id = td.id
+ 352:             WHERE p.estado = 'ACTIVO' AND (
+ 353:                 p.nro_documento LIKE :search_pattern
+ 354:                 OR CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :search_pattern
+ 355:                 OR CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :search_pattern
+ 356:             )
+ 357:             ORDER BY
+ 358:                 CASE
+ 359:                     WHEN p.nro_documento LIKE :prefix_pattern THEN 0
+ 360:                     WHEN CONCAT(COALESCE(p.nombres, ''), ' ', COALESCE(p.apellidos, '')) LIKE :prefix_pattern THEN 1
+ 361:                     WHEN CONCAT(COALESCE(p.apellidos, ''), ' ', COALESCE(p.nombres, '')) LIKE :prefix_pattern THEN 2
+ 362:                     ELSE 3
+ 363:                 END,
+ 364:                 p.id DESC
+ 365:             LIMIT :per_page OFFSET :offset
+ 366:         """)
+ 367:         params = {
+ 368:             "search_pattern": search_pattern,
+ 369:             "prefix_pattern": prefix_pattern,
+ 370:             "per_page": per_page,
+ 371:             "offset": offset,
+ 372:         }
+ 373:         total_result = db.session.execute(count_query, params).first()
+ 374:         result = db.session.execute(query, params)
+ 375:         total = int(total_result._mapping["total"]) if total_result else 0
+ 376:         return [dict(row._mapping) for row in result], total
+ 377: 
+ 378:     @staticmethod
+ 379:     def obtener_pacientes_recientes(limit: int = 6, *, include_last_visit: bool = True):
+ 380:         query = text("""
+ 381:             SELECT
+ 382:                 p.id,
+ 383:                 td.codigo AS tipo_doc_abrev,
+ 384:                 p.nro_documento,
+ 385:                 p.nombres,
+ 386:                 p.apellidos,
+ 387:                 MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) AS ultima_visita,
+ 388:                 CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 'UTC_VERIFICADO' ELSE 'NO_VERIFICADO' END AS ultima_visita_origen,
+ 389:                 CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'NO_VERIFICADO' THEN 1 END) > 0 THEN 1 ELSE 0 END AS visitas_sin_fecha_verificada
+ 390:             FROM pacientes p
+ 391:             JOIN tipos_documento td ON p.tipo_doc_id = td.id
+ 392:             LEFT JOIN visitas_clinicas v ON p.id = v.paciente_id AND v.estado <> 'ANULADA'
+ 393:             WHERE p.estado = 'ACTIVO'
+ 394:             GROUP BY p.id, td.codigo, p.nro_documento, p.nombres, p.apellidos
+ 395:             ORDER BY CASE WHEN COUNT(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN 1 END) > 0 THEN 0 ELSE 1 END,
+ 396:                      MAX(CASE WHEN v.fecha_visita_origen = 'UTC_VERIFICADO' THEN v.fecha_visita END) DESC,
+ 397:                      p.id DESC
+ 398:             LIMIT :limit
+ 399:         """) if include_last_visit else text("""
+ 400:             SELECT
+ 401:                 p.id,
+ 402:                 td.codigo AS tipo_doc_abrev,
+ 403:                 p.nro_documento,
+ 404:                 p.nombres,
+ 405:                 p.apellidos
+ 406:             FROM pacientes p
+ 407:             JOIN tipos_documento td ON p.tipo_doc_id = td.id
+ 408:             WHERE p.estado = 'ACTIVO'
+ 409:             ORDER BY p.id DESC
+ 410:             LIMIT :limit
+ 411:         """)
+ 412:         result = db.session.execute(query, {"limit": limit})
+ 413:         return [dict(row._mapping) for row in result]

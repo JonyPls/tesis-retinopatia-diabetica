@@ -1,0 +1,15 @@
+{
+  "run_id": "20261103T182636Z-cn-81b0037d",
+  "observations": 28,
+  "states": {
+    "FALLIDO": 3,
+    "APROBADO": 25
+  },
+  "distinct_scenarios": 25,
+  "retests": 3,
+  "png_count": 32,
+  "historical_manifest_records": 186,
+  "historical_all_match": true,
+  "figures": 10,
+  "docx": "D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\docs\\tesis\\pruebas\\INFORME_CONSOLIDADO_PRUEBAS_CODN.docx"
+}

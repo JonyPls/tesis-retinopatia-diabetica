@@ -1,0 +1,31 @@
+{
+  "checked_utc": "2026-11-03T17:55:40.8275415Z",
+  "initialized_files": [
+    {
+      "name": "auto.cnf",
+      "exists": true
+    },
+    {
+      "name": "ibdata1",
+      "exists": true
+    },
+    {
+      "name": "mysql",
+      "exists": true
+    }
+  ],
+  "habitual_listeners": [
+    {
+      "LocalAddress": "::",
+      "LocalPort": 33060,
+      "OwningProcess": 20248
+    },
+    {
+      "LocalAddress": "::",
+      "LocalPort": 3306,
+      "OwningProcess": 20248
+    }
+  ],
+  "target_listeners": [],
+  "previous_process_present": false
+}

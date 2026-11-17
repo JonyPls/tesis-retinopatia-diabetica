@@ -1,0 +1,110 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><title>CODN CB-01 — evidencia real</title>
+<style>body{font:16px system-ui;margin:28px;max-width:1200px;color:#18202a}h1{font-size:25px}h2{font-size:19px;margin-top:20px}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #ddd;padding:5px 10px;font-size:14px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f6;padding:14px;font:12px Consolas,monospace}.result{font-size:20px;font-weight:700}</style>
+<h1>CODN · CB-01 · Autenticación y autorización estricta</h1><p>Reporte de ejecución real · RUN 20261103T160850Z-421d66ca<br>2026-11-03T11:12:34.639259-05:00 · Python 3.12.10</p>
+<p class="result">APROBADO · 12 métodos · 46 subcasos · salida 0</p>
+<p>Fallos 0 · errores 0 · omitidos 0 · intentos prohibidos 0</p>
+<h2>Cobertura real de líneas (trace; funciones seleccionadas)</h2><table><tr><th>Fuente</th><th>Ejecutadas/elegibles</th><th>Líneas %</th></tr><tr><td>services/auth_service.py</td><td>31/31</td><td>100.00%</td></tr><tr><td>utils/security.py</td><td>44/46</td><td>95.65%</td></tr><tr><td>utils/strict_authorization.py</td><td>62/77</td><td>80.52%</td></tr><tr><td>src/repositories/auth_repository.py</td><td>1/1</td><td>100.00%</td></tr></table>
+<p>Sin medición de ramas. Mocks declarados en el informe. No prueba MySQL físico ni inferencia real.</p>
+<h2>Métodos ejecutados</h2><table><tr><td>test_missing_credentials_short_circuit</td><td>APROBADO</td></tr><tr><td>test_invalid_credentials_and_repository_failure</td><td>APROBADO</td></tr><tr><td>test_active_login_real_hash_and_jwt</td><td>APROBADO</td></tr><tr><td>test_real_repository_excludes_inactive_account_before_hash</td><td>APROBADO</td></tr><tr><td>test_history_all_grants_and_each_missing_permission</td><td>APROBADO</td></tr><tr><td>test_role_provenance_prevents_mixing_and_admin_override</td><td>APROBADO</td></tr><tr><td>test_inactive_missing_and_malformed_grants_fail_closed</td><td>APROBADO</td></tr><tr><td>test_rule_structure_any_of_and_resource</td><td>APROBADO</td></tr><tr><td>test_patient_scopes_follow_grant_source</td><td>APROBADO</td></tr><tr><td>test_invalid_tokens_never_lookup_identity_or_call_handler</td><td>APROBADO</td></tr><tr><td>test_identity_reload_replaces_stale_claims_and_denies_absent_identity</td><td>APROBADO</td></tr><tr><td>test_resource_lookup_is_short_circuited_and_denial_prevents_operation</td><td>APROBADO</td></tr></table>
+<h2>Log íntegro preservado</h2><p>Transcripción del archivo ejecucion-04.log; no es una consola simulada.</p><pre>CODN WHITE-BOX | test_codn_cb01_authorization
+UTC: 2026-11-03T16:12:34.639259+00:00 | Python: 3.12.10
+Isolation: explicit stubs; network, env/model reads and external writes guarded.
+test_active_login_real_hash_and_jwt (test_codn_cb01_authorization.AuthorizationTests.test_active_login_real_hash_and_jwt) ... ok
+test_history_all_grants_and_each_missing_permission (test_codn_cb01_authorization.AuthorizationTests.test_history_all_grants_and_each_missing_permission) ...   SUBCASO OK test_history_all_grants_and_each_missing_permission (test_codn_cb01_authorization.AuthorizationTests.test_history_all_grants_and_each_missing_permission) (missing=&#x27;diagnostico_retinopatia.ver&#x27;)
+  SUBCASO OK test_history_all_grants_and_each_missing_permission (test_codn_cb01_authorization.AuthorizationTests.test_history_all_grants_and_each_missing_permission) (missing=&#x27;imagenes.ver&#x27;)
+  SUBCASO OK test_history_all_grants_and_each_missing_permission (test_codn_cb01_authorization.AuthorizationTests.test_history_all_grants_and_each_missing_permission) (missing=&#x27;informes.ver&#x27;)
+  SUBCASO OK test_history_all_grants_and_each_missing_permission (test_codn_cb01_authorization.AuthorizationTests.test_history_all_grants_and_each_missing_permission) (missing=&#x27;pacientes.ver&#x27;)
+  SUBCASO OK test_history_all_grants_and_each_missing_permission (test_codn_cb01_authorization.AuthorizationTests.test_history_all_grants_and_each_missing_permission) (missing=&#x27;visitas.ver&#x27;)
+ok
+test_identity_reload_replaces_stale_claims_and_denies_absent_identity (test_codn_cb01_authorization.AuthorizationTests.test_identity_reload_replaces_stale_claims_and_denies_absent_identity) ...   SUBCASO OK test_identity_reload_replaces_stale_claims_and_denies_absent_identity (test_codn_cb01_authorization.AuthorizationTests.test_identity_reload_replaces_stale_claims_and_denies_absent_identity) (mode=&#x27;absent&#x27;)
+  SUBCASO OK test_identity_reload_replaces_stale_claims_and_denies_absent_identity (test_codn_cb01_authorization.AuthorizationTests.test_identity_reload_replaces_stale_claims_and_denies_absent_identity) (mode=&#x27;revoked&#x27;)
+  SUBCASO OK test_identity_reload_replaces_stale_claims_and_denies_absent_identity (test_codn_cb01_authorization.AuthorizationTests.test_identity_reload_replaces_stale_claims_and_denies_absent_identity) (mode=&#x27;allowed&#x27;)
+[2026-11-03 11:12:35,746] ERROR in security: Error al verificar la cuenta autenticada
+Traceback (most recent call last):
+  File &quot;D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\backend\utils\security.py&quot;, line 85, in decorated
+    user = AuthRepository.get_active_user_with_permissions_by_id(data[&#x27;user_id&#x27;])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py&quot;, line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py&quot;, line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py&quot;, line 1198, in _execute_mock_call
+    raise effect
+RuntimeError: synthetic lookup failure
+  SUBCASO OK test_identity_reload_replaces_stale_claims_and_denies_absent_identity (test_codn_cb01_authorization.AuthorizationTests.test_identity_reload_replaces_stale_claims_and_denies_absent_identity) (mode=&#x27;lookup_error&#x27;)
+ok
+test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) ...   SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;none&#x27;)
+  SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;inactive_user&#x27;)
+  SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;no_roles&#x27;)
+  SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;null_role&#x27;)
+  SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;inactive_role&#x27;)
+  SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;inactive_permission&#x27;)
+  SUBCASO OK test_inactive_missing_and_malformed_grants_fail_closed (test_codn_cb01_authorization.AuthorizationTests.test_inactive_missing_and_malformed_grants_fail_closed) (mode=&#x27;null_permission&#x27;)
+ok
+test_invalid_credentials_and_repository_failure (test_codn_cb01_authorization.AuthorizationTests.test_invalid_credentials_and_repository_failure) ...   SUBCASO OK test_invalid_credentials_and_repository_failure (test_codn_cb01_authorization.AuthorizationTests.test_invalid_credentials_and_repository_failure) (mode=&#x27;absent&#x27;)
+  SUBCASO OK test_invalid_credentials_and_repository_failure (test_codn_cb01_authorization.AuthorizationTests.test_invalid_credentials_and_repository_failure) (mode=&#x27;wrong_password&#x27;)
+[2026-11-03 11:12:35,785] ERROR in auth_service: Error al autenticar usuario
+Traceback (most recent call last):
+  File &quot;D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\backend\services\auth_service.py&quot;, line 13, in autenticar_usuario
+    user = AuthRepository.get_user_by_username(username)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py&quot;, line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py&quot;, line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py&quot;, line 1198, in _execute_mock_call
+    raise effect
+RuntimeError: synthetic-private-detail
+  SUBCASO OK test_invalid_credentials_and_repository_failure (test_codn_cb01_authorization.AuthorizationTests.test_invalid_credentials_and_repository_failure) (mode=&#x27;exception&#x27;)
+ok
+test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) ...   SUBCASO OK test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) (mode=&#x27;missing&#x27;)
+  SUBCASO OK test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) (mode=&#x27;malformed&#x27;)
+  SUBCASO OK test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) (mode=&#x27;expired&#x27;)
+  SUBCASO OK test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) (mode=&#x27;missing_exp&#x27;)
+  SUBCASO OK test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) (mode=&#x27;signature&#x27;)
+  SUBCASO OK test_invalid_tokens_never_lookup_identity_or_call_handler (test_codn_cb01_authorization.AuthorizationTests.test_invalid_tokens_never_lookup_identity_or_call_handler) (mode=&#x27;url_token&#x27;)
+ok
+test_missing_credentials_short_circuit (test_codn_cb01_authorization.AuthorizationTests.test_missing_credentials_short_circuit) ...   SUBCASO OK test_missing_credentials_short_circuit (test_codn_cb01_authorization.AuthorizationTests.test_missing_credentials_short_circuit) (username_present=False, password_present=True)
+  SUBCASO OK test_missing_credentials_short_circuit (test_codn_cb01_authorization.AuthorizationTests.test_missing_credentials_short_circuit) (username_present=True, password_present=False)
+  SUBCASO OK test_missing_credentials_short_circuit (test_codn_cb01_authorization.AuthorizationTests.test_missing_credentials_short_circuit) (username_present=False, password_present=False)
+ok
+test_patient_scopes_follow_grant_source (test_codn_cb01_authorization.AuthorizationTests.test_patient_scopes_follow_grant_source) ...   SUBCASO OK test_patient_scopes_follow_grant_source (test_codn_cb01_authorization.AuthorizationTests.test_patient_scopes_follow_grant_source) (role=&#x27;OFTALMOLOGO&#x27;)
+  SUBCASO OK test_patient_scopes_follow_grant_source (test_codn_cb01_authorization.AuthorizationTests.test_patient_scopes_follow_grant_source) (role=&#x27;ENFERMERO&#x27;)
+  SUBCASO OK test_patient_scopes_follow_grant_source (test_codn_cb01_authorization.AuthorizationTests.test_patient_scopes_follow_grant_source) (role=&#x27;ASISTENTE_ADMINISTRATIVO&#x27;)
+  SUBCASO OK test_patient_scopes_follow_grant_source (test_codn_cb01_authorization.AuthorizationTests.test_patient_scopes_follow_grant_source) (role=&#x27;ADMINISTRADOR_SISTEMA&#x27;)
+ok
+test_real_repository_excludes_inactive_account_before_hash (test_codn_cb01_authorization.AuthorizationTests.test_real_repository_excludes_inactive_account_before_hash) ... ok
+test_resource_lookup_is_short_circuited_and_denial_prevents_operation (test_codn_cb01_authorization.AuthorizationTests.test_resource_lookup_is_short_circuited_and_denial_prevents_operation) ...   SUBCASO OK test_resource_lookup_is_short_circuited_and_denial_prevents_operation (test_codn_cb01_authorization.AuthorizationTests.test_resource_lookup_is_short_circuited_and_denial_prevents_operation) (mode=&#x27;no_grant&#x27;)
+  SUBCASO OK test_resource_lookup_is_short_circuited_and_denial_prevents_operation (test_codn_cb01_authorization.AuthorizationTests.test_resource_lookup_is_short_circuited_and_denial_prevents_operation) (mode=&#x27;denied_resource&#x27;)
+  SUBCASO OK test_resource_lookup_is_short_circuited_and_denial_prevents_operation (test_codn_cb01_authorization.AuthorizationTests.test_resource_lookup_is_short_circuited_and_denial_prevents_operation) (mode=&#x27;allowed_resource&#x27;)
+  SUBCASO OK test_resource_lookup_is_short_circuited_and_denial_prevents_operation (test_codn_cb01_authorization.AuthorizationTests.test_resource_lookup_is_short_circuited_and_denial_prevents_operation) (mode=&#x27;unknown_rule&#x27;)
+  SUBCASO OK test_resource_lookup_is_short_circuited_and_denial_prevents_operation (test_codn_cb01_authorization.AuthorizationTests.test_resource_lookup_is_short_circuited_and_denial_prevents_operation) (mode=&#x27;disabled&#x27;)
+ok
+test_role_provenance_prevents_mixing_and_admin_override (test_codn_cb01_authorization.AuthorizationTests.test_role_provenance_prevents_mixing_and_admin_override) ...   SUBCASO OK test_role_provenance_prevents_mixing_and_admin_override (test_codn_cb01_authorization.AuthorizationTests.test_role_provenance_prevents_mixing_and_admin_override) (roles=[&#x27;ADMINISTRADOR_SISTEMA&#x27;])
+  SUBCASO OK test_role_provenance_prevents_mixing_and_admin_override (test_codn_cb01_authorization.AuthorizationTests.test_role_provenance_prevents_mixing_and_admin_override) (roles=[&#x27;OFTALMOLOGO&#x27;, &#x27;ADMINISTRADOR_SISTEMA&#x27;])
+  SUBCASO OK test_role_provenance_prevents_mixing_and_admin_override (test_codn_cb01_authorization.AuthorizationTests.test_role_provenance_prevents_mixing_and_admin_override) (roles=[&#x27;ENFERMERO&#x27;])
+ok
+test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) ...   SUBCASO OK test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) (rule=&quot;OperationRule(domain=&#x27;specialist&#x27;, role_codes=frozenset(), all_of=frozenset({&#x27;pacientes.ver&#x27;, &#x27;visitas.ver&#x27;, &#x27;imagenes.ver&#x27;, &#x27;diagnostico_retinopatia.ver&#x27;, &#x27;informes.ver&#x27;}), any_of=frozenset(), needs_resource_check=False)&quot;)
+  SUBCASO OK test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) (rule=&quot;OperationRule(domain=&#x27;specialist&#x27;, role_codes=frozenset({&#x27;OFTALMOLOGO&#x27;}), all_of=frozenset(), any_of=frozenset(), needs_resource_check=False)&quot;)
+  SUBCASO OK test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) (rule=&quot;OperationRule(domain=&#x27;specialist&#x27;, role_codes=frozenset({&#x27;OFTALMOLOGO&#x27;}), all_of=frozenset({&#x27;informes.*&#x27;}), any_of=frozenset(), needs_resource_check=False)&quot;)
+  SUBCASO OK test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) (resource=None)
+  SUBCASO OK test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) (resource=False)
+  SUBCASO OK test_rule_structure_any_of_and_resource (test_codn_cb01_authorization.AuthorizationTests.test_rule_structure_any_of_and_resource) (resource=True)
+ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 4.236s
+
+OK
+LINES services/auth_service.py: 31/31 = 100.0%
+LINES utils/security.py: 44/46 = 95.65%
+LINES utils/strict_authorization.py: 62/77 = 80.52%
+LINES src/repositories/auth_repository.py: 1/1 = 100.0%
+RESULTADO APROBADO: 12 methods; 46 subcases; exit 0
+Guard attempts: 0
+</pre>
+<h2>Comando exacto desde backend</h2><pre>.\venv\Scripts\python.exe -B -u codn_run_whitebox.py test_codn_cb01_authorization &quot;D:\Universidad\CICLO XII\SEMINARIO DE TESIS I\tesis-retinopatia-diabetica\docs\tesis\pruebas\evidencias\20261103T160850Z-421d66ca\CB-01&quot;</pre></html>

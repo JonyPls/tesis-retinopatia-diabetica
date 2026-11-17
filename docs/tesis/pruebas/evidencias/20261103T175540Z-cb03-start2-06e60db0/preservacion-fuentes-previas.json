@@ -1,0 +1,44 @@
+[
+  {
+    "file": "backend/dl_model/validator.py",
+    "before": "C6CC94E03541ED64F1F1FA587CAB2704ABE4730A75489DD85FEBA9307179A95D",
+    "after": "C6CC94E03541ED64F1F1FA587CAB2704ABE4730A75489DD85FEBA9307179A95D",
+    "unchanged": true
+  },
+  {
+    "file": "backend/services/diagnosis_service.py",
+    "before": "E47E42522C987F8483B9E8C5A38CA6F6DB2279760DA282F8C9202FB5108C6D67",
+    "after": "E47E42522C987F8483B9E8C5A38CA6F6DB2279760DA282F8C9202FB5108C6D67",
+    "unchanged": true
+  },
+  {
+    "file": "backend/test_diagnosis_input.py",
+    "before": "EDACAEB5303678BB7DED8AA2D01064B741431D2F4049E9108D99F223101ABB58",
+    "after": "EDACAEB5303678BB7DED8AA2D01064B741431D2F4049E9108D99F223101ABB58",
+    "unchanged": true
+  },
+  {
+    "file": "frontend/src/features/diagnosis/hooks/useDiagnosis.ts",
+    "before": "ACA09F0C93344B0A7EF5DC875865D1BA4B289B892D979DA429357DC50DBBB9BB",
+    "after": "ACA09F0C93344B0A7EF5DC875865D1BA4B289B892D979DA429357DC50DBBB9BB",
+    "unchanged": true
+  },
+  {
+    "file": "frontend/src/features/diagnosis/pages/Diagnosis.tsx",
+    "before": "9E40FCC9A36C2AEFA6F40CC30FAA41188C71F22552D0BA7BC2256F94C38F7272",
+    "after": "9E40FCC9A36C2AEFA6F40CC30FAA41188C71F22552D0BA7BC2256F94C38F7272",
+    "unchanged": true
+  },
+  {
+    "file": "frontend/src/test/b1DiagnosisRecovery.test.tsx",
+    "before": "6D497E7A5A391E718E307CD56DB6F07AE90E036B9704F33CA5847F36544A091D",
+    "after": "6D497E7A5A391E718E307CD56DB6F07AE90E036B9704F33CA5847F36544A091D",
+    "unchanged": true
+  },
+  {
+    "file": "frontend/src/test/b1RetinographConfirmation.test.tsx",
+    "before": "BC66F869DD46DA16278FB6104B424B7F720FEE9C576608930BE15A98747F9BC9",
+    "after": "BC66F869DD46DA16278FB6104B424B7F720FEE9C576608930BE15A98747F9BC9",
+    "unchanged": true
+  }
+]

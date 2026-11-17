@@ -1,0 +1,42 @@
+Paquimetría
+
+Ana Prueba Sintética · DNI 90000001
+
+RESPONSABLE Y FECHA DEL INFORME
+
+Fecha del informe
+
+03/11/2026, 10:00
+
+Profesional que atendió
+
+Actor Simulado
+
+Datos del examen
+
+Información estructurada registrada en el informe.
+
+OJO DERECHO (OD)
+
+Espesor corneal
+
+540 µm
+
+OJO IZQUIERDO (OI)
+
+Espesor corneal
+
+542 µm
+
+CONCLUSIÓN
+
+CN04-V1
+
+CONTEXTO DE LA VISITA
+
+Motivo
+
+CN04 V1 informe sintético
+
+Cerrar
+Close

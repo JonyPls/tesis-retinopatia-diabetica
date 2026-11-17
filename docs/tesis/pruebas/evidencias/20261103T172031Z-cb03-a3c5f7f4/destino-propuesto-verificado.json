@@ -1,0 +1,9 @@
+{
+  "proposed_root_exists": false,
+  "proposed_datadir_exists": false,
+  "proposed_instance_root": "D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql",
+  "checked_utc": "2026-11-03T17:25:39.5544438Z",
+  "note": "Filesystem destination check only; does not authorize initialization or prove an existing SQL instance.",
+  "sql_identity_verified": false,
+  "server_uuid": null
+}

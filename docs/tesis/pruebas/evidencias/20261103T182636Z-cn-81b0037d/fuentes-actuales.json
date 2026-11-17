@@ -1,0 +1,34 @@
+{
+  "head": "7e2440d4775ab8af0918c435390bfa312b162b13",
+  "dirty_tracked": [
+    {
+      "path": "backend/dl_model/validator.py",
+      "sha256": "c6cc94e03541ed64f1f1fa587cab2704abe4730a75489dd85feba9307179a95d"
+    },
+    {
+      "path": "backend/services/diagnosis_service.py",
+      "sha256": "e47e42522c987f8483b9e8c5a38ca6f6db2279760da282f8c9202fb5108c6d67"
+    },
+    {
+      "path": "backend/test_diagnosis_input.py",
+      "sha256": "edacaeb5303678bb7ded8aa2d01064b741431d2f4049e9108d99f223101abb58"
+    },
+    {
+      "path": "frontend/src/features/diagnosis/hooks/useDiagnosis.ts",
+      "sha256": "aca09f0c93344b0a7ef5dc875865d1ba4b289b892d979da429357dc50dbbb9bb"
+    },
+    {
+      "path": "frontend/src/features/diagnosis/pages/Diagnosis.tsx",
+      "sha256": "9e40fcc9a36c2aefa6f40cc30faa41188c71f22552d0ba7bc2256f94c38f7272"
+    },
+    {
+      "path": "frontend/src/test/b1DiagnosisRecovery.test.tsx",
+      "sha256": "6d497e7a5a391e718e307cd56db6f07ae90e036b9704f33ca5847f36544a091d"
+    },
+    {
+      "path": "frontend/src/test/b1RetinographConfirmation.test.tsx",
+      "sha256": "bc66f869dd46da16278fb6104b424b7f720fee9c576608930be15a98747f9bc9"
+    }
+  ],
+  "note": "Cambios locales preexistentes conservados; los CB históricos corresponden a sus propias fuentes archivadas."
+}

@@ -1,0 +1,94 @@
+{
+  "case": "CB-03",
+  "mode": "prepare",
+  "started_utc": "2026-11-03T17:22:24.187340+00:00",
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "versions": {
+    "Flask": "3.1.3",
+    "Flask-SQLAlchemy": "3.1.1",
+    "SQLAlchemy": "2.0.30",
+    "PyMySQL": "1.1.2"
+  },
+  "status": "BLOQUEADO",
+  "methods_implemented": 10,
+  "methods_executed": 0,
+  "subcases_executed": 0,
+  "failures": 0,
+  "errors": 0,
+  "coverage": null,
+  "database_connections": 0,
+  "fixture_writes": false,
+  "png": "PENDIENTE",
+  "method_names": [
+    "test_01_valid_visit_exact_active_reports_and_order",
+    "test_02_other_visits_and_patient_are_excluded",
+    "test_03_report_states_active_inactive_annulled",
+    "test_04_visit_without_reports_returns_empty_collection",
+    "test_05_foreign_visit_rejected_with_real_notfound",
+    "test_06_annulled_visit_characterizes_distinct_predicates",
+    "test_07_counts_do_not_multiply_by_eyes_or_versions",
+    "test_08_patient_reports_are_grouped_under_exact_visit",
+    "test_09_individual_report_filters_report_visit_and_patient",
+    "test_10_real_early_return_missing_resources_and_read_only_queries"
+  ],
+  "preparation_checks": [
+    {
+      "check": "syntax codn_cb03_mysql.py",
+      "status": "APROBADO"
+    },
+    {
+      "check": "syntax codn_run_cb03_mysql.py",
+      "status": "APROBADO"
+    },
+    {
+      "check": "syntax test_codn_cb03_report_queries.py",
+      "status": "APROBADO"
+    },
+    {
+      "check": "no_config rejected before imports/connection",
+      "status": "APROBADO"
+    },
+    {
+      "check": "unapproved rejected before imports/connection",
+      "status": "APROBADO"
+    },
+    {
+      "check": "habitual_port rejected before imports/connection",
+      "status": "APROBADO"
+    },
+    {
+      "check": "offline MySQL SELECT compilation Informe",
+      "status": "APROBADO"
+    },
+    {
+      "check": "offline MySQL SELECT compilation VisitaClinica",
+      "status": "APROBADO"
+    },
+    {
+      "check": "offline MySQL SELECT compilation Paciente",
+      "status": "APROBADO"
+    },
+    {
+      "check": "offline MySQL SELECT compilation Usuario",
+      "status": "APROBADO"
+    },
+    {
+      "check": "offline MySQL SELECT compilation InformeVersion",
+      "status": "APROBADO"
+    },
+    {
+      "check": "ten integration methods discovered, NOT executed",
+      "status": "APROBADO"
+    }
+  ],
+  "reason": "Preparación validada sin SQL; falta instancia exclusiva verificada y autorización de fixtures.",
+  "ended_utc": "2026-11-03T17:22:24.595338+00:00",
+  "exit_code": 3,
+  "activity": {
+    "verified_checkouts": 0,
+    "insert_attempts": 0,
+    "commit_attempts_blocked": 0
+  },
+  "network_events": 0,
+  "guard_blocks": []
+}

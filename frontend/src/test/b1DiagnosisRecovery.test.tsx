@@ -295,6 +295,51 @@ describe("creación secuencial y conciliación por ojo", () => {
     hook.unmount();
   });
 
+  it.each([400, 422])("muestra el rechazo %i y retira solo la imagen rechazada al reconocerlo", async (status) => {
+    const message = "La imagen debe ser una retinografía individual, no una captura de pantalla.";
+    create.mockResolvedValueOnce(result("OD")).mockRejectedValueOnce({ response: {
+      status, data: { code: "IMAGEN_INVALIDA", message },
+    } });
+    const hook = await start(["OD", "OI"]);
+    const originalOD = hook.result.current.eyes.OD;
+    expect(hook.result.current.modalPhase).toBe("error");
+    expect(hook.result.current.processingEye).toBe("OI");
+    expect(hook.result.current.validationError).toBe(message);
+    expect(hook.result.current.results.OD?.detalle_id).toBe(11);
+    expect(hook.result.current.eyes.OI.file).not.toBeNull();
+    act(() => hook.result.current.dismissError());
+    await waitFor(() => expect(hook.result.current.eyes.OI.file).toBeNull());
+    expect(hook.result.current.eyes.OD).toBe(originalOD);
+    expect(hook.result.current.results.OD?.detalle_id).toBe(11);
+    expect(hook.result.current.confirmedVisitId).toBe(30);
+    expect(hook.result.current.modalPhase).toBe("idle");
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(read).not.toHaveBeenCalled();
+    hook.unmount();
+  });
+
+  it.each([400, 503, 500, undefined])("no descarta fotografías por errores ajenos a un rechazo de imagen: %s", async (status) => {
+    create.mockRejectedValueOnce(status ? { response: { status } } : new Error("Network Error"));
+    const hook = await start(["OD"]);
+    expect(hook.result.current.modalPhase).toBe("idle");
+    expect(hook.result.current.validationError).toBeNull();
+    act(() => hook.result.current.dismissError());
+    expect(hook.result.current.eyes.OD.file).not.toBeNull();
+    expect(create).toHaveBeenCalledTimes(1);
+    hook.unmount();
+  });
+
+  it("un rechazo anterior no retira una fotografía de reemplazo", async () => {
+    create.mockRejectedValueOnce({ response: { status: 422, data: { code: "IMAGEN_INVALIDA" } } });
+    const hook = await start(["OD"]);
+    const replacement = new File(["replacement"], "replacement.jpg");
+    await act(async () => hook.result.current.handleFile("OD", replacement));
+    act(() => hook.result.current.dismissError());
+    expect(hook.result.current.eyes.OD.file).toBe(replacement);
+    expect(create).toHaveBeenCalledTimes(1);
+    hook.unmount();
+  });
+
   it.each([409, 500, undefined])("reconcilia %s con GET sin reenviar el POST", async (status) => {
     create.mockResolvedValueOnce(result("OD")).mockRejectedValueOnce(status
       ? { response: { status } } : new Error("Network Error"));

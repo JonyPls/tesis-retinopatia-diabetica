@@ -1,0 +1,1123 @@
+{
+  "utc": "2026-11-03T18:58:29.142220+00:00",
+  "checks": [
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/comando.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/ejecucion-01.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/ejecucion-02.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/ejecucion-03.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/ejecucion-04.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/exit-01.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/exit-02.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/exit-03.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/exit-04.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/matriz-condiciones.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/resultado-previo-CB-01.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/services__auth_service.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/services__auth_service.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/src__repositories__auth_repository.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/src__repositories__auth_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/test_codn_cb01_authorization.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/utils__security.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/utils__security.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/utils__strict_authorization.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-01/utils__strict_authorization.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/comando.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/ejecucion-02.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/ejecucion-04.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/exit-02.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/exit-04.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/matriz-condiciones.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/resultado-previo-CB-02.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/services__patient_service.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/services__patient_service.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/test_codn_cb02_patient_validation.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/utils__identity_validation.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-02/utils__identity_validation.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/comando.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/dl_model__validator.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/dl_model__validator.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/ejecucion-02.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/ejecucion-04.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/exit-02.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/exit-04.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/matriz-condiciones.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/resultado-previo-CB-04.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/services__diagnosis_service.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/services__diagnosis_service.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/test_codn_cb04_diagnosis_logic.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/utils__diagnosis_storage.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-04/utils__diagnosis_storage.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/comando.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/ejecucion-02.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/ejecucion-04.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/exit-02.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/exit-04.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/matriz-condiciones.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/resultado-previo-CB-05.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/services__informe_service.py.cover.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/services__informe_service.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "CB-05/test_codn_cb05_report_transaction.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "git-status-final.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "soporte/codn_run_whitebox.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "soporte/codn_test_support.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "soporte/generar_informe.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T160850Z-421d66ca\\SHA256SUMS.txt",
+      "file": "verificacion-fuentes.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/codn_cb03_mysql.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/codn_run_cb03_mysql.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/exit-preparacion-01.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/exit-preparacion-02.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/fixtures-esperados.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/codn_cb03_mysql.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/codn_run_cb03_mysql.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/exit.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/rechazo.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/SHA256SUMS.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/src__repositories__informe_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/src__repositories__patient_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/guarda-sin-config/test_codn_cb03_report_queries.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/matriz-escenarios.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/codn_cb03_mysql.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/codn_run_cb03_mysql.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/exit-preparacion-01.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/preparacion-01.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/SHA256SUMS.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/src__repositories__informe_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/src__repositories__patient_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01/test_codn_cb03_report_queries.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-01.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/preparacion-02.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/reporte.html",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/resultado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/SHA256SUMS.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/src__repositories__informe_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/src__repositories__patient_repository.py.fuente.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB-03/test_codn_cb03_report_queries.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "CB03_DESTINO_PROPUESTO.example.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "destino-propuesto-verificado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "documentar_cb03.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "git-status-final.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "git-status-inicial.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "INFORME_ANTES_CB03.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "inventario-entorno.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "preservacion-historica.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "PROCEDIMIENTO_CB03_MYSQL_AISLADO.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T172031Z-cb03-a3c5f7f4\\SHA256SUMS.txt",
+      "file": "verificacion-fuentes.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "acl-preparacion.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "antes.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "codn_provision_cb03_instance.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "codn_start_cb03_instance.ps1",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "contencion-final.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "despues.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "documentar_inicializacion_cb03.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "estado-detenido-verificado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "estado-final-consolidado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "exit.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "git-ignore.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "git-status-final.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "INFORME_CAJA_BLANCA_ANTES_INICIALIZACION.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "INFORME_PREPARACION_MYSQL_CB03.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "inicializacion-arranque.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "init-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "init-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "init.err",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "my-cb03-ejecutado.ini",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "preparacion.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "proceso-hijo.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "server-pid-file.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "server.err",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "start-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "start-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "uuid-local-auto-cnf.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T173514Z-cb03-init-834c725e\\SHA256SUMS.txt",
+      "file": "verificacion-fuentes.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "acl-credencial.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "antes.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "codn_provision_cb03_instance.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "codn_resume_cb03_instance.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "codn_second_start_cb03.ps1",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "compatibilidad-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "compatibilidad-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "configuracion-local-sin-cambios.ini",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "despues.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "documentar_segundo_arranque_cb03.py",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "ejecucion.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "estado-final-consolidado.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "estado-final-detenido.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "exit.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "fuentes-previas.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "git-ignore.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "git-status-final.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "git-status-inicial.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "INFORME_CAJA_BLANCA_ANTES_SEGUNDO_ARRANQUE.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "INFORME_PREPARACION_ANTES_SEGUNDO_ARRANQUE.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "INFORME_PREPARACION_MYSQL_CB03_actualizado.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "preservacion-fuentes-previas.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "segundo-arranque.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "server-segundo-arranque.err",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T175540Z-cb03-start2-06e60db0\\SHA256SUMS.txt",
+      "file": "server-segundo-arranque.pid",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "ayuda-compatible-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "ayuda-compatible-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "comprobaciones-compatibles.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "DIAGNOSTICO_ACCESO_MYSQL_CB03.md",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "estado-sin-arrancar.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "git-status-final.txt",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "memory-opciones-compatible-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "memory-opciones-compatible-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "opciones-finales-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "opciones-finales-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "opciones-finales.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "referencia-segundo-estado-final-detenido.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "referencia-segundo-segundo-arranque.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "resultado-diagnostico.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "sintaxis-comandos-propuestos.json",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "tcp-opciones-compatible-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "tcp-opciones-compatible-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "version-compatible-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "version-compatible-stdout.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "version-stderr.log",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "manifest": "evidencias\\20261103T180530Z-cb03-diag-3badfe39\\SHA256SUMS.txt",
+      "file": "version-stdout.log",
+      "exists": true,
+      "matches": true
+    }
+  ],
+  "records": 186,
+  "all_match": true
+}

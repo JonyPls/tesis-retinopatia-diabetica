@@ -1,0 +1,326 @@
+   1: from database import db
+   2: from sqlalchemy import case
+   3: from src.models.auth_entities import Usuario
+   4: from src.models.informe_entities import Informe, InformeVersion, TipoInforme
+   5: from src.models.patient_entities import Paciente, VisitaClinica
+   6: from utils.clinical_dates import clinical_instant
+   7: 
+   8: class InformeRepository:
+   9:     class NotFound(Exception):
+  10:         pass
+  11: 
+  12:     class Conflict(Exception):
+  13:         pass
+  14: 
+  15:     @staticmethod
+  16:     def listar_tipos_informe_activos():
+  17:         tipos = TipoInforme.query.filter_by(estado='ACTIVO').order_by(TipoInforme.id).all()
+  18:         return [
+  19:             {
+  20:                 "id": r.id,
+  21:                 "nombre": r.nombre,
+  22:                 "descripcion": r.descripcion,
+  23:                 "codigo_formulario": r.codigo_formulario,
+  24:                 "schema_version_actual": r.schema_version_actual,
+  25:             }
+  26:             for r in tipos
+  27:         ]
+  28: 
+  29:     @staticmethod
+  30:     def obtener_tipo_informe_por_id(tipo_id: int):
+  31:         tipo = TipoInforme.query.filter_by(id=tipo_id, estado='ACTIVO').first()
+  32:         if tipo:
+  33:             return {
+  34:                 "id": tipo.id,
+  35:                 "nombre": tipo.nombre,
+  36:                 "descripcion": tipo.descripcion,
+  37:                 "schema_version_actual": tipo.schema_version_actual,
+  38:             }
+  39:         return None
+  40: 
+  41:     @staticmethod
+  42:     def crear_visita(paciente_id: int, usuario_id: int):
+  43:         visita = VisitaClinica(
+  44:             paciente_id=paciente_id,
+  45:             usuario_id=usuario_id,
+  46:             motivo_consulta='Registro de informe clinico',
+  47:         )
+  48:         db.session.add(visita)
+  49:         db.session.flush()
+  50:         return visita.id
+  51: 
+  52:     @staticmethod
+  53:     def validar_paciente(paciente_id: int):
+  54:         if Paciente.query.filter_by(id=paciente_id, estado='ACTIVO').first() is None:
+  55:             raise InformeRepository.NotFound()
+  56: 
+  57:     @staticmethod
+  58:     def validar_visita(visita_id: int, paciente_id: int):
+  59:         visita = VisitaClinica.query.filter(
+  60:             VisitaClinica.id == visita_id,
+  61:             VisitaClinica.estado != 'ANULADA',
+  62:         ).first()
+  63:         if not visita:
+  64:             raise InformeRepository.NotFound()
+  65:         if visita.paciente_id != paciente_id:
+  66:             raise InformeRepository.NotFound()
+  67:         return visita
+  68: 
+  69:     @staticmethod
+  70:     def crear_informe(visita_id: int, tipo_informe_id: int, usuario_id: int, datos_estructurados, conclusion=None, schema_version: int = 1):
+  71:         existente = Informe.query.filter_by(
+  72:             visita_id=visita_id,
+  73:             tipo_informe_id=tipo_informe_id,
+  74:         ).first()
+  75:         if existente:
+  76:             raise InformeRepository.Conflict()
+  77: 
+  78:         informe = Informe(
+  79:             visita_id=visita_id,
+  80:             tipo_informe_id=tipo_informe_id,
+  81:             usuario_id=usuario_id,
+  82:             schema_version=schema_version,
+  83:             revision_actual=1,
+  84:             datos_estructurados=datos_estructurados,
+  85:             conclusion=conclusion,
+  86:         )
+  87:         db.session.add(informe)
+  88:         db.session.flush()
+  89:         return informe.id
+  90: 
+  91:     @staticmethod
+  92:     def crear_version_inicial(informe_id: int, usuario_id: int):
+  93:         informe = db.session.get(Informe, informe_id)
+  94:         # Recuperar el JSON y valores realmente persistidos tras el flush.
+  95:         db.session.refresh(informe)
+  96:         version = InformeVersion(
+  97:             informe_id=informe.id, numero_version=informe.revision_actual,
+  98:             operacion='CREACION', schema_version=informe.schema_version,
+  99:             datos_estructurados=informe.datos_estructurados, conclusion=informe.conclusion,
+ 100:             estado=informe.estado, autor_operacion_id=usuario_id,
+ 101:         )
+ 102:         db.session.add(version)
+ 103:         db.session.flush()
+ 104: 
+ 105:     @staticmethod
+ 106:     def bloquear_informe(informe_id: int):
+ 107:         return (Informe.query.filter_by(id=informe_id)
+ 108:                 .with_for_update().populate_existing().first())
+ 109: 
+ 110:     @staticmethod
+ 111:     def bloquear_visita_de_informe(informe):
+ 112:         return (VisitaClinica.query.filter_by(id=informe.visita_id)
+ 113:                 .with_for_update().populate_existing().first())
+ 114: 
+ 115:     @staticmethod
+ 116:     def version_actual_consistente(informe):
+ 117:         # Lecturas bloqueantes: los SELECT ordinarios podrían ver un snapshot
+ 118:         # REPEATABLE READ anterior al SELECT FOR UPDATE del informe principal.
+ 119:         numeros = [numero for (numero,) in db.session.query(InformeVersion.numero_version)
+ 120:                    .filter_by(informe_id=informe.id)
+ 121:                    .order_by(InformeVersion.numero_version).with_for_update().all()]
+ 122:         if (not numeros or len(numeros) != informe.revision_actual or numeros[0] != 1 or
+ 123:                 numeros[-1] != informe.revision_actual):
+ 124:             return False
+ 125:         inicial = (InformeVersion.query.filter_by(informe_id=informe.id, numero_version=1)
+ 126:                    .with_for_update().populate_existing().first())
+ 127:         if inicial is None or inicial.operacion not in ('CREACION', 'MIGRACION_INICIAL'):
+ 128:             return False
+ 129:         ultima = (InformeVersion.query.filter_by(informe_id=informe.id,
+ 130:                                                  numero_version=informe.revision_actual)
+ 131:                   .with_for_update().populate_existing().first())
+ 132:         if ultima is None:
+ 133:             return False
+ 134:         return (ultima.datos_estructurados == informe.datos_estructurados and
+ 135:                 ultima.conclusion == informe.conclusion and
+ 136:                 ultima.estado == informe.estado and
+ 137:                 ultima.schema_version == informe.schema_version)
+ 138: 
+ 139:     @staticmethod
+ 140:     def corregir_informe(informe, datos_estructurados, conclusion, usuario_id, motivo):
+ 141:         informe.datos_estructurados = datos_estructurados
+ 142:         informe.conclusion = conclusion
+ 143:         informe.revision_actual += 1
+ 144:         db.session.flush()
+ 145:         db.session.refresh(informe)
+ 146:         db.session.add(InformeVersion(
+ 147:             informe_id=informe.id, numero_version=informe.revision_actual,
+ 148:             operacion='CORRECCION', schema_version=informe.schema_version,
+ 149:             datos_estructurados=informe.datos_estructurados, conclusion=informe.conclusion,
+ 150:             estado=informe.estado, autor_operacion_id=usuario_id, motivo=motivo,
+ 151:         ))
+ 152:         db.session.flush()
+ 153: 
+ 154:     @staticmethod
+ 155:     def anular_informe(informe, usuario_id, motivo):
+ 156:         informe.estado = 'ANULADO'
+ 157:         informe.revision_actual += 1
+ 158:         db.session.flush()
+ 159:         db.session.refresh(informe)
+ 160:         db.session.add(InformeVersion(
+ 161:             informe_id=informe.id, numero_version=informe.revision_actual,
+ 162:             operacion='ANULACION', schema_version=informe.schema_version,
+ 163:             datos_estructurados=informe.datos_estructurados, conclusion=informe.conclusion,
+ 164:             estado=informe.estado, autor_operacion_id=usuario_id, motivo=motivo,
+ 165:         ))
+ 166:         db.session.flush()
+ 167: 
+ 168:     @staticmethod
+ 169:     def obtener_informe_por_id(informe_id: int):
+ 170:         row = db.session.query(
+ 171:             Informe,
+ 172:             TipoInforme,
+ 173:             VisitaClinica,
+ 174:             Paciente,
+ 175:             Usuario,
+ 176:         ).join(
+ 177:             TipoInforme, Informe.tipo_informe_id == TipoInforme.id
+ 178:         ).join(
+ 179:             VisitaClinica, Informe.visita_id == VisitaClinica.id
+ 180:         ).join(
+ 181:             Paciente, VisitaClinica.paciente_id == Paciente.id
+ 182:         ).join(
+ 183:             Usuario, Informe.usuario_id == Usuario.id
+ 184:         ).filter(
+ 185:             Informe.id == informe_id,
+ 186:             Informe.estado == 'ACTIVO',
+ 187:             VisitaClinica.estado != 'ANULADA',
+ 188:             Paciente.estado == 'ACTIVO',
+ 189:         ).first()
+ 190: 
+ 191:         if row:
+ 192:             inf, ti, visita, paciente, usuario = row
+ 193:             return InformeRepository._to_dict(inf, ti, visita, paciente, usuario)
+ 194:         return None
+ 195: 
+ 196:     @staticmethod
+ 197:     def obtener_contexto_historico(informe_id: int):
+ 198:         # Sin filtro de actividad: incluye visitas anuladas y pacientes inactivos.
+ 199:         return (db.session.query(Informe, TipoInforme, VisitaClinica, Paciente, Usuario)
+ 200:                 .join(TipoInforme, Informe.tipo_informe_id == TipoInforme.id)
+ 201:                 .join(VisitaClinica, Informe.visita_id == VisitaClinica.id)
+ 202:                 .join(Paciente, VisitaClinica.paciente_id == Paciente.id)
+ 203:                 .join(Usuario, Informe.usuario_id == Usuario.id)
+ 204:                 .filter(Informe.id == informe_id).first())
+ 205: 
+ 206:     @staticmethod
+ 207:     def versiones_historicas(informe_id: int, page: int, per_page: int):
+ 208:         base = InformeVersion.query.filter_by(informe_id=informe_id)
+ 209:         total = base.count()
+ 210:         inicial = base.filter_by(numero_version=1).first()
+ 211:         ultima = base.order_by(InformeVersion.numero_version.desc()).first()
+ 212:         rows = (db.session.query(InformeVersion, Usuario)
+ 213:                 .outerjoin(Usuario, InformeVersion.autor_operacion_id == Usuario.id)
+ 214:                 .filter(InformeVersion.informe_id == informe_id)
+ 215:                 .order_by(InformeVersion.numero_version.asc(), InformeVersion.id.asc())
+ 216:                 .limit(per_page).offset((page - 1) * per_page).all())
+ 217:         return total, inicial, ultima, rows
+ 218: 
+ 219:     @staticmethod
+ 220:     def listar_historial_paciente(paciente_id: int, page: int, per_page: int):
+ 221:         if db.session.get(Paciente, paciente_id) is None:
+ 222:             raise InformeRepository.NotFound()
+ 223:         base = (db.session.query(Informe, TipoInforme, VisitaClinica, Usuario)
+ 224:                 .join(VisitaClinica, Informe.visita_id == VisitaClinica.id)
+ 225:                 .join(TipoInforme, Informe.tipo_informe_id == TipoInforme.id)
+ 226:                 .join(Usuario, Informe.usuario_id == Usuario.id)
+ 227:                 .filter(VisitaClinica.paciente_id == paciente_id))
+ 228:         total = base.count()
+ 229:         rows = (base.order_by(
+ 230:             case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', 0), else_=1),
+ 231:             case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', Informe.fecha_creado)).desc(),
+ 232:             Informe.id.desc())
+ 233:                 .limit(per_page).offset((page - 1) * per_page).all())
+ 234:         return total, rows
+ 235: 
+ 236:     @staticmethod
+ 237:     def eliminar_informe(informe_id: int):
+ 238:         informe = Informe.query.get(informe_id)
+ 239:         if informe:
+ 240:             informe.estado = 'INACTIVO'
+ 241:             db.session.commit()
+ 242:             return 1
+ 243:         return 0
+ 244: 
+ 245:     @staticmethod
+ 246:     def listar_informes_por_paciente(paciente_id: int):
+ 247:         informes = db.session.query(Informe, TipoInforme).join(
+ 248:             TipoInforme, Informe.tipo_informe_id == TipoInforme.id
+ 249:         ).join(
+ 250:             VisitaClinica, Informe.visita_id == VisitaClinica.id
+ 251:         ).filter(
+ 252:             VisitaClinica.paciente_id == paciente_id,
+ 253:             Informe.estado == 'ACTIVO'
+ 254:         ).order_by(
+ 255:             case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', 0), else_=1),
+ 256:             case((Informe.fecha_creado_origen == 'UTC_VERIFICADO', Informe.fecha_creado)).desc(),
+ 257:             Informe.id.desc()).all()
+ 258: 
+ 259:         return [
+ 260:             InformeRepository._to_dict(inf, ti)
+ 261:             for inf, ti in informes
+ 262:         ]
+ 263: 
+ 264:     @staticmethod
+ 265:     def obtener_informes_por_visita(visita_id: int):
+ 266:         informes = db.session.query(Informe, TipoInforme).join(
+ 267:             TipoInforme, Informe.tipo_informe_id == TipoInforme.id
+ 268:         ).filter(
+ 269:             Informe.visita_id == visita_id,
+ 270:             Informe.estado == 'ACTIVO'
+ 271:         ).order_by(TipoInforme.nombre).all()
+ 272: 
+ 273:         return [
+ 274:             InformeRepository._to_dict(inf, ti)
+ 275:             for inf, ti in informes
+ 276:         ]
+ 277: 
+ 278:     @staticmethod
+ 279:     def obtener_informes_por_diagnostico(diagnostico_id: int):
+ 280:         return InformeRepository.obtener_informes_por_visita(diagnostico_id)
+ 281: 
+ 282:     @staticmethod
+ 283:     def _to_dict(inf, ti, visita=None, paciente=None, usuario=None):
+ 284:         data = {
+ 285:             "id": inf.id,
+ 286:             "visita_id": inf.visita_id,
+ 287:             # Compatibilidad con el contrato existente: este valor representa visita_id.
+ 288:             "diagnostico_id": inf.visita_id,
+ 289:             "tipo_informe_id": inf.tipo_informe_id,
+ 290:             "tipo_informe_nombre": ti.nombre,
+ 291:             "schema_version": inf.schema_version,
+ 292:             "revision_actual": inf.revision_actual,
+ 293:             "datos_estructurados": inf.datos_estructurados,
+ 294:             "conclusion": inf.conclusion,
+ 295:             "estado": inf.estado,
+ 296:             "fecha_creado": clinical_instant(inf.fecha_creado, inf.fecha_creado_origen),
+ 297:             "fecha_creado_origen": inf.fecha_creado_origen,
+ 298:             "fecha_actualizado": clinical_instant(inf.fecha_actualizado, inf.fecha_actualizado_origen),
+ 299:             "fecha_actualizado_origen": inf.fecha_actualizado_origen,
+ 300:         }
+ 301:         if visita:
+ 302:             data["visita"] = {
+ 303:                 "id": visita.id,
+ 304:                 "fecha_visita": clinical_instant(visita.fecha_visita, visita.fecha_visita_origen),
+ 305:                 "fecha_visita_origen": visita.fecha_visita_origen,
+ 306:                 "motivo_consulta": visita.motivo_consulta,
+ 307:                 "observaciones": visita.observaciones,
+ 308:                 "estado": visita.estado,
+ 309:             }
+ 310:         if paciente:
+ 311:             data["paciente"] = {
+ 312:                 "id": paciente.id,
+ 313:                 "tipo_doc_abrev": paciente.tipo_documento.codigo if paciente.tipo_documento else None,
+ 314:                 "nro_documento": paciente.nro_documento,
+ 315:                 "nombres": paciente.nombres,
+ 316:                 "apellidos": paciente.apellidos,
+ 317:             }
+ 318:         if usuario:
+ 319:             data["profesional"] = {
+ 320:                 "id": usuario.id,
+ 321:                 "nombres": usuario.nombres,
+ 322:                 "apellidos": usuario.apellidos,
+ 323:                 "cmp": usuario.cmp,
+ 324:                 "rne": usuario.rne,
+ 325:             }
+ 326:         return data

@@ -1,0 +1,316 @@
+Real CPython trace counts; function-body scope; lines, NOT branches.
+Functions: procesar_diagnostico, _undo_creation
+           1: import os
+           2: import json
+           3: import uuid
+           4: import hashlib
+           5: from flask import current_app
+           6: from PIL import Image
+           7: import io
+           8: from werkzeug.datastructures import FileStorage
+           9: from dl_model.validator import validar_formato_y_dimensiones, validar_region_circular, validar_contenido_semantico
+          10: from dl_model.validator import MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, MAX_IMAGE_PIXELS
+          11: from dl_model.inference import predecir_imagen_bytes
+          12: from src.repositories.diagnosis_repository import DiagnosisRepository, DiagnosisValidationError
+          13: from database import db
+          14: from sqlalchemy.exc import IntegrityError
+          15: from sqlalchemy import text
+          16: from utils.diagnosis_storage import DiagnosisFiles
+          17: from services import retinograph_confirmation_service as confirmations
+          18: from src.repositories.diagnosis_discard_repository import DiagnosisDiscardRepository
+          19: from utils.diagnosis_discard_gate import DiscardError
+          20: 
+          21: RD_LABELS = {
+          22:     0: "Normal",
+          23:     1: "RD Leve",
+          24:     2: "RD Moderado",
+          25:     3: "RD Severo",
+          26:     4: "RD Proliferativa",
+          27: }
+          28: DIAGNOSIS_NOT_FOUND_MESSAGE = "Diagnóstico no encontrado."
+          29: 
+          30: UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads', 'retinas')
+          31: os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+          32: 
+          33: def procesar_diagnostico(archivo_imagen: FileStorage, paciente_id: int, usuario_id: int,
+          34:                          ojo_evaluado: str, visita_id: int = None,
+          35:                          *, require_existing_diagnosis=False,
+          36:                          confirmacion_token=None) -> tuple[dict, int]:
+     16   37:     files = None
+     16   38:     commit_attempted = False
+     16   39:     detalle_id = None
+     16   40:     nombre_unico = nombre_gradcam = None
+     16   41:     confirmed = None
+     16   42:     try:
+          43:         # Las lecturas baratas preceden a CLIP/ResNet50; el repositorio las
+          44:         # repite con bloqueo al escribir para cerrar la carrera entre peticiones.
+     32   45:         DiagnosisRepository.comprobar_creacion(
+     16   46:             paciente_id, ojo_evaluado, visita_id,
+     16   47:             require_existing_diagnosis=require_existing_diagnosis,
+          48:         )
+     15   49:         inference_revision = DiagnosisDiscardRepository.capture_inference(visita_id)
+     15   50:         if confirmacion_token is not None:
+ >>>>>>   51:             confirmed = confirmations.load_for_inference(
+ >>>>>>   52:                 confirmacion_token, paciente_id, ojo_evaluado, usuario_id)
+          53:         # Auth/preflight inician una transacción de lectura. Soltar su snapshot
+          54:         # antes de ejecutar modelos o crear provisionales; revalidar bajo lock.
+     15   55:         db.session.rollback()
+     15   56:         if confirmed is not None:
+          57:             # El navegador nunca reenvía la exportación. La validación y la IA
+          58:             # leen exclusivamente los bytes de la copia privada verificada.
+ >>>>>>   59:             archivo_imagen = FileStorage(stream=io.BytesIO(confirmed.data),
+ >>>>>>   60:                                          filename=confirmed.filename,
+ >>>>>>   61:                                          content_type=confirmed.mimetype)
+     15   62:         max_bytes = current_app.config.get('DIAGNOSIS_MAX_IMAGE_BYTES', MAX_IMAGE_BYTES)
+     15   63:         image_bytes = archivo_imagen.stream.read(max_bytes + 1)
+     15   64:         if len(image_bytes) > max_bytes:
+      1   65:             return {"success": False, "message": "Archivo demasiado grande."}, 413
+          66: 
+          67:         # Capa 1 de Validación
+     28   68:         check = validar_formato_y_dimensiones(
+     14   69:             image_bytes, filename=archivo_imagen.filename,
+     14   70:             mimetype=archivo_imagen.mimetype,
+     14   71:             max_side=current_app.config.get('DIAGNOSIS_MAX_IMAGE_SIDE', MAX_IMAGE_SIDE),
+     14   72:             max_pixels=current_app.config.get('DIAGNOSIS_MAX_IMAGE_PIXELS', MAX_IMAGE_PIXELS),
+          73:         )
+     14   74:         if not check["valido"]:
+      2   75:             return {"success": False, "message": check["error"]}, 400
+          76:         
+          77:         # Capa 2 de Validación
+     12   78:         check = validar_region_circular(image_bytes)
+     12   79:         if not check["valido"]:
+      1   80:             return {"success": False, "message": check["error"]}, 400
+          81:         
+          82:         # Capa 3 de Validación
+     11   83:         check = validar_contenido_semantico(image_bytes)
+     11   84:         if not check["valido"]:
+      3   85:             if check.get("status") == 503:
+      3   86:                 return {"success": False, "code": "VALIDADOR_IMAGEN_NO_DISPONIBLE",
+      2   87:                         "message": "Validación de imagen no disponible."}, 503
+      2   88:             if check.get("status") == 500:
+      1   89:                 return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+      1   90:             return {"success": False, "message": check["error"]}, 422
+          91:         
+          92:         
+          93:         # Proceso normal al ser una retinografía
+      8   94:         resultado_ia = predecir_imagen_bytes(image_bytes)
+          95: 
+      8   96:         cam_image_array = resultado_ia.pop("cam_image_array")
+          97: 
+          98:         # Siempre guardar como .jpg sin importar el formato original
+      8   99:         nombre_unico = f"P{paciente_id}_{ojo_evaluado}_{uuid.uuid4().hex}.jpg"
+      8  100:         nombre_gradcam = nombre_unico.replace('.jpg', '_gradcam.jpg')
+         101: 
+      8  102:         imagen = Image.open(io.BytesIO(image_bytes))
+         103: 
+      8  104:         datos_bd = {
+      8  105:             "paciente_id": paciente_id,
+      8  106:             "usuario_id": usuario_id,
+      8  107:             "ojo_evaluado": ojo_evaluado,
+      8  108:             "imagen_original_url": nombre_unico,
+      8  109:             "imagen_gradcam_url": nombre_gradcam,
+      8  110:             "nombre_archivo_original": archivo_imagen.filename,
+      8  111:             "formato_archivo": imagen.format,
+      8  112:             "ancho_px": imagen.width,
+      8  113:             "alto_px": imagen.height,
+      8  114:             "tamano_bytes": len(image_bytes),
+      8  115:             "hash_archivo": hashlib.sha256(image_bytes).hexdigest(),
+      8  116:             "probabilidad_ia": float(resultado_ia["confianza_general"]) / 100.0,
+      8  117:             "resultado_ia": int(resultado_ia["diagnostico_codigo"]),
+      8  118:             "resultado_completo": {
+      8  119:                 "diagnostico_codigo": resultado_ia["diagnostico_codigo"],
+      8  120:                 "diagnostico_texto": resultado_ia["diagnostico_texto"],
+      8  121:                 "confianza_general": resultado_ia["confianza_general"],
+      8  122:                 "probabilidades_detalle": resultado_ia["probabilidades_detalle"]
+         123:             },
+      8  124:             "modelo_nombre": "ResNet50",
+         125:         }
+         126: 
+         127:         # Preparar ambos JPEG fuera de la transacción de escritura.
+      8  128:         files = DiagnosisFiles(UPLOAD_FOLDER)
+      8  129:         if imagen.mode != 'RGB':
+ >>>>>>  130:             imagen = imagen.convert('RGB')
+      8  131:         original_temp = files.prepare(imagen)
+      8  132:         gradcam_temp = files.prepare(Image.fromarray(cam_image_array))
+         133: 
+      7  134:         if confirmed is not None:
+         135:             # Orden único: confirmación -> visita -> diagnóstico -> detalle.
+         136:             # La validación clínica y la inferencia ya finalizaron sin locks SQL.
+ >>>>>>  137:             confirmations.lock_for_consumption(
+ >>>>>>  138:                 confirmacion_token, paciente_id, ojo_evaluado, usuario_id, confirmed)
+     14  139:         visita_id, diagnostico_retinopatia_id, detalle_id = DiagnosisRepository.crear_diagnostico_y_detalle(
+      7  140:             datos_bd, visita_id, require_existing_diagnosis=require_existing_diagnosis,
+      7  141:             inference_revision=inference_revision,
+         142:         )
+      6  143:         if confirmed is not None:
+ >>>>>>  144:             confirmations.consume_with_detail(
+ >>>>>>  145:                 confirmacion_token, paciente_id, ojo_evaluado, usuario_id,
+ >>>>>>  146:                 confirmed, detalle_id,
+         147:             )
+      6  148:         files.publish(original_temp, nombre_unico)
+      6  149:         files.publish(gradcam_temp, nombre_gradcam)
+      5  150:         commit_attempted = True
+      5  151:         db.session.commit()
+      1  152:         try:
+      1  153:             files.cleanup()
+ >>>>>>  154:         except OSError:
+ >>>>>>  155:             current_app.logger.warning('Provisionales de diagnóstico pendientes de conciliación')
+         156:         finally:
+      1  157:             files.release()
+         158: 
+      1  159:         resultado_ia["visita_id"] = visita_id
+      1  160:         resultado_ia["diagnostico_id"] = visita_id
+      1  161:         resultado_ia["diagnostico_retinopatia_id"] = diagnostico_retinopatia_id
+      1  162:         resultado_ia["detalle_id"] = detalle_id
+      1  163:         resultado_ia["gradcam_url"] = nombre_gradcam
+      1  164:         resultado_ia["mensaje"] = "Diagnóstico procesado y guardado en la Base de Datos con éxito."
+      1  165:         return {"success": True, "data": resultado_ia}, 200
+         166: 
+      8  167:     except DiscardError as error:
+ >>>>>>  168:         _undo_creation(files, commit_attempted, detalle_id)
+ >>>>>>  169:         return {"success": False, "code": error.code,
+ >>>>>>  170:                 "message": "Contexto de inferencia no disponible o modificado."}, error.status
+      8  171:     except (DiagnosisValidationError, confirmations.ConfirmationUseError) as error:
+      1  172:         _undo_creation(files, commit_attempted, detalle_id)
+      1  173:         return {"success": False, "message": str(error)}, error.status_code
+      7  174:     except IntegrityError as error:
+ >>>>>>  175:         _undo_creation(files, commit_attempted, detalle_id)
+ >>>>>>  176:         if getattr(error.orig, 'args', (None,))[0] == 1062:
+ >>>>>>  177:             return {"success": False, "message": "Ya existe un resultado para este ojo."}, 409
+ >>>>>>  178:         current_app.logger.error("Error de persistencia al procesar diagnostico")
+ >>>>>>  179:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+      7  180:     except Exception:
+      7  181:         _undo_creation(files, commit_attempted, detalle_id)
+      7  182:         current_app.logger.error("Error al procesar diagnostico")
+      7  183:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500
+         184: 
+         185: 
+         186: def _undo_creation(files, commit_attempted, detalle_id):
+         187:     """No borrar archivos si un COMMIT ambiguo pudo haber confirmado su fila."""
+      8  188:     try:
+      8  189:         db.session.rollback()
+      7  190:         rollback_ok = True
+      1  191:     except Exception:
+      1  192:         rollback_ok = False
+      1  193:         current_app.logger.error('Rollback de diagnóstico no confirmado; requiere conciliación')
+         194: 
+      8  195:     safe_to_remove = rollback_ok and not commit_attempted
+      8  196:     if commit_attempted and detalle_id is not None:
+      4  197:         try:
+         198:             # Conexión independiente: nunca decidir usando la sesión rota.
+      7  199:             with db.engine.connect() as connection:
+     12  200:                 row = connection.execute(text(
+      3  201:                     'SELECT imagen_original_url, imagen_gradcam_url '
+         202:                     'FROM diagnosticos_retinopatia_detalle WHERE id = :id'
+      6  203:                 ), {'id': detalle_id}).first()
+      3  204:             safe_to_remove = rollback_ok and row is None
+      3  205:             if row is not None:
+      1  206:                 current_app.logger.warning('Commit de diagnóstico confirmado o ambiguo; conservar archivos')
+      1  207:         except Exception:
+      1  208:             safe_to_remove = False
+      1  209:             current_app.logger.error('Estado del commit no verificable; conservar archivos')
+      8  210:     if files is not None:
+      7  211:         try:
+      7  212:             files.cleanup(published=safe_to_remove)
+ >>>>>>  213:         except OSError:
+ >>>>>>  214:             current_app.logger.error('Limpieza incompleta; requiere conciliación')
+         215:         finally:
+      7  216:             files.release()
+         217: 
+         218: 
+         219: def consultar_detalles_por_visita(visita_id: int) -> dict:
+         220:     return _consultar_detalles(visita_id=visita_id)
+         221: 
+         222: 
+         223: def consultar_detalles_existentes(diagnostico_id: int) -> dict:
+         224:     return _consultar_detalles(diagnostico_id=diagnostico_id)
+         225: 
+         226: 
+         227: def _consultar_detalles(visita_id: int = None, diagnostico_id: int = None) -> dict:
+         228:     try:
+         229:         if visita_id is not None:
+         230:             detalles = DiagnosisRepository.obtener_detalles_por_visita(visita_id)
+         231:             response_id = visita_id
+         232:         else:
+         233:             detalles = DiagnosisRepository.obtener_detalles_por_diagnostico(diagnostico_id)
+         234:             response_id = diagnostico_id
+         235: 
+         236:         if detalles is None:
+         237:             return {"success": False, "message": DIAGNOSIS_NOT_FOUND_MESSAGE}
+         238: 
+         239:         ojos = []
+         240:         for d in detalles:
+         241:             ojo = "OD" if d['ojo_evaluado'] == 'Derecho' else "OI"
+         242:             resultado_completo = d.get('resultado_completo')
+         243:             if isinstance(resultado_completo, str):
+         244:                 resultado_completo = json.loads(resultado_completo)
+         245: 
+         246:             diagnostico_texto = None
+         247:             probabilidades_detalle = None
+         248:             if resultado_completo:
+         249:                 diagnostico_texto = resultado_completo.get('diagnostico_texto')
+         250:                 probabilidades_detalle = resultado_completo.get('probabilidades_detalle')
+         251:             if not diagnostico_texto:
+         252:                 diagnostico_texto = RD_LABELS.get(d['resultado_ia'], "Desconocido")
+         253: 
+         254:             gradcam_url = d.get('gradcam_url')
+         255:             if not gradcam_url and d['imagen_url']:
+         256:                 gradcam_url = d['imagen_url'].replace('.jpg', '_gradcam.jpg')
+         257: 
+         258:             ojo_data = {
+         259:                 "detalle_id": d['id'],
+         260:                 "ojo": ojo,
+         261:                 "resultado_ia": d['resultado_ia'],
+         262:                 "diagnostico_texto": diagnostico_texto,
+         263:                 "confianza_general": float(d['probabilidad_ia']) * 100.0 if d['probabilidad_ia'] is not None else 0.0,
+         264:                 "probabilidades_detalle": probabilidades_detalle,
+         265:                 "diagnostico_final": d['diagnostico_final'],
+         266:                 "estado_validacion": d['estado_validacion'],
+         267:                 "comentario_medico": d['comentario_medico'],
+         268:                 "motivo_correccion": d['motivo_correccion'],
+         269:                 "imagen_url": d['imagen_url'],
+         270:                 "gradcam_url": gradcam_url,
+         271:             }
+         272:             ojos.append(ojo_data)
+         273: 
+         274:         return {
+         275:             "success": True,
+         276:             "data": {
+         277:                 "visita_id": response_id if visita_id is not None else None,
+         278:                 "diagnostico_id": response_id,
+         279:                 "ojos": ojos
+         280:             }
+         281:         }
+         282:     except Exception:
+         283:         current_app.logger.error("Error al consultar detalles de diagnostico")
+         284:         return {"success": False, "message": "No se pudo procesar la solicitud."}
+         285:     
+         286: 
+         287: def confirmar_validacion_detalle(
+         288:     detalle_id: int,
+         289:     diagnostico_final: int,
+         290:     comentario_medico: str = None,
+         291:     motivo_correccion: str = None,
+         292:     usuario_id: int = None,
+         293: ) -> tuple[dict, int]:
+         294:     try:
+         295:         nuevo_estado = DiagnosisRepository.validar_detalle_diagnostico(
+         296:             detalle_id,
+         297:             diagnostico_final,
+         298:             comentario_medico,
+         299:             motivo_correccion,
+         300:             usuario_id,
+         301:         )
+         302:         
+         303:         return {
+         304:             "success": True,
+         305:             "data": {"estado_validacion": nuevo_estado},
+         306:             "message": "Diagnóstico validado y guardado exitosamente."
+         307:         }, 200
+         308:     except DiagnosisValidationError as error:
+         309:         db.session.rollback()
+         310:         return {"success": False, "message": str(error)}, error.status_code
+         311:     except Exception:
+         312:         db.session.rollback()
+         313:         current_app.logger.error("Error al confirmar validacion de diagnostico")
+         314:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500

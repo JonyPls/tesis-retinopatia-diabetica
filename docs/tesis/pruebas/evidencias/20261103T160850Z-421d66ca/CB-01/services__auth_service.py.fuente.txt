@@ -1,0 +1,49 @@
+   1: import os
+   2: import jwt
+   3: import datetime
+   4: from flask import current_app
+   5: from werkzeug.security import check_password_hash
+   6: from src.repositories.auth_repository import AuthRepository
+   7: 
+   8: def autenticar_usuario(username, password):
+   9:     if not username or not password:
+  10:         return {"success": False, "message": "Faltan credenciales."}, 400
+  11: 
+  12:     try:
+  13:         user = AuthRepository.get_user_by_username(username)
+  14:         
+  15:         if user and check_password_hash(user.password_hash, password):
+  16:             expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
+  17:             
+  18:             roles = user.roles
+  19: 
+  20:             # Generar Token JWT (Válido por 24 horas)
+  21:             token = jwt.encode({
+  22:                 'user_id': user.id,
+  23:                 'username': user.username,
+  24:                 'roles': roles,
+  25:                 'exp': expiration
+  26:             }, os.getenv('SECRET_KEY'), algorithm="HS256")
+  27: 
+  28:             return {
+  29:                 "success": True,
+  30:                 "message": f"Bienvenido, {user.nombres} {user.apellidos}",
+  31:                 "data": {
+  32:                     "token": token,
+  33:                     "user": {
+  34:                         "id": user.id,
+  35:                         "username": user.username,
+  36:                         "nombres": user.nombres,
+  37:                         "apellidos": user.apellidos,
+  38:                         "cargo": user.cargo.nombre if user.cargo else None,
+  39:                         "roles": roles,
+  40:                         "permisos": user.permisos
+  41:                     }
+  42:                 }
+  43:             }, 200
+  44: 
+  45:         return {"success": False, "message": "Usuario o contraseña incorrectos."}, 401
+  46:     
+  47:     except Exception:
+  48:         current_app.logger.exception("Error al autenticar usuario")
+  49:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500

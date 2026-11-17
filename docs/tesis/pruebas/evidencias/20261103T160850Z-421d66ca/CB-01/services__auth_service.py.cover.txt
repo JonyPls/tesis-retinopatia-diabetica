@@ -1,0 +1,51 @@
+Real CPython trace counts; function-body scope; lines, NOT branches.
+Functions: autenticar_usuario
+           1: import os
+           2: import jwt
+           3: import datetime
+           4: from flask import current_app
+           5: from werkzeug.security import check_password_hash
+           6: from src.repositories.auth_repository import AuthRepository
+           7: 
+           8: def autenticar_usuario(username, password):
+      8    9:     if not username or not password:
+      3   10:         return {"success": False, "message": "Faltan credenciales."}, 400
+          11: 
+      5   12:     try:
+      5   13:         user = AuthRepository.get_user_by_username(username)
+          14:         
+      4   15:         if user and check_password_hash(user.password_hash, password):
+      1   16:             expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
+          17:             
+      1   18:             roles = user.roles
+          19: 
+          20:             # Generar Token JWT (Válido por 24 horas)
+      3   21:             token = jwt.encode({
+      1   22:                 'user_id': user.id,
+      1   23:                 'username': user.username,
+      1   24:                 'roles': roles,
+      1   25:                 'exp': expiration
+      1   26:             }, os.getenv('SECRET_KEY'), algorithm="HS256")
+          27: 
+      2   28:             return {
+      1   29:                 "success": True,
+      1   30:                 "message": f"Bienvenido, {user.nombres} {user.apellidos}",
+      1   31:                 "data": {
+      1   32:                     "token": token,
+      1   33:                     "user": {
+      1   34:                         "id": user.id,
+      1   35:                         "username": user.username,
+      1   36:                         "nombres": user.nombres,
+      1   37:                         "apellidos": user.apellidos,
+      1   38:                         "cargo": user.cargo.nombre if user.cargo else None,
+      1   39:                         "roles": roles,
+      1   40:                         "permisos": user.permisos
+          41:                     }
+          42:                 }
+      1   43:             }, 200
+          44: 
+      3   45:         return {"success": False, "message": "Usuario o contraseña incorrectos."}, 401
+          46:     
+      1   47:     except Exception:
+      1   48:         current_app.logger.exception("Error al autenticar usuario")
+      1   49:         return {"success": False, "message": "No se pudo procesar la solicitud."}, 500

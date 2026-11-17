@@ -1,0 +1,2 @@
+git diff --exit-code 7e2440d4775ab8af0918c435390bfa312b162b13 -- backend/services backend/utils backend/dl_model backend/src frontend
+exit=0

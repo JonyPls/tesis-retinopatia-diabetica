@@ -1,0 +1,18 @@
+{
+  "timestamp_utc": "2026-11-03T18:12:17.031763+00:00",
+  "case": "CB-03",
+  "status": "BLOQUEADO",
+  "diagnostic_status": "COMPLETADO_OFFLINE",
+  "client_processes_executed": 6,
+  "help_version_successes": 5,
+  "unsupported_option_rejections": 1,
+  "third_server_start_executed": false,
+  "mysql_connections_executed": 0,
+  "datadir_modified_by_this_intervention": false,
+  "proposed_powershell_blocks_syntax_checked": 4,
+  "proposed_powershell_blocks_executed": 0,
+  "historical_hashes_verified": 165,
+  "config_sha256": "6dee5fa065178c2971d8271d9d6a11302306db9f4a6e06deb5ebcfe0078834e6",
+  "diagnostic_document_sha256": "d4b3848b9d62d17ed9ca653c4876bf98c3bde25639730019d63f0b60167886c5",
+  "memory_name": "CODN_CB03_eee45878_d7ac_11f1_bc4f_107c616721bd"
+}

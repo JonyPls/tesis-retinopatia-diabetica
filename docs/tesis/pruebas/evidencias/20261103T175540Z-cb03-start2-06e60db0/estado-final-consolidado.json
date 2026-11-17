@@ -1,0 +1,26 @@
+{
+  "state": "STOPPED_VERIFIED",
+  "server_pid": 9380,
+  "local_uuid": "eee45878-d7ac-11f1-bc4f-107c616721bd",
+  "sql_uuid": null,
+  "sql_datadir": null,
+  "sql_hostname": null,
+  "sql_skip_name_resolve": null,
+  "remote_identity_verified": false,
+  "configuration_validation_exit_code": 0,
+  "preparation_exit_code": 1,
+  "mysql_client_error_number": 1130,
+  "normal_administrative_connection_completed": false,
+  "root_password_changed": false,
+  "new_password_generated": false,
+  "encrypted_password_file_created": false,
+  "network_endpoints": [
+    "127.0.0.1:33363"
+  ],
+  "connections_to_habitual": 0,
+  "functional_sql_sent": false,
+  "new_cb03_methods_executed": 0,
+  "new_cb03_subcases_executed": 0,
+  "cb03_status": "BLOQUEADO",
+  "historical_evidence_hashes_verified": 140
+}

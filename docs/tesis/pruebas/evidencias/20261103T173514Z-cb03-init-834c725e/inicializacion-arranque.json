@@ -1,0 +1,41 @@
+{
+  "started_utc": "2026-11-03T17:35:16.669981+00:00",
+  "state": "STOPPED_ON_ERROR",
+  "authorized_datadir": "D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\data",
+  "port": 33363,
+  "binary": "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+  "binary_version": "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe  Ver 8.0.46 for Win64 on x86_64 (MySQL Community Server - GPL)",
+  "cb03_status": "BLOQUEADO",
+  "functional_schema_created": false,
+  "fixtures_inserted": false,
+  "credentials": "DPAPI current-user encrypted file under private ACL; no secret logged",
+  "init_command": [
+    "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+    "--no-defaults",
+    "--basedir=C:\\Program Files\\MySQL\\MySQL Server 8.0",
+    "--datadir=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\data",
+    "--initialize-insecure",
+    "--log-error=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\logs\\init.err"
+  ],
+  "start_command": [
+    "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+    "--defaults-file=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\my-cb03.ini"
+  ],
+  "initialization_exit_code": 0,
+  "server_pid": 9240,
+  "exception_type": "RuntimeError",
+  "reason": "Error de arranque no transitorio; detener.",
+  "ended_utc": "2026-11-03T17:35:31.932241+00:00",
+  "network_events": [
+    {
+      "event": "socket.getaddrinfo",
+      "host": "127.0.0.1",
+      "port": 33363
+    },
+    {
+      "event": "socket.connect",
+      "host": "127.0.0.1",
+      "port": 33363
+    }
+  ]
+}

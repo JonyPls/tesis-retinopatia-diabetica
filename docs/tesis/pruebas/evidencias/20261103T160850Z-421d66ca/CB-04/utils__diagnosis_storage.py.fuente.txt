@@ -1,0 +1,168 @@
+   1: """Archivos JPEG de diagnóstico: preparación privada y publicación sin reemplazo.
+   2: 
+   3: El almacenamiento debe estar en un filesystem que admita hard links o, como
+   4: alternativa, creación exclusiva. Los archivos publicados solo se sirven si
+   5: existe una referencia confirmada en MySQL (files_routes).
+   6: """
+   7: 
+   8: import errno
+   9: import os
+  10: from collections import Counter
+  11: from pathlib import Path
+  12: import re
+  13: import tempfile
+  14: import time
+  15: from threading import Lock
+  16: 
+  17: from PIL import Image
+  18: 
+  19: 
+  20: FINAL_NAME = re.compile(r'P[0-9]+_(?:Derecho|Izquierdo)_[0-9a-f]{32}(?:_gradcam)?\.jpg\Z')
+  21: _active_lock = Lock()
+  22: _active = Counter()  # Solo este proceso; cuenta colisiones entre solicitudes.
+  23: 
+  24: 
+  25: class DiagnosisFiles:
+  26:     def __init__(self, root):
+  27:         self.root = Path(root)
+  28:         self.stage = self.root / '.pending'
+  29:         self.temporary = []
+  30:         self.published = {}  # nombre -> (device, inode) creado por esta solicitud
+  31:         self.active_names = set()
+  32: 
+  33:     def _mark_active(self, path):
+  34:         key = (self.root.resolve(), path.name)
+  35:         with _active_lock:
+  36:             if key not in self.active_names:
+  37:                 _active[key] += 1
+  38:                 self.active_names.add(key)
+  39: 
+  40:     def release(self):
+  41:         with _active_lock:
+  42:             for key in self.active_names:
+  43:                 _active[key] -= 1
+  44:                 if not _active[key]:
+  45:                     del _active[key]
+  46:         self.active_names.clear()
+  47: 
+  48:     def prepare(self, image):
+  49:         """JPEG completo y verificable, fuera de las rutas públicas."""
+  50:         self.stage.mkdir(exist_ok=True)
+  51:         if self.stage.is_symlink() or self.stage.resolve().parent != self.root.resolve():
+  52:             raise ValueError('Directorio provisional inválido')
+  53:         fd, path = tempfile.mkstemp(prefix='diagnosis-', suffix='.part', dir=self.stage)
+  54:         path = Path(path)
+  55:         self.temporary.append(path)  # Registrar antes de intentar escribir.
+  56:         self._mark_active(path)
+  57:         with os.fdopen(fd, 'wb') as output:
+  58:             image.save(output, 'JPEG', quality=90)
+  59:             output.flush()
+  60:             os.fsync(output.fileno())
+  61:         self.verify(path)
+  62:         return path
+  63: 
+  64:     @staticmethod
+  65:     def verify(path):
+  66:         with Image.open(path) as image:
+  67:             if image.format != 'JPEG':
+  68:                 raise ValueError('JPEG provisional inválido')
+  69:             image.verify()
+  70:         with Image.open(path) as image:
+  71:             image.load()
+  72: 
+  73:     def publish(self, temporary, name):
+  74:         if not FINAL_NAME.fullmatch(name) or temporary not in self.temporary:
+  75:             raise ValueError('Nombre de almacenamiento inválido')
+  76:         target = self.root / name
+  77:         self._mark_active(target)
+  78:         identity = self._identity(temporary)
+  79:         try:
+  80:             # link es atómico y rechaza un destino existente en Windows y Linux.
+  81:             os.link(temporary, target)
+  82:         except OSError as error:
+  83:             if error.errno not in (errno.EPERM, errno.ENOTSUP, errno.ENOSYS):
+  84:                 raise
+  85:             # Filesystems sin hard links: creación exclusiva; el archivo no
+  86:             # se puede leer vía HTTP hasta que MySQL confirme su referencia.
+  87:             with open(target, 'xb') as output:
+  88:                 stat = os.fstat(output.fileno())
+  89:                 self.published[name] = stat.st_dev, stat.st_ino
+  90:                 with open(temporary, 'rb') as source:
+  91:                     while chunk := source.read(1024 * 1024):
+  92:                         output.write(chunk)
+  93:                 output.flush()
+  94:                 os.fsync(output.fileno())
+  95:         else:
+  96:             self.published[name] = identity
+  97:         self.verify(target)
+  98: 
+  99:     @staticmethod
+ 100:     def _identity(path):
+ 101:         stat = path.stat(follow_symlinks=False)
+ 102:         return stat.st_dev, stat.st_ino
+ 103: 
+ 104:     def cleanup(self, *, published=False):
+ 105:         """Solo elimina archivos propios cuyo nombre todavía identifica el mismo inode."""
+ 106:         if published:
+ 107:             for name, identity in self.published.items():
+ 108:                 target = self.root / name
+ 109:                 try:
+ 110:                     if self._identity(target) == identity:
+ 111:                         target.unlink()
+ 112:                 except FileNotFoundError:
+ 113:                     pass
+ 114:         for temporary in self.temporary:
+ 115:             try:
+ 116:                 temporary.unlink()
+ 117:             except FileNotFoundError:
+ 118:                 pass
+ 119: 
+ 120: 
+ 121: def inspect_candidates(root, referenced_names, *, minimum_age_seconds=86400, now=None):
+ 122:     """Solo inspección; el llamador debe consultar MySQL con éxito primero.
+ 123: 
+ 124:     Una coincidencia NO demuestra abandono: pueden existir procesos activos
+ 125:     en otras instancias. Nunca borra recursos.
+ 126:     """
+ 127:     if referenced_names is None:
+ 128:         raise ValueError('Se requiere una lectura confirmada de referencias MySQL')
+ 129:     root = Path(root)
+ 130:     if root.is_symlink() or minimum_age_seconds < 0:
+ 131:         raise ValueError('Directorio o antigüedad de inspección inválidos')
+ 132:     cutoff = (time.time() if now is None else now) - minimum_age_seconds
+ 133:     found = {'temporary_candidates': [], 'unreferenced_candidates': []}
+ 134:     for folder, key, pattern in ((root / '.pending', 'temporary_candidates',
+ 135:                                   lambda name: name.startswith('diagnosis-') and name.endswith('.part')),
+ 136:                                  (root, 'unreferenced_candidates', FINAL_NAME.fullmatch)):
+ 137:         if folder.is_symlink() or not folder.is_dir():
+ 138:             continue
+ 139:         for file in folder.iterdir():
+ 140:             with _active_lock:
+ 141:                 in_this_process = _active[(root.resolve(), file.name)] > 0
+ 142:             if (not in_this_process and pattern(file.name) and not file.is_symlink() and file.is_file()
+ 143:                     and file.stat().st_mtime < cutoff
+ 144:                     and (key == 'temporary_candidates' or file.name not in referenced_names)):
+ 145:                 found[key].append(file.name)
+ 146:         found[key].sort()
+ 147:     return found
+ 148: 
+ 149: 
+ 150: def inspect_database_candidates(root, *, minimum_age_seconds=86400):
+ 151:     """Inspección operatoria (sin borrado); una consulta fallida aborta el informe."""
+ 152:     from database import db
+ 153:     from src.models.diagnosis_entities import DiagnosticoDetalle
+ 154: 
+ 155:     names = set()
+ 156:     for original, gradcam in db.session.query(
+ 157:             DiagnosticoDetalle.imagen_original_url,
+ 158:             DiagnosticoDetalle.imagen_gradcam_url).all():
+ 159:         names.add(original)
+ 160:         if gradcam:
+ 161:             names.add(gradcam)
+ 162:     found = inspect_candidates(root, names, minimum_age_seconds=minimum_age_seconds)
+ 163:     found['missing_referenced'] = sorted(
+ 164:         name for name in names
+ 165:         if (isinstance(name, str) and name == Path(name).name
+ 166:             and ((Path(root) / name).is_symlink() or not (Path(root) / name).is_file()))
+ 167:     )
+ 168:     return found

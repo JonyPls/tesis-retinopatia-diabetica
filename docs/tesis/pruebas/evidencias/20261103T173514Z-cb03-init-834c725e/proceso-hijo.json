@@ -1,0 +1,6 @@
+{
+  "ProcessId": 18768,
+  "ParentProcessId": 9240,
+  "ExecutablePath": "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe",
+  "CommandLine": "\"C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqld.exe\" \"--defaults-file=D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\tmp\\codn-cb03\\20261103T172031Z-cb03-a3c5f7f4-mysql\\my-cb03.ini\""
+}

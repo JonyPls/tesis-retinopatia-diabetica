@@ -1,0 +1,244 @@
+   1: """Motor B1 opt-in: no reemplaza los decoradores clínicos existentes.
+   2: 
+   3: Usa roles.codigo y permisos.codigo de relaciones activas. El decorador incluye
+   4: token_required: nunca se debe invocar una regla sin autenticar la solicitud.
+   5: """
+   6: 
+   7: from dataclasses import dataclass, replace
+   8: from functools import wraps
+   9: from types import MappingProxyType
+  10: 
+  11: from flask import current_app, jsonify, request
+  12: 
+  13: from utils.security import token_required
+  14: 
+  15: 
+  16: OFTALMOLOGO = "OFTALMOLOGO"
+  17: ENFERMERO = "ENFERMERO"
+  18: ASISTENTE = "ASISTENTE_ADMINISTRATIVO"
+  19: ADMINISTRADOR = "ADMINISTRADOR_SISTEMA"
+  20: 
+  21: 
+  22: @dataclass(frozen=True)
+  23: class OperationRule:
+  24:     domain: str
+  25:     role_codes: frozenset[str]
+  26:     all_of: frozenset[str]
+  27:     any_of: frozenset[str] = frozenset()
+  28:     needs_resource_check: bool = False
+  29: 
+  30: 
+  31: def _rule(domain, roles, *permissions, any_of=(), needs_resource_check=False):
+  32:     return OperationRule(
+  33:         domain=domain,
+  34:         role_codes=frozenset(roles),
+  35:         all_of=frozenset(permissions),
+  36:         any_of=frozenset(any_of),
+  37:         needs_resource_check=needs_resource_check,
+  38:     )
+  39: 
+  40: 
+  41: # Solo operaciones acordadas. No se incluyen informes.editar_ajenos, Gerente
+  42: # ni permisos genéricos.
+  43: OPERATION_RULES = MappingProxyType({
+  44:     "configuration.read": _rule("administration", (ADMINISTRADOR,), "configuracion.ver"),
+  45:     "users.read": _rule("administration", (ADMINISTRADOR,), "usuarios.ver"),
+  46:     "users.create": _rule("administration", (ADMINISTRADOR,), "usuarios.crear"),
+  47:     "users.edit": _rule("administration", (ADMINISTRADOR,), "usuarios.editar"),
+  48:     "users.assign_roles": _rule("administration", (ADMINISTRADOR,), "usuarios.asignar_roles"),
+  49:     "roles.assign_permissions": _rule("administration", (ADMINISTRADOR,), "roles.asignar_permisos"),
+  50:     "patients.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "pacientes.ver"),
+  51:     "patients.create": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "pacientes.crear"),
+  52:     "visits.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "visitas.ver"),
+  53:     "visits.create": _rule("assistance", (OFTALMOLOGO, ENFERMERO), "visitas.crear"),
+  54:     "history.full_read": _rule(
+  55:         "specialist", (OFTALMOLOGO,), "pacientes.ver", "visitas.ver",
+  56:         "diagnostico_retinopatia.ver", "informes.ver", "imagenes.ver",
+  57:     ),
+  58:     "dashboard.clinical_read": _rule(
+  59:         "specialist", (OFTALMOLOGO,), "pacientes.ver", "visitas.ver",
+  60:         "diagnostico_retinopatia.ver",
+  61:     ),
+  62:     "diagnosis.read": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.ver"),
+  63:     "diagnosis.details_read": _rule(
+  64:         "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.ver", "imagenes.ver",
+  65:     ),
+  66:     "diagnosis.create": _rule(
+  67:         "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear", "imagenes.ver",
+  68:     ),
+  69:     "diagnosis.create_with_visit": _rule(
+  70:         "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.crear", "imagenes.ver", "visitas.crear",
+  71:     ),
+  72:     "diagnosis.validate": _rule("specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.validar"),
+  73:     "diagnosis.discard_pending": _rule(
+  74:         "specialist", (OFTALMOLOGO,), "diagnostico_retinopatia.descartar_pendiente",
+  75:         "pacientes.ver", "visitas.ver", "diagnostico_retinopatia.ver", "imagenes.ver",
+  76:     ),
+  77:     "images.read": _rule("assistance", (OFTALMOLOGO, ENFERMERO), "imagenes.ver"),
+  78:     "retinograph.select": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+  79:     "retinograph.download": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+  80:     "retinograph.confirm": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+  81:     "retinograph.confirm_status": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+  82:     "retinograph.revoke": _rule("specialist", (OFTALMOLOGO,), "pacientes.ver", "imagenes.ver"),
+  83:     "diagnosis.pdf_read": _rule(
+  84:         "specialist", (OFTALMOLOGO,), "pacientes.ver",
+  85:         "diagnostico_retinopatia.ver", "imagenes.ver",
+  86:     ),
+  87:     "reports.full_read": _rule("specialist", (OFTALMOLOGO,), "informes.ver"),
+  88:     "reports.catalog_read": _rule("assistance", (OFTALMOLOGO, ENFERMERO, ASISTENTE), "informes.ver"),
+  89:     "reports.create": _rule("specialist", (OFTALMOLOGO,), "informes.crear"),
+  90:     "reports.inference_context": _rule(
+  91:         "specialist", (OFTALMOLOGO,), "informes.crear", "pacientes.ver", "visitas.ver",
+  92:     ),
+  93:     "reports.create_with_visit": _rule(
+  94:         "specialist", (OFTALMOLOGO,), "informes.crear", "visitas.crear",
+  95:     ),
+  96:     "reports.edit_own": _rule(
+  97:         "specialist", (OFTALMOLOGO,), "informes.editar", needs_resource_check=True,
+  98:     ),
+  99:     "reports.inactivate": _rule(
+ 100:         "specialist", (OFTALMOLOGO,), "informes.inactivar", needs_resource_check=True,
+ 101:     ),
+ 102:     "reports.annul_own": _rule(
+ 103:         "specialist", (OFTALMOLOGO,), "informes.anular", needs_resource_check=True,
+ 104:     ),
+ 105: })
+ 106: 
+ 107: 
+ 108: def evaluate_rule(user, rule: OperationRule, *, resource_allowed=None):
+ 109:     """Evaluación exacta y con procedencia: solo grants de roles habilitantes."""
+ 110:     if user is None or getattr(user, "estado", None) != "ACTIVO":
+ 111:         return False
+ 112:     if not rule.role_codes or not (rule.all_of or rule.any_of):
+ 113:         return False
+ 114:     if any("*" in code for code in rule.all_of | rule.any_of):
+ 115:         return False
+ 116:     if resource_allowed is False or (rule.needs_resource_check and resource_allowed is not True):
+ 117:         return False
+ 118: 
+ 119:     permissions = set()
+ 120:     has_eligible_role = False
+ 121:     for assignment in getattr(user, "roles_rel", ()) or ():
+ 122:         role = getattr(assignment, "rol", None)
+ 123:         if role is None or getattr(role, "estado", None) != "ACTIVO" or getattr(role, "codigo", None) not in rule.role_codes:
+ 124:             continue
+ 125:         has_eligible_role = True
+ 126:         for grant in getattr(role, "permisos_rel", ()) or ():
+ 127:             permission = getattr(grant, "permiso", None)
+ 128:             if permission is not None and getattr(permission, "estado", None) == "ACTIVO":
+ 129:                 permissions.add(permission.codigo)
+ 130: 
+ 131:     return (has_eligible_role and rule.all_of <= permissions
+ 132:             and (not rule.any_of or bool(rule.any_of & permissions)))
+ 133: 
+ 134: 
+ 135: def evaluate_operation(user, operation, *, resource_allowed=None):
+ 136:     rule = OPERATION_RULES.get(operation)
+ 137:     return bool(rule and evaluate_rule(user, rule, resource_allowed=resource_allowed))
+ 138: 
+ 139: 
+ 140: def patient_read_scope(user):
+ 141:     """Alcance por grant activo del rol habilitante, nunca por claims del JWT.
+ 142: 
+ 143:     Un rol clínico sin su propio pacientes.ver no amplía el alcance concedido
+ 144:     por otro rol; ADMINISTRADOR_SISTEMA no participa en estas proyecciones.
+ 145:     """
+ 146:     rule = OPERATION_RULES["patients.read"]
+ 147:     for role_code, scope in ((OFTALMOLOGO, "clinical"),
+ 148:                              (ENFERMERO, "assistance"),
+ 149:                              (ASISTENTE, "administrative")):
+ 150:         if evaluate_rule(user, replace(rule, role_codes=frozenset({role_code}))):
+ 151:             return scope
+ 152:     return None
+ 153: 
+ 154: 
+ 155: def patient_create_scope(user):
+ 156:     """Procedencia de pacientes.crear independiente del alcance de lectura."""
+ 157:     rule = OPERATION_RULES["patients.create"]
+ 158:     for role_code, scope in ((OFTALMOLOGO, "clinical"),
+ 159:                              (ENFERMERO, "assistance"),
+ 160:                              (ASISTENTE, "administrative")):
+ 161:         if evaluate_rule(user, replace(rule, role_codes=frozenset({role_code}))):
+ 162:             return scope
+ 163:     return None
+ 164: 
+ 165: 
+ 166: class AuthorizationInputError(Exception):
+ 167:     """Error público de estructura de petición antes de autorizar su modalidad."""
+ 168: 
+ 169:     def __init__(self, status_code, message):
+ 170:         super().__init__(message)
+ 171:         self.status_code = status_code
+ 172: 
+ 173: 
+ 174: def strict_authorization_required(operation, *, resource_check=None,
+ 175:                                   conditional_operation=None, requires_conditional_operation=None,
+ 176:                                   enabled_config=None):
+ 177:     """Decorador opt-in; envuelve el handler en token_required y deniega por defecto.
+ 178: 
+ 179:     Para reglas con needs_resource_check se exige un verificador real del
+ 180:     recurso. Solo las rutas activadas explícitamente usan este decorador.
+ 181:     """
+ 182:     def decorator(handler):
+ 183:         @wraps(handler)
+ 184:         def protected(*args, **kwargs):
+ 185:             claims = getattr(request, "current_user", None) or {}
+ 186:             if not claims.get("user_id"):
+ 187:                 return jsonify({"success": False, "message": "No autorizado."}), 401
+ 188:             # Opt-in: nunca consultar el recurso si la operación aún no fue activada.
+ 189:             if enabled_config is not None and current_app.config.get(enabled_config) is not True:
+ 190:                 return jsonify({"success": False, "message": "No autorizado."}), 403
+ 191:             rule = OPERATION_RULES.get(operation)
+ 192:             if rule is None:
+ 193:                 return jsonify({"success": False, "message": "No autorizado."}), 403
+ 194:             try:
+ 195:                 user = getattr(request, "authenticated_user", None)
+ 196:                 if user is None:
+ 197:                     return jsonify({"success": False, "message": "No autorizado."}), 401
+ 198:                 if resource_check is None:
+ 199:                     allowed = evaluate_rule(user, rule)
+ 200:                 else:
+ 201:                     # No consultar recursos si el rol/permiso ya deniega acceso.
+ 202:                     if not evaluate_rule(user, rule, resource_allowed=True):
+ 203:                         return jsonify({"success": False, "message": "No autorizado."}), 403
+ 204:                     allowed = evaluate_rule(
+ 205:                         user, rule, resource_allowed=resource_check(user, *args, **kwargs)
+ 206:                     )
+ 207:                 if allowed and conditional_operation is not None:
+ 208:                     # El selector solo examina la estructura, nunca recursos.
+ 209:                     # Ambas políticas completas se evalúan en el mismo usuario
+ 210:                     # y con grants del rol habilitante, sin unión con otros roles.
+ 211:                     if requires_conditional_operation is None:
+ 212:                         allowed = False
+ 213:                     else:
+ 214:                         required = requires_conditional_operation()
+ 215:                         if type(required) is not bool:
+ 216:                             allowed = False
+ 217:                         elif required:
+ 218:                             conditional_rule = OPERATION_RULES.get(conditional_operation)
+ 219:                             allowed = bool(conditional_rule and evaluate_rule(user, conditional_rule))
+ 220:             except AuthorizationInputError as error:
+ 221:                 return jsonify({"success": False, "message": str(error)}), error.status_code
+ 222:             except Exception:
+ 223:                 current_app.logger.exception("Error al evaluar autorización estricta")
+ 224:                 return jsonify({"success": False, "message": "No se pudo procesar la solicitud."}), 500
+ 225:             if not allowed:
+ 226:                 return jsonify({"success": False, "message": "No autorizado."}), 403
+ 227:             return handler(*args, **kwargs)
+ 228: 
+ 229:         return token_required(protected, eager_permissions=True)
+ 230: 
+ 231:     return decorator
+ 232: 
+ 233: 
+ 234: def disabled_authenticated_operation(handler):
+ 235:     """B1: reservar una ruta de escritura sin consultar el recurso ni llamar al handler.
+ 236: 
+ 237:     El bloqueo es temporal hasta disponer de versionado y auditoría clínica.
+ 238:     token_required verifica JWT, cuenta activa y credenciales solo en Bearer.
+ 239:     """
+ 240:     @wraps(handler)
+ 241:     def denied(*args, **kwargs):
+ 242:         return jsonify({"success": False, "message": "No autorizado."}), 403
+ 243: 
+ 244:     return token_required(denied, eager_permissions=True)

@@ -1,0 +1,48 @@
+{
+  "ruta_relativa_a": "docs/tesis/pruebas",
+  "paginas": 16,
+  "figuras": 10,
+  "revision": "Las 16 paginas se revisaron en PNG. Word exporto el PDF y Poppler produjo la vista de control. El renderizador de LibreOffice no encontro soffice.exe.",
+  "files": [
+    {
+      "file": "INFORME_CONSOLIDADO_PRUEBAS_CODN.docx",
+      "bytes": 2546099,
+      "sha256": "2e618013ada430791fd94035d0932217c817602fdfd7d2957e953142f00e1fed"
+    },
+    {
+      "file": "INFORME_CONSOLIDADO_PRUEBAS_CODN.pdf",
+      "bytes": 973484,
+      "sha256": "a551b45b33e836987668a33014a4055e76c13fa8ddc1269e2a28a06bb8d464a3"
+    },
+    {
+      "file": "INFORME_PRUEBAS_CAJA_NEGRA_API_SIMULADA.md",
+      "bytes": 10323,
+      "sha256": "1c41221c445c50fd86a5847f5bdcf9f43bc7916358a75ea4f23a8168c70a4569"
+    },
+    {
+      "file": "ejecucion_caja_negra_actual.json",
+      "bytes": 312,
+      "sha256": "de428f8387a5b481d0f5b23be115f7eade1f7b9d296d1abbba80e05935734950"
+    },
+    {
+      "file": "entorno_cn/mock_api.py",
+      "bytes": 12082,
+      "sha256": "4ad0d0c67889b1c92532390179f3d6dd80d393c273625ae616c83746edbb47e7"
+    },
+    {
+      "file": "entorno_cn/vite_test.mjs",
+      "bytes": 1867,
+      "sha256": "f8baf3555903a6fe01e66f6d24476ca48eb1a82d393779d0866ab2ac4fe5ea5a"
+    },
+    {
+      "file": "entorno_cn/consolidar_informe.py",
+      "bytes": 34518,
+      "sha256": "dd96a25cb2d1a5fcb3509604b949637921a93047ba35fc3f9725b9967306ebd4"
+    },
+    {
+      "file": "entorno_cn/exportar_pdf.ps1",
+      "bytes": 1403,
+      "sha256": "b18e07356d706b1aec0e2a654ba4ae0e8a6bbe94868cf328a825e19aaeabc4b2"
+    }
+  ]
+}

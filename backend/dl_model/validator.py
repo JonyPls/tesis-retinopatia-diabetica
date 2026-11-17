@@ -71,6 +71,9 @@ def validar_formato_y_dimensiones(image_bytes: bytes, *, filename=None, mimetype
 # Capa 2: Validación de región circular dominante ------------------------
 
 UMBRAL_AREA_CIRCULAR = 0.40  # La región circular debe ocupar al menos ese porcentaje del área total
+# Área del contorno / área de su círculo mínimo: círculo ≈ 1; rectángulo ≤ 2/pi.
+# No confundir una pantalla rectangular luminosa con una región de fondo de ojo.
+UMBRAL_RELLENO_CIRCULAR = 0.75
 
 def validar_region_circular(image_bytes: bytes) -> dict:
     """
@@ -122,6 +125,15 @@ def validar_region_circular(image_bytes: bytes) -> dict:
                      "Verifique que sea una retinografía de fondo de ojo."
         }
 
+    _, radio = cv2.minEnclosingCircle(contorno_principal)
+    relleno_circular = area_contorno / (np.pi * radio * radio) if radio > 0 else 0
+    if relleno_circular < UMBRAL_RELLENO_CIRCULAR:
+        return {
+            "valido": False,
+            "error": "La imagen debe mostrar una retinografía individual con región ocular circular, "
+                     "no una captura de pantalla, documento o panel de imágenes."
+        }
+
     return {"valido": True}
 
 
@@ -137,6 +149,7 @@ CLIP_PROMPTS = [
     "a document, screenshot or text image",             # [4] → rechazar
     "a landscape, nature or outdoor photograph",        # [5] → rechazar
     "a generic or unrecognized image",                  # [6] → rechazar
+    "a screenshot of medical software with menus, buttons, text and retinal photographs",  # [7] → rechazar
 ]
 
 PROMPT_VALIDO_IDX = 0
@@ -148,6 +161,7 @@ MENSAJES_RECHAZO = {
     4: "Se detectó un documento o captura de pantalla. Por favor suba una retinografía de fondo de ojo.",
     5: "Se detectó una fotografía de paisaje. Por favor suba una retinografía de fondo de ojo.",
     6: "La imagen no fue reconocida como una retinografía. Por favor suba una retinografía de fondo de ojo.",
+    7: "Se detectó una captura de pantalla con imágenes retinianas. Suba la retinografía original de un solo ojo, no la pantalla del sistema.",
 }
 
 _clip_model     = None

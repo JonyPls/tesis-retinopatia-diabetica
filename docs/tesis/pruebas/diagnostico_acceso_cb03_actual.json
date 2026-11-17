@@ -1,0 +1,20 @@
+{
+  "operations": [
+    {
+      "name": "version",
+      "exit_code": 2,
+      "purpose": "help/version only; never connect",
+      "args": [
+        "--no-defaults",
+        "--no-login-paths",
+        "--version"
+      ]
+    }
+  ],
+  "server_started": false,
+  "client": "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe",
+  "evidence": "D:\\Universidad\\CICLO XII\\SEMINARIO DE TESIS I\\tesis-retinopatia-diabetica\\docs\\tesis\\pruebas\\evidencias\\20261103T180530Z-cb03-diag-3badfe39",
+  "run_id": "20261103T180530Z-cb03-diag-3badfe39",
+  "timestamp_utc": "2026-11-03T18:05:30.5236701Z",
+  "connections_executed": 0
+}

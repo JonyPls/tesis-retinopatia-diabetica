@@ -1,0 +1,160 @@
+{
+  "status": "DISEÑO_NO_INSERTADO",
+  "numeric_ids": null,
+  "patients": {
+    "A": "ACTIVO",
+    "B": "ACTIVO",
+    "I": "INACTIVO",
+    "E": "ACTIVO_SIN_VISITAS"
+  },
+  "visits": {
+    "V1": [
+      "A",
+      "ACTIVA"
+    ],
+    "V2": [
+      "A",
+      "ACTIVA"
+    ],
+    "V0": [
+      "A",
+      "ACTIVA"
+    ],
+    "VB": [
+      "B",
+      "ACTIVA"
+    ],
+    "VA": [
+      "A",
+      "ANULADA"
+    ],
+    "VI": [
+      "I",
+      "ACTIVA"
+    ]
+  },
+  "reports_columns": [
+    "report",
+    "patient",
+    "visit",
+    "type/name",
+    "state",
+    "versions"
+  ],
+  "reports": [
+    [
+      "R1",
+      "A",
+      "V1",
+      "T2/Beta",
+      "ACTIVO",
+      2
+    ],
+    [
+      "R2",
+      "A",
+      "V1",
+      "T1/Alfa",
+      "ACTIVO",
+      1
+    ],
+    [
+      "R3",
+      "A",
+      "V1",
+      "T3/Gamma",
+      "INACTIVO",
+      1
+    ],
+    [
+      "R4",
+      "A",
+      "V1",
+      "T4/Omega",
+      "ANULADO",
+      1
+    ],
+    [
+      "R5",
+      "A",
+      "V2",
+      "T1/Alfa",
+      "ACTIVO",
+      1
+    ],
+    [
+      "R6",
+      "B",
+      "VB",
+      "T1/Alfa",
+      "ACTIVO",
+      1
+    ],
+    [
+      "R7",
+      "A",
+      "VA",
+      "T1/Alfa",
+      "ACTIVO",
+      1
+    ],
+    [
+      "R8",
+      "I",
+      "VI",
+      "T1/Alfa",
+      "ACTIVO",
+      1
+    ]
+  ],
+  "diagnoses": {
+    "VB": "padding (sin detalles)",
+    "V1": "dos ojos; ID diferente de V1"
+  },
+  "details": [
+    "Derecho de V1",
+    "Izquierdo de V1"
+  ],
+  "expected_list_order": {
+    "V1": [
+      "R2",
+      "R1"
+    ],
+    "V2": [
+      "R5"
+    ],
+    "V0": [],
+    "VB": [
+      "R6"
+    ],
+    "VA": [
+      "R7"
+    ],
+    "VI": [
+      "R8"
+    ]
+  },
+  "expected_history_A": {
+    "V1": [
+      "R2",
+      "R1"
+    ],
+    "V2": [
+      "R5"
+    ],
+    "V0": []
+  },
+  "expected_counts_V1": {
+    "active_reports": 2,
+    "eyes": 2,
+    "versions_R1": 2
+  },
+  "expected_individual": {
+    "R1": "visible",
+    "R3": null,
+    "R4": null,
+    "R7": null,
+    "R8": null
+  },
+  "note": "Oráculo simbólico previo e independiente de salidas del repositorio. Caracterización explícita de filtros distintos, no aprobación de una política uniforme."
+}

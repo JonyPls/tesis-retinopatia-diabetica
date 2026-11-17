@@ -1,0 +1,23 @@
+{
+  "args": [
+    "--no-defaults",
+    "--protocol=MEMORY",
+    "--host=localhost",
+    "--shared-memory-base-name=CODN_CB03_eee45878_d7ac_11f1_bc4f_107c616721bd",
+    "--user=root",
+    "--skip-password",
+    "--connect-timeout=5",
+    "--skip-reconnect",
+    "--no-auto-rehash",
+    "--batch",
+    "--raw",
+    "--skip-column-names",
+    "--binary-mode",
+    "--default-character-set=utf8mb4",
+    "--local-infile=0",
+    "--help"
+  ],
+  "server_started": false,
+  "connections": 0,
+  "exit_code": 0
+}

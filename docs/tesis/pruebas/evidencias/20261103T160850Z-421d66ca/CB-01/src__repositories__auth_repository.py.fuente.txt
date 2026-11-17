@@ -1,0 +1,24 @@
+   1: from sqlalchemy.orm import joinedload, selectinload
+   2: from src.models.auth_entities import Usuario
+   3: 
+   4: class AuthRepository:
+   5:     @staticmethod
+   6:     def get_user_by_username(username: str) -> Usuario:
+   7:         return Usuario.query.filter_by(username=username, estado='ACTIVO').first()
+   8: 
+   9:     @staticmethod
+  10:     def get_active_user_by_id(user_id: int) -> Usuario:
+  11:         return Usuario.query.filter_by(id=user_id, estado='ACTIVO').first()
+  12: 
+  13:     @staticmethod
+  14:     def get_active_user_with_permissions_by_id(user_id: int) -> Usuario:
+  15:         from src.models.auth_entities import Rol, RolPermiso, UsuarioRol
+  16: 
+  17:         # Cargar las colecciones por lote; unir solo los enlaces N:1.
+  18:         # Conserva la procedencia rol -> permiso sin una consulta por permiso.
+  19:         grants = (selectinload(Usuario.roles_rel)
+  20:                   .joinedload(UsuarioRol.rol)
+  21:                   .selectinload(Rol.permisos_rel)
+  22:                   .joinedload(RolPermiso.permiso))
+  23:         return (Usuario.query.options(grants)
+  24:                 .filter_by(id=user_id, estado='ACTIVO').first())

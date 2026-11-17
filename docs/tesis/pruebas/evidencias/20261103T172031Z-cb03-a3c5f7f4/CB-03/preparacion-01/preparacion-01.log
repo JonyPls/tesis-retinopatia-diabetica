@@ -1,0 +1,2 @@
+PREPARACIÓN OFFLINE: 12 comprobaciones correctas; 10 métodos descubiertos, NO ejecutados.
+{"status": "BLOQUEADO", "reason": "Preparación validada sin SQL; falta instancia exclusiva verificada y autorización de fixtures.", "methods_executed": 0, "subcases_executed": 0, "exit_code": 3}

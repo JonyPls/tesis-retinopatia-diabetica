@@ -1,0 +1,2 @@
+[auto]
+server-uuid=eee45878-d7ac-11f1-bc4f-107c616721bd

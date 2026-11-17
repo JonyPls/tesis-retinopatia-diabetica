@@ -1,0 +1,26 @@
+   1: """Formatos compartidos entre el registro de pacientes y el alta de usuarios."""
+   2: import re
+   3: import unicodedata
+   4: 
+   5: 
+   6: DOCUMENT_PATTERNS = {
+   7:     'DNI': (re.compile(r'^[0-9]{8}$'), 'El DNI debe tener exactamente 8 digitos.'),
+   8:     'CE': (re.compile(r'^[A-Z0-9]{8,12}$'), 'El CE debe tener entre 8 y 12 caracteres alfanumericos.'),
+   9:     'PAS': (re.compile(r'^[A-Z0-9]{3,9}$'), 'El Pasaporte debe tener entre 3 y 9 caracteres alfanumericos.'),
+  10: }
+  11: 
+  12: 
+  13: def valid_email(value):
+  14:     if not value or any(char.isspace() or unicodedata.category(char) in ('Cc', 'Cf') for char in value):
+  15:         return False
+  16:     parts = value.split('@')
+  17:     if len(parts) != 2:
+  18:         return False
+  19:     local, domain = parts
+  20:     if (not local or local.startswith('.') or local.endswith('.') or '..' in local
+  21:             or not all(char.isalnum() or char in "!#$%&'*+/=?^_`{|}~.-" for char in local)):
+  22:         return False
+  23:     labels = domain.split('.')
+  24:     return (len(labels) >= 2 and all(label and label[0].isalnum() and label[-1].isalnum()
+  25:             and all(char.isalnum() or char == '-' for char in label) for label in labels)
+  26:             and len(labels[-1]) >= 2 and labels[-1].isalpha())
